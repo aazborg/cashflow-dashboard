@@ -36,7 +36,7 @@ export default async function RootLayout({
                   <NavLink href="/">Dashboard</NavLink>
                   <NavLink href="/daten">Daten</NavLink>
                   <NavLink href="/rechner">Rechner</NavLink>
-                  <NavLink href="/ziele">Ziele</NavLink>
+                  {ctx.isAdmin ? <NavLink href="/ziele">Ziele</NavLink> : null}
                   {ctx.isAdmin ? <NavLink href="/admin">Admin</NavLink> : null}
                 </nav>
               ) : null}

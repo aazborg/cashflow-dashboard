@@ -15,17 +15,14 @@ export const dynamic = "force-dynamic";
 export default async function ZielePage() {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
+  if (!ctx.isAdmin) redirect("/");
   const [employees, snapshots, products] = await Promise.all([
     listEmployees(),
     listMonthlySnapshots(),
     listProducts(),
   ]);
 
-  const allMembers = employees.filter((e) => e.role === "member" && e.active);
-  // Members see only their own baseline; admins see the team-wide average.
-  const members = ctx.isAdmin
-    ? allMembers
-    : allMembers.filter((e) => (e.hubspot_owner_id ?? e.id) === ctx.ownerId);
+  const members = employees.filter((e) => e.role === "member" && e.active);
 
   // Latest snapshot per member, then average across members.
   const latestPerMember = members.map((m) => {
