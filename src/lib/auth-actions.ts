@@ -36,11 +36,12 @@ export async function sendMagicLink(formData: FormData): Promise<MagicLinkResult
   const sb = await supabaseServer();
   const origin =
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "http://localhost:3737";
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "/cashflow";
 
   const { error } = await sb.auth.signInWithOtp({
     email: emailRaw,
     options: {
-      emailRedirectTo: `${origin}/auth/callback`,
+      emailRedirectTo: `${origin}${basePath}/auth/callback`,
       shouldCreateUser: true,
     },
   });

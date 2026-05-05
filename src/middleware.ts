@@ -1,7 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+const BASE_PATH = "/cashflow";
+
+// Public paths are written WITHOUT the basePath; we strip the basePath from
+// `request.nextUrl.pathname` before comparing.
 const PUBLIC_PATHS = ["/login", "/auth/callback"];
+
+function stripBasePath(p: string): string {
+  if (p === BASE_PATH) return "/";
+  if (p.startsWith(BASE_PATH + "/")) return p.slice(BASE_PATH.length);
+  return p;
+}
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -27,24 +37,25 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  // Refresh session if needed
   const { data } = await sb.auth.getUser();
-  const path = request.nextUrl.pathname;
+  const fullPath = request.nextUrl.pathname;
+  const path = stripBasePath(fullPath);
+
   const isPublic =
     PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/")) ||
-    path.startsWith("/api/webhooks/"); // HubSpot webhooks must stay open
+    fullPath.startsWith(BASE_PATH + "/api/webhooks/") ||
+    fullPath.startsWith("/api/webhooks/");
 
   if (!data.user && !isPublic) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = `${BASE_PATH}/login`;
     url.searchParams.set("next", path);
     return NextResponse.redirect(url);
   }
 
-  // If logged in and visiting /login, push them to /
   if (data.user && path === "/login") {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = `${BASE_PATH}/`;
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -54,7 +65,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // All routes except static assets, _next internals, and the favicon
     "/((?!_next/static|_next/image|favicon.ico|aazb-logo.jpg).*)",
   ],
 };
