@@ -164,8 +164,8 @@ export default function RechnerClient({
   const [dataMonth, setDataMonth] = useState(() => dataMonthOptions[0]?.value ?? "fallback");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
     setDataMonth(dataMonthOptions[0]?.value ?? "fallback");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId]);
 
   const baseline: Baseline = useMemo(() => {
@@ -180,8 +180,11 @@ export default function RechnerClient({
   const [close, setClose] = useState(baseline.close);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQualis(baseline.qualis);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowup(baseline.showup);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setClose(baseline.close);
   }, [baseline]);
 

@@ -45,12 +45,12 @@ export default function CashflowChart({ data }: Props) {
             }
           />
           <Tooltip
-            formatter={(value: number) =>
+            formatter={(value) =>
               new Intl.NumberFormat("de-AT", {
                 style: "currency",
                 currency: "EUR",
                 maximumFractionDigits: 0,
-              }).format(value)
+              }).format(typeof value === "number" ? value : Number(value) || 0)
             }
             contentStyle={{
               borderRadius: 8,
