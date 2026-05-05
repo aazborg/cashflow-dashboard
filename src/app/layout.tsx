@@ -2,15 +2,18 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import "./globals.css";
+import { getSessionUser } from "@/lib/supabase-server";
+import { signOut } from "@/lib/auth-actions";
 
 export const metadata: Metadata = {
   title: "AAZB Closing Dashboard",
   description: "Cashflow-Berechnung & Verkaufs-Dashboard",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const user = await getSessionUser();
   return (
     <html lang="de" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-[color:var(--surface)]">
@@ -28,17 +31,29 @@ export default function RootLayout({
                 />
                 <span className="text-[color:var(--foreground)]">Closing Dashboard</span>
               </Link>
-              <nav className="flex gap-1 text-sm">
-                <NavLink href="/">Dashboard</NavLink>
-                <NavLink href="/daten">Daten</NavLink>
-                <NavLink href="/rechner">Rechner</NavLink>
-                <NavLink href="/ziele">Ziele</NavLink>
-                <NavLink href="/admin">Admin</NavLink>
-              </nav>
+              {user ? (
+                <nav className="flex gap-1 text-sm">
+                  <NavLink href="/">Dashboard</NavLink>
+                  <NavLink href="/daten">Daten</NavLink>
+                  <NavLink href="/rechner">Rechner</NavLink>
+                  <NavLink href="/ziele">Ziele</NavLink>
+                  <NavLink href="/admin">Admin</NavLink>
+                </nav>
+              ) : null}
             </div>
-            <div className="text-xs text-[color:var(--foreground)]/70">
-              mario.grabner@mynlp.at
-            </div>
+            {user ? (
+              <div className="flex items-center gap-3 text-xs text-[color:var(--foreground)]/70">
+                <span>{user.email}</span>
+                <form action={signOut}>
+                  <button
+                    type="submit"
+                    className="px-2 py-1 rounded border border-[color:var(--foreground)]/20 hover:bg-[color:var(--brand-orange)]/30"
+                  >
+                    Logout
+                  </button>
+                </form>
+              </div>
+            ) : null}
           </div>
         </header>
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-6 py-6">
