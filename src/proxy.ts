@@ -13,7 +13,7 @@ function stripBasePath(p: string): string {
   return p;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const sb = createServerClient(
