@@ -1,159 +1,201 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { supabaseAdmin } from "./supabase";
 import type {
   Deal,
   DeleteRequest,
   Employee,
+  Intervall,
   MonthlySnapshot,
   Product,
 } from "./types";
 
-interface DB {
-  deals: Deal[];
-  employees: Employee[];
-  delete_requests: DeleteRequest[];
-  monthly_snapshots?: MonthlySnapshot[];
-  products?: Product[];
+// ── Deals ──────────────────────────────────────────────────────────────────
+
+interface DealRow {
+  id: string;
+  vorname: string;
+  nachname: string;
+  email: string | null;
+  mitarbeiter_id: string;
+  mitarbeiter_name: string;
+  betrag: number | string;
+  start_datum: string | null;
+  anzahl_raten: number | null;
+  intervall: Intervall | null;
+  hubspot_deal_id: string | null;
+  source: "hubspot" | "manual" | "legacy";
+  pending_delete: boolean;
+  created_at: string;
 }
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
-const SEED_PATH = path.join(DATA_DIR, "seed.json");
-
-let cache: DB | null = null;
-let writeQueue: Promise<void> = Promise.resolve();
-
-async function loadInitial(): Promise<DB> {
-  try {
-    const raw = await fs.readFile(DB_PATH, "utf8");
-    return JSON.parse(raw) as DB;
-  } catch {
-    try {
-      const raw = await fs.readFile(SEED_PATH, "utf8");
-      const seed = JSON.parse(raw) as DB;
-      await fs.mkdir(DATA_DIR, { recursive: true });
-      await fs.writeFile(DB_PATH, JSON.stringify(seed, null, 2));
-      return seed;
-    } catch {
-      const empty: DB = {
-        deals: [],
-        employees: [
-          {
-            id: randomUUID(),
-            email: "mario.grabner@mynlp.at",
-            name: "Mario Grabner",
-            hubspot_owner_id: null,
-            role: "admin",
-            invited_at: new Date().toISOString(),
-            active: true,
-          },
-        ],
-        delete_requests: [],
-      };
-      await fs.mkdir(DATA_DIR, { recursive: true });
-      await fs.writeFile(DB_PATH, JSON.stringify(empty, null, 2));
-      return empty;
-    }
-  }
+function rowToDeal(r: DealRow): Deal {
+  return {
+    id: r.id,
+    vorname: r.vorname,
+    nachname: r.nachname,
+    email: r.email,
+    mitarbeiter_id: r.mitarbeiter_id,
+    mitarbeiter_name: r.mitarbeiter_name,
+    betrag: Number(r.betrag),
+    start_datum: r.start_datum,
+    anzahl_raten: r.anzahl_raten,
+    intervall: r.intervall,
+    hubspot_deal_id: r.hubspot_deal_id,
+    source: r.source,
+    created_at: r.created_at,
+    pending_delete: r.pending_delete,
+  };
 }
 
-async function getDb(): Promise<DB> {
-  if (!cache) cache = await loadInitial();
-  return cache;
-}
-
-function persist(): Promise<void> {
-  const data = cache;
-  if (!data) return Promise.resolve();
-  writeQueue = writeQueue.then(() =>
-    fs.writeFile(DB_PATH, JSON.stringify(data, null, 2)),
-  );
-  return writeQueue;
-}
-
-export async function listDeals(filter?: {
-  ownerEmail?: string;
-}): Promise<Deal[]> {
-  const db = await getDb();
-  let deals = db.deals;
-  if (filter?.ownerEmail) {
-    deals = deals.filter(
-      (d) =>
-        d.email?.toLowerCase() === filter.ownerEmail!.toLowerCase() ||
-        getEmployeeByOwnerId(db, d.mitarbeiter_id)?.email.toLowerCase() ===
-          filter.ownerEmail!.toLowerCase(),
-    );
-  }
-  return [...deals].sort((a, b) => a.created_at.localeCompare(b.created_at));
-}
-
-function getEmployeeByOwnerId(db: DB, ownerId: string): Employee | undefined {
-  return db.employees.find((e) => e.hubspot_owner_id === ownerId);
+export async function listDeals(): Promise<Deal[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("deals")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => rowToDeal(r as DealRow));
 }
 
 export async function getDeal(id: string): Promise<Deal | null> {
-  const db = await getDb();
-  return db.deals.find((d) => d.id === id) ?? null;
+  const { data, error } = await supabaseAdmin()
+    .from("deals")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToDeal(data as DealRow) : null;
 }
 
 export async function createDeal(
   input: Omit<Deal, "id" | "created_at">,
 ): Promise<Deal> {
-  const db = await getDb();
-  const deal: Deal = {
-    ...input,
-    id: randomUUID(),
-    created_at: new Date().toISOString(),
-  };
-  db.deals.push(deal);
-  await persist();
-  return deal;
+  const { data, error } = await supabaseAdmin()
+    .from("deals")
+    .insert({
+      vorname: input.vorname,
+      nachname: input.nachname,
+      email: input.email,
+      mitarbeiter_id: input.mitarbeiter_id,
+      mitarbeiter_name: input.mitarbeiter_name,
+      betrag: input.betrag,
+      start_datum: input.start_datum,
+      anzahl_raten: input.anzahl_raten,
+      intervall: input.intervall,
+      hubspot_deal_id: input.hubspot_deal_id,
+      source: input.source,
+      pending_delete: input.pending_delete ?? false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToDeal(data as DealRow);
 }
 
 export async function updateDeal(
   id: string,
   patch: Partial<Deal>,
 ): Promise<Deal | null> {
-  const db = await getDb();
-  const idx = db.deals.findIndex((d) => d.id === id);
-  if (idx === -1) return null;
-  db.deals[idx] = { ...db.deals[idx], ...patch };
-  await persist();
-  return db.deals[idx];
+  // Only forward known columns
+  const allowed: (keyof Deal)[] = [
+    "vorname", "nachname", "email", "mitarbeiter_id", "mitarbeiter_name",
+    "betrag", "start_datum", "anzahl_raten", "intervall",
+    "hubspot_deal_id", "source", "pending_delete",
+  ];
+  const update: Record<string, unknown> = {};
+  for (const k of allowed) if (k in patch) update[k] = (patch as Record<string, unknown>)[k];
+  if (Object.keys(update).length === 0) return getDeal(id);
+
+  const { data, error } = await supabaseAdmin()
+    .from("deals")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToDeal(data as DealRow) : null;
 }
 
 export async function upsertDealByHubspotId(
   hubspot_deal_id: string,
   data: Omit<Deal, "id" | "created_at" | "hubspot_deal_id" | "source">,
 ): Promise<Deal> {
-  const db = await getDb();
-  const existing = db.deals.find((d) => d.hubspot_deal_id === hubspot_deal_id);
-  if (existing) {
-    Object.assign(existing, data);
-    await persist();
-    return existing;
-  }
-  return createDeal({
-    ...data,
-    hubspot_deal_id,
-    source: "hubspot",
-  });
+  const { data: row, error } = await supabaseAdmin()
+    .from("deals")
+    .upsert(
+      {
+        hubspot_deal_id,
+        source: "hubspot" as const,
+        vorname: data.vorname,
+        nachname: data.nachname,
+        email: data.email,
+        mitarbeiter_id: data.mitarbeiter_id,
+        mitarbeiter_name: data.mitarbeiter_name,
+        betrag: data.betrag,
+        start_datum: data.start_datum,
+        anzahl_raten: data.anzahl_raten,
+        intervall: data.intervall,
+        pending_delete: data.pending_delete ?? false,
+      },
+      { onConflict: "hubspot_deal_id" },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToDeal(row as DealRow);
+}
+
+// ── Employees ──────────────────────────────────────────────────────────────
+
+interface EmployeeRow {
+  id: string;
+  email: string;
+  name: string;
+  hubspot_owner_id: string | null;
+  role: "admin" | "member";
+  invited_at: string | null;
+  active: boolean;
+  provision_pct: number | string | null;
+  default_qualis: number | string | null;
+  default_showup_rate: number | string | null;
+  default_close_rate: number | string | null;
+  default_avg_contract: number | string | null;
+}
+
+function rowToEmployee(r: EmployeeRow): Employee {
+  return {
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    hubspot_owner_id: r.hubspot_owner_id,
+    role: r.role,
+    invited_at: r.invited_at,
+    active: r.active,
+    provision_pct: r.provision_pct == null ? null : Number(r.provision_pct),
+    default_qualis: r.default_qualis == null ? null : Number(r.default_qualis),
+    default_showup_rate: r.default_showup_rate == null ? null : Number(r.default_showup_rate),
+    default_close_rate: r.default_close_rate == null ? null : Number(r.default_close_rate),
+    default_avg_contract: r.default_avg_contract == null ? null : Number(r.default_avg_contract),
+  };
 }
 
 export async function listEmployees(): Promise<Employee[]> {
-  const db = await getDb();
-  return [...db.employees];
+  const { data, error } = await supabaseAdmin()
+    .from("employees")
+    .select("*")
+    .order("invited_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => rowToEmployee(r as EmployeeRow));
 }
 
 export async function getEmployeeByEmail(
   email: string,
 ): Promise<Employee | null> {
-  const db = await getDb();
-  return (
-    db.employees.find((e) => e.email.toLowerCase() === email.toLowerCase()) ??
-    null
-  );
+  const { data, error } = await supabaseAdmin()
+    .from("employees")
+    .select("*")
+    .ilike("email", email)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToEmployee(data as EmployeeRow) : null;
 }
 
 export async function updateEmployee(
@@ -172,26 +214,49 @@ export async function updateEmployee(
     >
   >,
 ): Promise<Employee | null> {
-  const db = await getDb();
-  const emp = db.employees.find((e) => e.id === id);
-  if (!emp) return null;
-  const oldOwnerId = emp.hubspot_owner_id;
-  const oldName = emp.name;
-  Object.assign(emp, patch);
-  if (patch.name && patch.name !== oldName) {
-    const ownerId = emp.hubspot_owner_id;
-    for (const d of db.deals) {
-      if (
-        (ownerId && d.mitarbeiter_id === ownerId) ||
-        d.mitarbeiter_id === emp.id ||
-        (oldOwnerId && d.mitarbeiter_id === oldOwnerId)
-      ) {
-        d.mitarbeiter_name = emp.name;
-      }
-    }
+  const allowed = [
+    "name", "hubspot_owner_id", "active",
+    "provision_pct", "default_qualis", "default_showup_rate",
+    "default_close_rate", "default_avg_contract",
+  ] as const;
+  const update: Record<string, unknown> = {};
+  for (const k of allowed) if (k in patch) update[k] = (patch as Record<string, unknown>)[k];
+  if (Object.keys(update).length === 0) {
+    const { data } = await supabaseAdmin().from("employees").select("*").eq("id", id).maybeSingle();
+    return data ? rowToEmployee(data as EmployeeRow) : null;
   }
-  await persist();
-  return emp;
+
+  // If name changed, propagate to deals.mitarbeiter_name (matches old behavior).
+  let oldName: string | null = null;
+  let ownerId: string | null = null;
+  if (update.name) {
+    const { data: emp } = await supabaseAdmin()
+      .from("employees")
+      .select("name, hubspot_owner_id")
+      .eq("id", id)
+      .maybeSingle();
+    oldName = (emp?.name as string) ?? null;
+    ownerId = (emp?.hubspot_owner_id as string | null) ?? null;
+  }
+
+  const { data, error } = await supabaseAdmin()
+    .from("employees")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  if (update.name && oldName && update.name !== oldName) {
+    const sb = supabaseAdmin();
+    if (ownerId) {
+      await sb.from("deals").update({ mitarbeiter_name: update.name as string }).eq("mitarbeiter_id", ownerId);
+    }
+    await sb.from("deals").update({ mitarbeiter_name: update.name as string }).eq("mitarbeiter_id", id);
+  }
+
+  return rowToEmployee(data as EmployeeRow);
 }
 
 export async function inviteEmployee(input: {
@@ -199,165 +264,234 @@ export async function inviteEmployee(input: {
   name: string;
   hubspot_owner_id?: string | null;
 }): Promise<Employee> {
-  const db = await getDb();
   const existing = await getEmployeeByEmail(input.email);
   if (existing) return existing;
-  const emp: Employee = {
-    id: randomUUID(),
-    email: input.email.toLowerCase(),
-    name: input.name,
-    hubspot_owner_id: input.hubspot_owner_id ?? null,
-    role: "member",
-    invited_at: new Date().toISOString(),
-    active: true,
+  const { data, error } = await supabaseAdmin()
+    .from("employees")
+    .insert({
+      email: input.email.toLowerCase(),
+      name: input.name,
+      hubspot_owner_id: input.hubspot_owner_id ?? null,
+      role: "member",
+      active: true,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToEmployee(data as EmployeeRow);
+}
+
+// ── Monthly snapshots ──────────────────────────────────────────────────────
+
+interface SnapshotRow {
+  id: string;
+  mitarbeiter_id: string;
+  month: string;
+  qualis: number | string;
+  showup_rate: number | string;
+  close_rate: number | string;
+  avg_contract: number | string | null;
+}
+
+function rowToSnapshot(r: SnapshotRow): MonthlySnapshot {
+  return {
+    id: r.id,
+    mitarbeiter_id: r.mitarbeiter_id,
+    month: r.month,
+    qualis: Number(r.qualis),
+    showup_rate: Number(r.showup_rate),
+    close_rate: Number(r.close_rate),
+    avg_contract: r.avg_contract == null ? null : Number(r.avg_contract),
   };
-  db.employees.push(emp);
-  await persist();
-  return emp;
 }
 
 export async function listMonthlySnapshots(
   mitarbeiter_id?: string,
 ): Promise<MonthlySnapshot[]> {
-  const db = await getDb();
-  const all = db.monthly_snapshots ?? [];
-  const filtered = mitarbeiter_id
-    ? all.filter((s) => s.mitarbeiter_id === mitarbeiter_id)
-    : all;
-  return [...filtered].sort((a, b) => a.month.localeCompare(b.month));
+  let q = supabaseAdmin().from("monthly_snapshots").select("*").order("month", { ascending: true });
+  if (mitarbeiter_id) q = q.eq("mitarbeiter_id", mitarbeiter_id);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((r) => rowToSnapshot(r as SnapshotRow));
 }
 
 export async function upsertMonthlySnapshot(
   input: Omit<MonthlySnapshot, "id">,
 ): Promise<MonthlySnapshot> {
-  const db = await getDb();
-  if (!db.monthly_snapshots) db.monthly_snapshots = [];
-  const existing = db.monthly_snapshots.find(
-    (s) => s.mitarbeiter_id === input.mitarbeiter_id && s.month === input.month,
-  );
-  if (existing) {
-    Object.assign(existing, input);
-    await persist();
-    return existing;
-  }
-  const created: MonthlySnapshot = { ...input, id: randomUUID() };
-  db.monthly_snapshots.push(created);
-  await persist();
-  return created;
+  const { data, error } = await supabaseAdmin()
+    .from("monthly_snapshots")
+    .upsert(
+      {
+        mitarbeiter_id: input.mitarbeiter_id,
+        month: input.month,
+        qualis: input.qualis,
+        showup_rate: input.showup_rate,
+        close_rate: input.close_rate,
+        avg_contract: input.avg_contract ?? null,
+      },
+      { onConflict: "mitarbeiter_id,month" },
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToSnapshot(data as SnapshotRow);
 }
 
-const PRODUCT_SEED: Omit<Product, "id">[] = [
-  { name: "Staatlich geprüfte:r Lebensberater:in", price: 13652.64, default_anzahl_raten: 24, default_intervall: "monatlich", active: true, sort: 10 },
-  { name: "Zert. Mediator:in", price: 5910, default_anzahl_raten: 12, default_intervall: "monatlich", active: true, sort: 20 },
-  { name: "BPr Beratungswissenschaften", price: 5000, default_anzahl_raten: 12, default_intervall: "monatlich", active: true, sort: 30 },
-  { name: "Zert. Life Coach", price: 4000, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 40 },
-  { name: "Praxisstunden-Package", price: 3990, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 50, is_upsell: true },
-  { name: "Zert. Epigenetik Coach", price: 3500, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 60 },
-  { name: "Systemischer Coach", price: 3200, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 70 },
-  { name: "Einzelselbsterfahrung für LSB", price: 2800, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 80 },
-  { name: "Speaking Mastery Ausbildung", price: 2699, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 90 },
-  { name: "Dipl. Trainer:in für Erwachsenenbildung", price: 2699, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 100 },
-  { name: "Paarberatung", price: 2470, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 110 },
-  { name: "Zert. Supervisor:in", price: 2470, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 120 },
-  { name: "Trauerbegleitung", price: 2470, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 130 },
-  { name: "Zert. Aufstellungsleiter:in", price: 2470, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 140 },
-  { name: "Zert. Konfliktcoach Online", price: 2200, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 150 },
-  { name: "Zert. NLP Practitioner Online", price: 2200, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 160 },
-  { name: "Zert. Mentalcoach Online", price: 2200, default_anzahl_raten: 10, default_intervall: "monatlich", active: true, sort: 170 },
-  { name: "Upgrade NLP Trainer:in", price: 1799, default_anzahl_raten: 6, default_intervall: "monatlich", active: true, sort: 180 },
-  { name: "New Code Practitioner", price: 1699, default_anzahl_raten: 6, default_intervall: "monatlich", active: true, sort: 190 },
-  { name: "Gruppensupervision für LSB (groß)", price: 800, default_anzahl_raten: 1, default_intervall: "Einmalzahlung", active: true, sort: 200, is_upsell: true },
-  { name: "Gruppensupervision für LSB (klein)", price: 600, default_anzahl_raten: 1, default_intervall: "Einmalzahlung", active: true, sort: 210, is_upsell: true },
-  { name: "8 Präsenztage NLP Practitioner", price: 500, default_anzahl_raten: 1, default_intervall: "Einmalzahlung", active: true, sort: 220 },
-  { name: "8 Präsenztage Mentalcoach", price: 500, default_anzahl_raten: 1, default_intervall: "Einmalzahlung", active: true, sort: 230 },
-  { name: "6 Präsenztage NLP Master", price: 400, default_anzahl_raten: 1, default_intervall: "Einmalzahlung", active: true, sort: 240 },
-  { name: "ISO Zertifizierung", price: 325, default_anzahl_raten: 1, default_intervall: "Einmalzahlung", active: true, sort: 250 },
-];
+// ── Products ───────────────────────────────────────────────────────────────
+
+interface ProductRow {
+  id: string;
+  name: string;
+  price: number | string;
+  default_anzahl_raten: number | null;
+  default_intervall: Intervall | null;
+  active: boolean;
+  is_upsell: boolean;
+  sort: number;
+}
+
+function rowToProduct(r: ProductRow): Product {
+  return {
+    id: r.id,
+    name: r.name,
+    price: Number(r.price),
+    default_anzahl_raten: r.default_anzahl_raten,
+    default_intervall: r.default_intervall,
+    active: r.active,
+    is_upsell: r.is_upsell,
+    sort: r.sort,
+  };
+}
 
 export async function listProducts(): Promise<Product[]> {
-  const db = await getDb();
-  if (!db.products) {
-    db.products = PRODUCT_SEED.map((p) => ({ ...p, id: randomUUID() }));
-    await persist();
-  }
-  return [...db.products].sort((a, b) => a.sort - b.sort);
+  const { data, error } = await supabaseAdmin()
+    .from("products")
+    .select("*")
+    .order("sort", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => rowToProduct(r as ProductRow));
 }
 
 export async function createProduct(
   input: Omit<Product, "id">,
 ): Promise<Product> {
-  const db = await getDb();
-  if (!db.products) db.products = [];
-  const product: Product = { ...input, id: randomUUID() };
-  db.products.push(product);
-  await persist();
-  return product;
+  const { data, error } = await supabaseAdmin()
+    .from("products")
+    .insert({
+      name: input.name,
+      price: input.price,
+      default_anzahl_raten: input.default_anzahl_raten,
+      default_intervall: input.default_intervall,
+      active: input.active,
+      is_upsell: input.is_upsell ?? false,
+      sort: input.sort,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToProduct(data as ProductRow);
 }
 
 export async function updateProduct(
   id: string,
   patch: Partial<Omit<Product, "id">>,
 ): Promise<Product | null> {
-  const db = await getDb();
-  if (!db.products) return null;
-  const p = db.products.find((x) => x.id === id);
-  if (!p) return null;
-  Object.assign(p, patch);
-  await persist();
-  return p;
+  const allowed = [
+    "name", "price", "default_anzahl_raten", "default_intervall",
+    "active", "is_upsell", "sort",
+  ] as const;
+  const update: Record<string, unknown> = {};
+  for (const k of allowed) if (k in patch) update[k] = (patch as Record<string, unknown>)[k];
+  if (Object.keys(update).length === 0) {
+    const { data } = await supabaseAdmin().from("products").select("*").eq("id", id).maybeSingle();
+    return data ? rowToProduct(data as ProductRow) : null;
+  }
+  const { data, error } = await supabaseAdmin()
+    .from("products")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToProduct(data as ProductRow) : null;
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
-  const db = await getDb();
-  if (!db.products) return false;
-  const before = db.products.length;
-  db.products = db.products.filter((p) => p.id !== id);
-  if (db.products.length === before) return false;
-  await persist();
-  return true;
+  const { error, count } = await supabaseAdmin()
+    .from("products")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) throw error;
+  return (count ?? 0) > 0;
+}
+
+// ── Delete requests ────────────────────────────────────────────────────────
+
+interface DeleteRequestRow {
+  id: string;
+  deal_id: string;
+  requested_by_email: string;
+  requested_at: string;
+  status: "pending" | "approved" | "denied";
+  decided_at: string | null;
+}
+
+function rowToDeleteRequest(r: DeleteRequestRow): DeleteRequest {
+  return {
+    id: r.id,
+    deal_id: r.deal_id,
+    requested_by_email: r.requested_by_email,
+    requested_at: r.requested_at,
+    status: r.status,
+    decided_at: r.decided_at ?? undefined,
+  };
 }
 
 export async function listDeleteRequests(): Promise<DeleteRequest[]> {
-  const db = await getDb();
-  return [...db.delete_requests].sort((a, b) =>
-    b.requested_at.localeCompare(a.requested_at),
-  );
+  const { data, error } = await supabaseAdmin()
+    .from("delete_requests")
+    .select("*")
+    .order("requested_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => rowToDeleteRequest(r as DeleteRequestRow));
 }
 
 export async function createDeleteRequest(input: {
   deal_id: string;
   requested_by_email: string;
 }): Promise<DeleteRequest> {
-  const db = await getDb();
-  const deal = db.deals.find((d) => d.id === input.deal_id);
-  if (deal) deal.pending_delete = true;
-  const dr: DeleteRequest = {
-    id: randomUUID(),
-    deal_id: input.deal_id,
-    requested_by_email: input.requested_by_email.toLowerCase(),
-    requested_at: new Date().toISOString(),
-    status: "pending",
-  };
-  db.delete_requests.push(dr);
-  await persist();
-  return dr;
+  const sb = supabaseAdmin();
+  await sb.from("deals").update({ pending_delete: true }).eq("id", input.deal_id);
+  const { data, error } = await sb
+    .from("delete_requests")
+    .insert({
+      deal_id: input.deal_id,
+      requested_by_email: input.requested_by_email.toLowerCase(),
+      status: "pending",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToDeleteRequest(data as DeleteRequestRow);
 }
 
 export async function decideDeleteRequest(
   id: string,
   decision: "approved" | "denied",
 ): Promise<DeleteRequest | null> {
-  const db = await getDb();
-  const dr = db.delete_requests.find((r) => r.id === id);
+  const sb = supabaseAdmin();
+  const { data: dr, error: e1 } = await sb
+    .from("delete_requests")
+    .update({ status: decision, decided_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (e1) throw e1;
   if (!dr) return null;
-  dr.status = decision;
-  dr.decided_at = new Date().toISOString();
   if (decision === "approved") {
-    db.deals = db.deals.filter((d) => d.id !== dr.deal_id);
+    await sb.from("deals").delete().eq("id", (dr as DeleteRequestRow).deal_id);
   } else {
-    const deal = db.deals.find((d) => d.id === dr.deal_id);
-    if (deal) deal.pending_delete = false;
+    await sb.from("deals").update({ pending_delete: false }).eq("id", (dr as DeleteRequestRow).deal_id);
   }
-  await persist();
-  return dr;
+  return rowToDeleteRequest(dr as DeleteRequestRow);
 }
