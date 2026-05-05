@@ -7,6 +7,8 @@ import {
   outstandingByMitarbeiter,
 } from "@/lib/cashflow";
 import { listDeals, listEmployees } from "@/lib/store";
+import { getSessionContext } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +17,11 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ mitarbeiter?: string }>;
 }) {
-  const { mitarbeiter: filterId } = await searchParams;
+  const ctx = await getSessionContext();
+  if (!ctx) redirect("/login");
+  const { mitarbeiter: filterIdRaw } = await searchParams;
+  // Members can only see their own cashflow; ignore any filter override.
+  const filterId = ctx.isAdmin ? filterIdRaw : ctx.ownerId;
   const [allDeals, employees] = await Promise.all([listDeals(), listEmployees()]);
   const allMitarbeiter = [
     ...new Map(
@@ -47,7 +53,8 @@ export default async function DashboardPage({
 
   const palette = ["#449dd7", "#53b684", "#f28a26", "#ffd857", "#6b7280"];
   const currentName = filterId
-    ? allMitarbeiter.find((m) => m.id === filterId)?.name ?? "Unbekannt"
+    ? allMitarbeiter.find((m) => m.id === filterId)?.name ??
+      (filterId === ctx.ownerId ? ctx.employee.name : "Unbekannt")
     : null;
 
   const outstandingAll = outstandingByMitarbeiter(allDeals);
@@ -72,10 +79,12 @@ export default async function DashboardPage({
               : "Live-Übersicht der zukünftigen Zahlungseingänge je Mitarbeiter."}
           </p>
         </div>
-        <MitarbeiterFilter
-          mitarbeiter={allMitarbeiter}
-          current={filterId ?? null}
-        />
+        {ctx.isAdmin ? (
+          <MitarbeiterFilter
+            mitarbeiter={allMitarbeiter}
+            current={filterId ?? null}
+          />
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

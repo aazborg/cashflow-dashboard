@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import "./globals.css";
-import { getSessionUser } from "@/lib/supabase-server";
+import { getSessionContext } from "@/lib/supabase-server";
 import { signOut } from "@/lib/auth-actions";
 
 export const metadata: Metadata = {
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = await getSessionUser();
+  const ctx = await getSessionContext();
   return (
     <html lang="de" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-[color:var(--surface)]">
@@ -31,19 +31,19 @@ export default async function RootLayout({
                 />
                 <span className="text-[color:var(--foreground)]">Closing Dashboard</span>
               </Link>
-              {user ? (
+              {ctx ? (
                 <nav className="flex gap-1 text-sm">
                   <NavLink href="/">Dashboard</NavLink>
                   <NavLink href="/daten">Daten</NavLink>
                   <NavLink href="/rechner">Rechner</NavLink>
                   <NavLink href="/ziele">Ziele</NavLink>
-                  <NavLink href="/admin">Admin</NavLink>
+                  {ctx.isAdmin ? <NavLink href="/admin">Admin</NavLink> : null}
                 </nav>
               ) : null}
             </div>
-            {user ? (
+            {ctx ? (
               <div className="flex items-center gap-3 text-xs text-[color:var(--foreground)]/70">
-                <span>{user.email}</span>
+                <span>{ctx.user.email}</span>
                 <form action={signOut}>
                   <button
                     type="submit"

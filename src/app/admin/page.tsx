@@ -9,10 +9,15 @@ import {
   listEmployees,
   listProducts,
 } from "@/lib/store";
+import { getSessionContext } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
+  const ctx = await getSessionContext();
+  if (!ctx) redirect("/login");
+  if (!ctx.isAdmin) redirect("/");
   const [requests, employees, products] = await Promise.all([
     listDeleteRequests(),
     listEmployees(),

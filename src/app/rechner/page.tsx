@@ -11,10 +11,14 @@ import {
   listEmployees,
   listMonthlySnapshots,
 } from "@/lib/store";
+import { getSessionContext } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function RechnerPage() {
+  const ctx = await getSessionContext();
+  if (!ctx) redirect("/login");
   const [employees, deals, allSnapshots] = await Promise.all([
     listEmployees(),
     listDeals(),
@@ -25,8 +29,12 @@ export default async function RechnerPage() {
   const from = new Date(now.getFullYear(), 0, 1);
   const until = new Date(now.getFullYear() + 1, 11, 1);
 
-  const options: EmployeeOption[] = employees
-    .filter((e) => e.role === "member")
+  // Members see only their own row; admins see all members.
+  const visibleEmployees = ctx.isAdmin
+    ? employees.filter((e) => e.role === "member")
+    : employees.filter((e) => (e.hubspot_owner_id ?? e.id) === ctx.ownerId);
+
+  const options: EmployeeOption[] = visibleEmployees
     .map((e) => {
       const mitId = e.hubspot_owner_id ?? e.id;
       const series = monthlySeriesForMitarbeiter(deals, mitId, {

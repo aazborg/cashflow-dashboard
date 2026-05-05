@@ -1,17 +1,26 @@
 import DealRow from "@/components/DealRow";
 import NewDealForm from "@/components/NewDealForm";
 import { listDeals, listEmployees } from "@/lib/store";
+import { getSessionContext } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function DatenPage() {
-  const [deals, employees] = await Promise.all([listDeals(), listEmployees()]);
-  const mitarbeiter = employees
-    .filter((e) => e.role === "member")
-    .map((e) => ({
-      id: e.hubspot_owner_id ?? e.id,
-      name: e.name,
-    }));
+  const ctx = await getSessionContext();
+  if (!ctx) redirect("/login");
+  const [allDeals, employees] = await Promise.all([listDeals(), listEmployees()]);
+  // Members only see their own deals; admins see everything.
+  const deals = ctx.isAdmin
+    ? allDeals
+    : allDeals.filter((d) => d.mitarbeiter_id === ctx.ownerId);
+  // For the "create new deal" picker: admins can pick any member, members can
+  // only pick themselves.
+  const mitarbeiter = ctx.isAdmin
+    ? employees
+        .filter((e) => e.role === "member")
+        .map((e) => ({ id: e.hubspot_owner_id ?? e.id, name: e.name }))
+    : [{ id: ctx.ownerId, name: ctx.employee.name }];
 
   return (
     <div className="space-y-6">

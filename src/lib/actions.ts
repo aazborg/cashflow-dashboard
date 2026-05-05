@@ -7,13 +7,27 @@ import {
   createProduct,
   decideDeleteRequest,
   deleteProduct,
+  getDeal,
   inviteEmployee,
   updateDeal,
   updateEmployee,
   updateProduct,
 } from "./store";
+import { getSessionContext } from "./supabase-server";
 import type { Intervall } from "./types";
 import { INTERVALL_OPTIONS } from "./types";
+
+async function requireSession() {
+  const ctx = await getSessionContext();
+  if (!ctx) throw new Error("Nicht angemeldet.");
+  return ctx;
+}
+
+async function requireAdmin() {
+  const ctx = await requireSession();
+  if (!ctx.isAdmin) throw new Error("Keine Berechtigung.");
+  return ctx;
+}
 
 function parseIntervall(v: FormDataEntryValue | null): Intervall | null {
   if (typeof v !== "string" || !v) return null;
@@ -27,8 +41,15 @@ function parseNumber(v: FormDataEntryValue | null): number | null {
 }
 
 export async function updateDealAction(formData: FormData) {
+  const ctx = await requireSession();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  if (!ctx.isAdmin) {
+    const existing = await getDeal(id);
+    if (!existing || existing.mitarbeiter_id !== ctx.ownerId) {
+      throw new Error("Keine Berechtigung für diesen Deal.");
+    }
+  }
   const start = formData.get("start_datum");
   const raten = parseNumber(formData.get("anzahl_raten"));
   const intervall = parseIntervall(formData.get("intervall"));
@@ -48,13 +69,18 @@ export async function updateDealAction(formData: FormData) {
 }
 
 export async function createDealAction(formData: FormData) {
+  const ctx = await requireSession();
   const vorname = String(formData.get("vorname") ?? "").trim();
   const nachname = String(formData.get("nachname") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim() || null;
-  const mitarbeiter_id =
-    String(formData.get("mitarbeiter_id") ?? "").trim() || "manual";
-  const mitarbeiter_name =
-    String(formData.get("mitarbeiter_name") ?? "").trim() || "Manuell";
+  // Admins may pick any mitarbeiter from the form; members are pinned to their
+  // own ownerId so they can't create deals attributed to others.
+  const mitarbeiter_id = ctx.isAdmin
+    ? String(formData.get("mitarbeiter_id") ?? "").trim() || "manual"
+    : ctx.ownerId;
+  const mitarbeiter_name = ctx.isAdmin
+    ? String(formData.get("mitarbeiter_name") ?? "").trim() || "Manuell"
+    : ctx.employee.name;
   const betrag = parseNumber(formData.get("betrag")) ?? 0;
   const startRaw = formData.get("start_datum");
   const start_datum = typeof startRaw === "string" && startRaw ? startRaw : null;
@@ -81,20 +107,25 @@ export async function createDealAction(formData: FormData) {
 }
 
 export async function requestDeleteAction(formData: FormData) {
+  const ctx = await requireSession();
   const id = String(formData.get("id") ?? "");
-  const requested_by = String(
-    formData.get("requested_by") ?? "mario.grabner@mynlp.at",
-  );
   if (!id) return;
+  if (!ctx.isAdmin) {
+    const existing = await getDeal(id);
+    if (!existing || existing.mitarbeiter_id !== ctx.ownerId) {
+      throw new Error("Keine Berechtigung für diesen Deal.");
+    }
+  }
   await createDeleteRequest({
     deal_id: id,
-    requested_by_email: requested_by,
+    requested_by_email: ctx.user.email,
   });
   revalidatePath("/daten");
   revalidatePath("/admin");
 }
 
 export async function decideDeleteAction(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get("id") ?? "");
   const decision = String(formData.get("decision") ?? "");
   if (!id || (decision !== "approved" && decision !== "denied")) return;
@@ -119,6 +150,7 @@ function parseOptionalNumber(
 }
 
 export async function updateEmployeeAction(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const name = String(formData.get("name") ?? "").trim();
@@ -171,6 +203,7 @@ export async function updateEmployeeAction(formData: FormData) {
 }
 
 export async function createProductAction(formData: FormData) {
+  await requireAdmin();
   const name = String(formData.get("name") ?? "").trim();
   const price = parseNumber(formData.get("price")) ?? 0;
   const anzahl_raten = parseNumber(formData.get("default_anzahl_raten"));
@@ -189,6 +222,7 @@ export async function createProductAction(formData: FormData) {
 }
 
 export async function updateProductAction(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const patch: Record<string, unknown> = {};
@@ -212,6 +246,7 @@ export async function updateProductAction(formData: FormData) {
 }
 
 export async function deleteProductAction(formData: FormData) {
+  await requireAdmin();
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await deleteProduct(id);
@@ -220,6 +255,7 @@ export async function deleteProductAction(formData: FormData) {
 }
 
 export async function inviteEmployeeAction(formData: FormData) {
+  await requireAdmin();
   const email = String(formData.get("email") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const hubspot_owner_id =
