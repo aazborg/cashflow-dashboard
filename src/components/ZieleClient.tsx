@@ -21,7 +21,6 @@ export interface TeamBaseline {
   showup_rate: number;
   close_rate: number;
   avg_contract_value: number;
-  avg_contract_deal_count: number;
   source: "snapshots" | "mixed" | "defaults";
 }
 
@@ -205,7 +204,7 @@ export default function ZieleClient({
     products.length === 0 && baseline.avg_contract_value > 0,
   );
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [avgAbschluesse, setAvgAbschluesse] = useState(0);
+  const [avgQualisPerWeek, setAvgQualisPerWeek] = useState(0);
   const [showup, setShowup] = useState(baseline.showup_rate);
   const [close, setClose] = useState(baseline.close_rate);
 
@@ -215,10 +214,15 @@ export default function ZieleClient({
 
   function reset() {
     setQuantities({});
-    setAvgAbschluesse(0);
+    setAvgQualisPerWeek(0);
     setShowup(baseline.showup_rate);
     setClose(baseline.close_rate);
   }
+
+  // Im avg-Mode aus Qualis/Woche × Showup × Close ableiten.
+  const avgQualisPerMonth = avgQualisPerWeek * WEEKS_PER_MONTH;
+  const avgAbschluesseTotal =
+    avgQualisPerMonth * (showup / 100) * (close / 100);
 
   const productLineItems = useMemo(
     () =>
@@ -235,10 +239,10 @@ export default function ZieleClient({
   const upsellItems = productLineItems.filter((x) => x.product.is_upsell);
 
   const abschluesseTotal = useAvgContract
-    ? avgAbschluesse
+    ? avgAbschluesseTotal
     : abschlussItems.reduce((s, x) => s + x.qty, 0);
   const umsatzAbschluss = useAvgContract
-    ? avgAbschluesse * baseline.avg_contract_value
+    ? avgAbschluesseTotal * baseline.avg_contract_value
     : abschlussItems.reduce((s, x) => s + x.revenue, 0);
   const umsatzUpsell = useAvgContract
     ? 0
@@ -274,7 +278,7 @@ export default function ZieleClient({
     if (useAvgContract) {
       // Mit dem Ø-Vertragswert: behandeln wir jeden Abschluss als Einmalzahlung
       // im Monat des Abschlusses (keine Raten-Verteilung bekannt).
-      const monthly = avgAbschluesse * baseline.avg_contract_value;
+      const monthly = avgAbschluesseTotal * baseline.avg_contract_value;
       for (let i = 0; i < horizon; i++) series[i].cashflow += monthly;
       return series;
     }
@@ -294,7 +298,7 @@ export default function ZieleClient({
       }
     }
     return series;
-  }, [useAvgContract, avgAbschluesse, baseline.avg_contract_value, productLineItems]);
+  }, [useAvgContract, avgAbschluesseTotal, baseline.avg_contract_value, productLineItems]);
 
   const cashflowMax = Math.max(1, ...cashflowSeries.map((p) => p.cashflow));
   const cashflow12mo = cashflowSeries
@@ -330,7 +334,7 @@ export default function ZieleClient({
             <span className="block text-xs text-[color:var(--muted)] mt-0.5">
               {avgContractDisabled
                 ? "Noch keine Won-Deals aus HubSpot synchronisiert — bitte erst im Admin importieren."
-                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)} (aus ${baseline.avg_contract_deal_count} gewonnenen Neukunden-Deals). Ohne Produkt-Definition planen — einfach Anzahl Abschlüsse pro Monat eintragen.`}
+                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)}. Ohne Produkt-Definition planen — einfach Anzahl Abschlüsse pro Monat eintragen.`}
             </span>
           </span>
         </label>
@@ -481,7 +485,7 @@ export default function ZieleClient({
           </h2>
           <p className="text-xs text-[color:var(--muted)] mt-1">
             {useAvgContract
-              ? `Wie viele Abschlüsse pro Monat? Wird mit dem Ø-Vertragswert (${formatEUR(baseline.avg_contract_value)}) multipliziert.`
+              ? `Stell ein, wie viele Beratungsgespräche pro Woche du vereinbarst — Showup- und Closing-Rate (oben) ergeben automatisch die Abschlüsse, multipliziert mit dem Ø-Vertragswert (${formatEUR(baseline.avg_contract_value)}).`
               : "Trag hier ein, wie viele Stück du pro Monat von welchem Produkt verkaufen willst."}
           </p>
         </div>
@@ -494,23 +498,35 @@ export default function ZieleClient({
       </div>
 
       {useAvgContract ? (
-        <section className="bg-white border border-[color:var(--border)] rounded-lg p-4">
-          <label className="block">
-            <span className="text-sm font-medium">Abschlüsse / Monat</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={avgAbschluesse || ""}
-              placeholder="0"
-              onChange={(e) => setAvgAbschluesse(Math.max(0, Math.round(Number(e.target.value) || 0)))}
-              className="mt-2 block w-full sm:w-40 border border-[color:var(--border)] rounded px-3 py-2 text-lg tabular-nums bg-white"
-            />
-          </label>
-          <div className="text-xs text-[color:var(--muted)] mt-2">
-            Umsatz/Monat: <span className="font-medium text-[color:var(--foreground)]">{formatEUR(umsatzAbschluss)}</span>
-            {" — "}
-            {avgAbschluesse} × {formatEUR(baseline.avg_contract_value)}
+        <section className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-3">
+          <SliderRow
+            label="Qualis vereinbart / Woche"
+            min={0}
+            max={75}
+            step={1}
+            value={avgQualisPerWeek}
+            onChange={(v) => setAvgQualisPerWeek(Math.round(v))}
+            accent="blue"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-[color:var(--muted)] pt-2">
+            <div>
+              Qualis / Monat:{" "}
+              <span className="font-medium text-[color:var(--foreground)] tabular-nums">
+                {avgQualisPerMonth.toLocaleString("de-AT")}
+              </span>
+            </div>
+            <div>
+              Abschlüsse / Monat:{" "}
+              <span className="font-medium text-[color:var(--foreground)] tabular-nums">
+                {avgAbschluesseTotal.toLocaleString("de-AT", { maximumFractionDigits: 1 })}
+              </span>
+            </div>
+            <div>
+              Umsatz / Monat:{" "}
+              <span className="font-medium text-[color:var(--foreground)] tabular-nums">
+                {formatEUR(umsatzAbschluss)}
+              </span>
+            </div>
           </div>
         </section>
       ) : products.length === 0 ? (

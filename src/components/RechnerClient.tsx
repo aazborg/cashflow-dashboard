@@ -128,12 +128,10 @@ export default function RechnerClient({
   employees,
   nowIso,
   teamAvgContract,
-  teamAvgContractDealCount,
 }: {
   employees: EmployeeOption[];
   nowIso: string;
   teamAvgContract: number;
-  teamAvgContractDealCount: number;
 }) {
   const [mode, setMode] = useState<"provision" | "umsatz">("provision");
   const [employeeId, setEmployeeId] = useState(employees[0]?.id ?? "");
@@ -323,7 +321,7 @@ export default function RechnerClient({
               <span className="text-[color:var(--muted)] ml-1">
                 {umsatzDisabled
                   ? "(noch kein Ø-Vertragswert)"
-                  : `(Ø ${formatEUR(teamAvgContract)} aus ${teamAvgContractDealCount} Won-Deals)`}
+                  : `(Ø ${formatEUR(teamAvgContract)})`}
               </span>
             </span>
           </label>

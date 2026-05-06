@@ -29,12 +29,14 @@ export default async function RechnerPage() {
   const from = new Date(now.getFullYear(), 0, 1);
   const until = new Date(now.getFullYear() + 1, 11, 1);
 
-  const hubspotDeals = deals.filter(
-    (d) => d.source === "hubspot" && d.betrag > 0,
-  );
+  // Team-Ø-Vertragswert aus den HubSpot-Monats-Snapshots (avg_contract pro
+  // Mitarbeiter pro Monat, gemittelt über alle Snapshots mit Wert).
+  const snapshotAvgs = allSnapshots
+    .map((s) => s.avg_contract)
+    .filter((v): v is number => typeof v === "number" && v > 0);
   const teamAvgContract =
-    hubspotDeals.length > 0
-      ? hubspotDeals.reduce((s, d) => s + d.betrag, 0) / hubspotDeals.length
+    snapshotAvgs.length > 0
+      ? snapshotAvgs.reduce((s, v) => s + v, 0) / snapshotAvgs.length
       : 0;
 
   // Members see only their own row; admins see all members.
@@ -88,7 +90,6 @@ export default async function RechnerPage() {
           employees={options}
           nowIso={now.toISOString()}
           teamAvgContract={teamAvgContract}
-          teamAvgContractDealCount={hubspotDeals.length}
         />
       )}
     </div>

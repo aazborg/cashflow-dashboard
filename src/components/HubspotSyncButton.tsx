@@ -94,7 +94,7 @@ export default function HubspotSyncButton() {
             {snapshotsResult.summary.from_month} bis{" "}
             {snapshotsResult.summary.to_month};{" "}
             {snapshotsResult.summary.meetings_total} Meetings,{" "}
-            {snapshotsResult.summary.won_total} Won-Deals
+            {snapshotsResult.summary.closed_deals_total} Won/Lost-Deals
             {snapshotsResult.summary.unmatched_owners > 0
               ? `, ${snapshotsResult.summary.unmatched_owners} unbekannte Owner`
               : ""}

@@ -7,7 +7,7 @@ import {
 const HUBSPOT_BASE = "https://api.hubapi.com";
 const MEETING_TYPE = "Beratungsgespräch";
 const STAGE_WON = CLOSED_WON_STAGE_ID;
-const STAGE_WON_ENTERED_PROP = `hs_v2_date_entered_${STAGE_WON}`;
+const STAGE_LOST = "2174705851"; // Closed Lost (Neukunden)
 
 // Meeting outcomes that count as a "Quali" (booked Beratungsgespräch with a
 // real outcome). SCHEDULED and empty are excluded — those are not yet
@@ -18,6 +18,11 @@ const QUALI_OUTCOMES = new Set([
   "NO_SHOW",
   "RESCHEDULED",
 ]);
+
+// Wie viele Monate Beratungsgespräche VOR dem Snapshot-Range mitgeholt
+// werden, damit Closed-Won/Lost-Deals, deren Beratung in einem früheren
+// Monat lag, beim Closing-Ratio-Filter trotzdem als "erschienen" gelten.
+const MEETING_LOOKBACK_MONTHS = 12;
 
 interface HubspotMeeting {
   id: string;
@@ -33,6 +38,8 @@ interface HubspotDeal {
     amount?: string;
     hubspot_owner_id?: string;
     pipeline?: string;
+    dealstage?: string;
+    closedate?: string;
     [key: string]: string | undefined;
   };
 }
@@ -87,6 +94,20 @@ function listMonthsFromTo(fromMonth: string, toMonth: string): string[] {
     }
   }
   return out;
+}
+
+function addMonths(monthKey: string, delta: number): string {
+  let [y, m] = monthKey.split("-").map(Number);
+  m += delta;
+  while (m < 1) {
+    m += 12;
+    y -= 1;
+  }
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  return `${y}-${String(m).padStart(2, "0")}`;
 }
 
 async function fetchAllMeetings(
@@ -165,7 +186,11 @@ async function fetchDealsByIds(
   return out;
 }
 
-async function fetchWonDealsInRange(
+/**
+ * Liest alle Won + Lost Deals der Neukunden-Pipeline mit closedate im
+ * Range — unabhängig davon, wann das Beratungsgespräch stattfand.
+ */
+async function fetchClosedDealsByCloseDate(
   token: string,
   fromMs: number,
   toMs: number,
@@ -178,14 +203,14 @@ async function fetchWonDealsInRange(
         {
           filters: [
             { propertyName: "pipeline", operator: "EQ", value: NEUKUNDEN_PIPELINE_ID },
-            { propertyName: "dealstage", operator: "EQ", value: STAGE_WON },
-            { propertyName: STAGE_WON_ENTERED_PROP, operator: "GTE", value: String(fromMs) },
-            { propertyName: STAGE_WON_ENTERED_PROP, operator: "LT", value: String(toMs) },
+            { propertyName: "dealstage", operator: "IN", values: [STAGE_WON, STAGE_LOST] },
+            { propertyName: "closedate", operator: "GTE", value: String(fromMs) },
+            { propertyName: "closedate", operator: "LT", value: String(toMs) },
           ],
         },
       ],
-      properties: ["amount", "hubspot_owner_id", STAGE_WON_ENTERED_PROP],
-      sorts: [{ propertyName: STAGE_WON_ENTERED_PROP, direction: "ASCENDING" }],
+      properties: ["amount", "hubspot_owner_id", "dealstage", "closedate"],
+      sorts: [{ propertyName: "closedate", direction: "ASCENDING" }],
       limit: 100,
     };
     if (after) body.after = after;
@@ -203,15 +228,16 @@ async function fetchWonDealsInRange(
 interface Bucket {
   qualis: number;
   showups: number;
-  won: number;
-  sumAmount: number;
+  wonAttended: number;
+  lostAttended: number;
+  sumAmountWonAttended: number;
 }
 
 export interface SnapshotsSyncSummary {
   from_month: string;
   to_month: string;
   meetings_total: number;
-  won_total: number;
+  closed_deals_total: number;
   snapshots_written: number;
   unmatched_owners: number;
   duration_ms: number;
@@ -230,8 +256,16 @@ export async function syncMonthlySnapshots(
   if (months.length === 0) {
     throw new Error("Leerer Monatsbereich.");
   }
-  const fromMs = monthEdges(months[0]).startMs;
-  const toMs = monthEdges(months[months.length - 1]).endMs;
+
+  // Snapshot-Range (Deal-closedate-Filter, Showup-Aggregation):
+  const rangeFromMs = monthEdges(months[0]).startMs;
+  const rangeToMs = monthEdges(months[months.length - 1]).endMs;
+
+  // Erweiterter Meetings-Range — auch frühere Beratungsgespräche
+  // berücksichtigen, deren Deal erst später closed.
+  const meetingsFromMs = monthEdges(
+    addMonths(months[0], -MEETING_LOOKBACK_MONTHS),
+  ).startMs;
 
   const employees = await listEmployees();
   const employeesByOwnerId = new Map(
@@ -240,8 +274,8 @@ export async function syncMonthlySnapshots(
       .map((e) => [e.hubspot_owner_id as string, e] as const),
   );
 
-  // 1. Meetings
-  const meetings = await fetchAllMeetings(token, fromMs, toMs);
+  // 1. Meetings (erweiterter Range für Closing-Ratio-Cross-Check)
+  const meetings = await fetchAllMeetings(token, meetingsFromMs, rangeToMs);
 
   // 2. Meeting → Deal associations
   const m2d = await fetchMeetingDealAssoc(
@@ -249,27 +283,49 @@ export async function syncMonthlySnapshots(
     meetings.map((m) => m.id),
   );
 
-  // 3. Resolve deal-owner for all involved deals
+  // 3. Resolve deal-owner für alle assoz. Deals (für Showup-Aggregation)
   const involvedDealIds = Array.from(
     new Set(Array.from(m2d.values()).flat()),
   );
-  const deals = await fetchDealsByIds(token, involvedDealIds);
+  const dealsForMeetings = await fetchDealsByIds(token, involvedDealIds);
 
-  // 4. Won deals in range (Neukunden, Closed Won, by stage-entered date)
-  const wonDeals = await fetchWonDealsInRange(token, fromMs, toMs);
+  // 4. Closed (Won + Lost) Deals der Neukunden-Pipeline mit closedate
+  // im Range
+  const closedDeals = await fetchClosedDealsByCloseDate(
+    token,
+    rangeFromMs,
+    rangeToMs,
+  );
 
-  // 5. Aggregate per (owner, month)
+  // 5. Build Set: Deals, die mit einem Beratungsgespräch (COMPLETED)
+  // verknüpft sind. Wird für die Closing-Ratio-Filterung verwendet.
+  const dealsWithCompletedBeratung = new Set<string>();
+  for (const m of meetings) {
+    if (m.properties.hs_meeting_outcome !== "COMPLETED") continue;
+    for (const did of m2d.get(m.id) ?? []) {
+      dealsWithCompletedBeratung.add(did);
+    }
+  }
+
+  // 6. Aggregate per (owner, month)
   const buckets = new Map<string, Bucket>();
   function getBucket(owner: string, month: string): Bucket {
     const key = `${owner}|${month}`;
     let b = buckets.get(key);
     if (!b) {
-      b = { qualis: 0, showups: 0, won: 0, sumAmount: 0 };
+      b = {
+        qualis: 0,
+        showups: 0,
+        wonAttended: 0,
+        lostAttended: 0,
+        sumAmountWonAttended: 0,
+      };
       buckets.set(key, b);
     }
     return b;
   }
 
+  // 6a. Showup-/Quali-Aggregation aus den Meetings im Snapshot-Range
   for (const m of meetings) {
     const ts = m.properties.hs_timestamp;
     const outcome = m.properties.hs_meeting_outcome;
@@ -279,7 +335,7 @@ export async function syncMonthlySnapshots(
     const dealIds = m2d.get(m.id) ?? [];
     const owners = new Set<string>();
     for (const did of dealIds) {
-      const d = deals.get(did);
+      const d = dealsForMeetings.get(did);
       const oid = d?.properties.hubspot_owner_id;
       if (oid) owners.add(oid);
     }
@@ -290,18 +346,25 @@ export async function syncMonthlySnapshots(
     }
   }
 
-  for (const d of wonDeals) {
-    const ts = d.properties[STAGE_WON_ENTERED_PROP];
+  // 6b. Closing-Ratio (Won + Lost mit erschienenem Beratungsgespräch)
+  for (const d of closedDeals) {
+    const ts = d.properties.closedate;
     const owner = d.properties.hubspot_owner_id;
-    if (!ts || !owner) continue;
+    const stage = d.properties.dealstage;
+    if (!ts || !owner || !stage) continue;
+    if (!dealsWithCompletedBeratung.has(d.id)) continue; // nur erschienene
     const month = monthKeyFromIso(ts);
     if (!months.includes(month)) continue;
     const b = getBucket(owner, month);
-    b.won += 1;
-    b.sumAmount += Number(d.properties.amount ?? 0);
+    if (stage === STAGE_WON) {
+      b.wonAttended += 1;
+      b.sumAmountWonAttended += Number(d.properties.amount ?? 0);
+    } else if (stage === STAGE_LOST) {
+      b.lostAttended += 1;
+    }
   }
 
-  // 6. Persist as monthly_snapshots — only for owners we know.
+  // 7. Persist as monthly_snapshots — only for owners we know.
   let unmatched = 0;
   let written = 0;
   for (const [key, b] of buckets) {
@@ -312,8 +375,11 @@ export async function syncMonthlySnapshots(
       continue;
     }
     const showupRate = b.qualis > 0 ? (b.showups / b.qualis) * 100 : 0;
-    const closeRate = b.showups > 0 ? (b.won / b.showups) * 100 : 0;
-    const avgContract = b.won > 0 ? b.sumAmount / b.won : null;
+    const closedTotal = b.wonAttended + b.lostAttended;
+    const closeRate =
+      closedTotal > 0 ? (b.wonAttended / closedTotal) * 100 : 0;
+    const avgContract =
+      b.wonAttended > 0 ? b.sumAmountWonAttended / b.wonAttended : null;
     await upsertMonthlySnapshot({
       mitarbeiter_id: emp.hubspot_owner_id ?? emp.id,
       month,
@@ -329,7 +395,7 @@ export async function syncMonthlySnapshots(
     from_month: months[0],
     to_month: months[months.length - 1],
     meetings_total: meetings.length,
-    won_total: wonDeals.length,
+    closed_deals_total: closedDeals.length,
     snapshots_written: written,
     unmatched_owners: unmatched,
     duration_ms: Date.now() - started,
