@@ -14,6 +14,10 @@ import {
   updateProduct,
 } from "./store";
 import { syncHubspotWonDeals, type SyncSummary } from "./hubspot-sync";
+import {
+  syncMonthlySnapshots,
+  type SnapshotsSyncSummary,
+} from "./hubspot-snapshots-sync";
 import { getSessionContext } from "./supabase-server";
 import type { Intervall } from "./types";
 import { INTERVALL_OPTIONS } from "./types";
@@ -278,6 +282,33 @@ export async function syncHubspotDealsAction(): Promise<SyncResult> {
     const summary = await syncHubspotWonDeals();
     revalidatePath("/daten");
     revalidatePath("/");
+    return { ok: true, summary };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export interface SnapshotsResult {
+  ok: boolean;
+  summary?: SnapshotsSyncSummary;
+  error?: string;
+}
+
+export async function syncHubspotSnapshotsAction(): Promise<SnapshotsResult> {
+  await requireAdmin();
+  try {
+    const now = new Date();
+    const toMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const summary = await syncMonthlySnapshots({
+      fromMonth: "2026-01",
+      toMonth,
+    });
+    revalidatePath("/");
+    revalidatePath("/rechner");
+    revalidatePath("/ziele");
     return { ok: true, summary };
   } catch (err) {
     return {

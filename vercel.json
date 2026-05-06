@@ -3,6 +3,10 @@
     {
       "path": "/cashflow/api/sync/hubspot/deals",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/cashflow/api/sync/hubspot/snapshots",
+      "schedule": "30 6 1 * *"
     }
   ]
 }
