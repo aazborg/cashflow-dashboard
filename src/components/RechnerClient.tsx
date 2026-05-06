@@ -323,7 +323,7 @@ export default function RechnerClient({
               <span className="text-[color:var(--muted)] ml-1">
                 {umsatzDisabled
                   ? "(noch kein Ø-Vertragswert)"
-                  : `(Ø ${formatEUR(teamAvgContract)})`}
+                  : `(Ø ${formatEUR(teamAvgContract)} aus ${teamAvgContractDealCount} Won-Deals)`}
               </span>
             </span>
           </label>
@@ -383,7 +383,7 @@ export default function RechnerClient({
 
       <div className="bg-[color:var(--brand-yellow)]/20 border border-[color:var(--brand-yellow)] rounded-lg px-4 py-2 text-xs">
         <strong>Ausgangslage:</strong> {baseline.label} —{" "}
-        {baseline.qualis} Qualis · {baseline.showup} % Showup · {baseline.close} % Closing.
+        {baseline.qualis} Qualis · {Math.round(baseline.showup)} % Showup · {Math.round(baseline.close)} % Closing.
         Stell dir vor: <strong>diesen Monat</strong> hättest du an einem der Slider
         gedreht. Was hätte das gebracht? Der Effekt verteilt sich auf die
         Folgemonate, ist aber <strong>einmalig</strong> — nicht jeden Monat aufs Neue.
@@ -399,8 +399,28 @@ export default function RechnerClient({
           onChange={(weekly) => setQualis(weekly * WEEKS_PER_MONTH)}
           accent="blue"
         />
-        <SliderRow label="Showup-Rate" unit="%" min={0} max={100} step={1} value={showup} onChange={setShowup} accent="orange" />
-        <SliderRow label="Closing-Rate" unit="%" min={0} max={100} step={1} value={close} onChange={setClose} accent="green" />
+        <SliderRow
+          label="Showup-Rate"
+          unit="%"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.round(showup)}
+          onChange={(v) => setShowup(Math.round(v))}
+          format={(v) => Math.round(v).toString()}
+          accent="orange"
+        />
+        <SliderRow
+          label="Closing-Rate"
+          unit="%"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.round(close)}
+          onChange={(v) => setClose(Math.round(v))}
+          format={(v) => Math.round(v).toString()}
+          accent="green"
+        />
       </div>
 
       <div className="bg-[color:var(--brand-grey)]/40 border border-[color:var(--border)] rounded-lg px-4 py-3">

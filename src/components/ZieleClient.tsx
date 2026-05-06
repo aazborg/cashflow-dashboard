@@ -329,8 +329,8 @@ export default function ZieleClient({
             </span>
             <span className="block text-xs text-[color:var(--muted)] mt-0.5">
               {avgContractDisabled
-                ? "Kein Ø-Vertragswert hinterlegt."
-                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)}. Ohne Produkt-Definition planen — einfach Anzahl Abschlüsse pro Monat eintragen.`}
+                ? "Noch keine Won-Deals aus HubSpot synchronisiert — bitte erst im Admin importieren."
+                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)} (aus ${baseline.avg_contract_deal_count} gewonnenen Neukunden-Deals). Ohne Produkt-Definition planen — einfach Anzahl Abschlüsse pro Monat eintragen.`}
             </span>
           </span>
         </label>

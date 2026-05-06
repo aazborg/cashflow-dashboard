@@ -3,6 +3,7 @@ import ZieleClient, {
   type ProductOption,
 } from "@/components/ZieleClient";
 import {
+  listDeals,
   listEmployees,
   listMonthlySnapshots,
   listProducts,
@@ -16,14 +17,20 @@ export default async function ZielePage() {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
   if (!ctx.isAdmin) redirect("/");
-  const [employees, snapshots, products] = await Promise.all([
+  const [employees, snapshots, products, deals] = await Promise.all([
     listEmployees(),
     listMonthlySnapshots(),
     listProducts(),
+    listDeals(),
   ]);
 
-  // Fixer Ø-Vertragswert für Planungs-Rechnungen (Rechner & Ziele).
-  const avgContractValue = 8789;
+  const hubspotDeals = deals.filter(
+    (d) => d.source === "hubspot" && d.betrag > 0,
+  );
+  const avgContractValue =
+    hubspotDeals.length > 0
+      ? hubspotDeals.reduce((s, d) => s + d.betrag, 0) / hubspotDeals.length
+      : 0;
 
   const members = employees.filter((e) => e.role === "member" && e.active);
 
@@ -68,7 +75,7 @@ export default async function ZielePage() {
     showup_rate: teamShowup,
     close_rate: teamClose,
     avg_contract_value: avgContractValue,
-    avg_contract_deal_count: 0,
+    avg_contract_deal_count: hubspotDeals.length,
     source:
       withSnap.length > 0
         ? withSnap.length === members.length
