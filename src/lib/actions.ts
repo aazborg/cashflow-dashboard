@@ -9,6 +9,7 @@ import {
   deleteProduct,
   getDeal,
   inviteEmployee,
+  listEmployees,
   updateDeal,
   updateEmployee,
   updateProduct,
@@ -165,6 +166,7 @@ export async function updateEmployeeAction(formData: FormData) {
   const patch: Partial<{
     name: string;
     hubspot_owner_id: string | null;
+    role: "admin" | "member";
     provision_pct: number | null;
     default_qualis: number | null;
     default_showup_rate: number | null;
@@ -173,6 +175,21 @@ export async function updateEmployeeAction(formData: FormData) {
   }> = {};
   if (name) patch.name = name;
   patch.hubspot_owner_id = hubspot_owner_id;
+
+  const roleRaw = String(formData.get("role") ?? "").trim();
+  if (roleRaw === "admin" || roleRaw === "member") patch.role = roleRaw;
+
+  // Schutz: nicht den letzten aktiven Admin auf member herabstufen.
+  if (patch.role === "member") {
+    const all = await listEmployees();
+    const activeAdmins = all.filter((e) => e.role === "admin" && e.active);
+    const isCurrentlyActiveAdmin = activeAdmins.some((e) => e.id === id);
+    if (isCurrentlyActiveAdmin && activeAdmins.length <= 1) {
+      throw new Error(
+        "Mindestens ein aktiver Admin muss bestehen bleiben.",
+      );
+    }
+  }
 
   const provision = parseOptionalNumber(formData.get("provision_pct"), {
     min: 0,

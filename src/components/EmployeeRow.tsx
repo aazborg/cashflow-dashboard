@@ -11,6 +11,7 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(employee.name);
   const [ownerId, setOwnerId] = useState(employee.hubspot_owner_id ?? "");
+  const [role, setRole] = useState<"admin" | "member">(employee.role);
   const [provision, setProvision] = useState(
     employee.provision_pct != null ? String(employee.provision_pct) : "",
   );
@@ -37,6 +38,7 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   function reset() {
     setName(employee.name);
     setOwnerId(employee.hubspot_owner_id ?? "");
+    setRole(employee.role);
     setProvision(
       employee.provision_pct != null ? String(employee.provision_pct) : "",
     );
@@ -60,19 +62,27 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     );
   }
 
+  const [error, setError] = useState<string | null>(null);
+
   function save() {
     const fd = new FormData();
     fd.set("id", employee.id);
     fd.set("name", name);
     fd.set("hubspot_owner_id", ownerId);
+    fd.set("role", role);
     fd.set("provision_pct", provision);
     fd.set("default_qualis", qualis);
     fd.set("default_showup_rate", showup);
     fd.set("default_close_rate", quote);
     fd.set("default_avg_contract", avg);
+    setError(null);
     startTransition(async () => {
-      await updateEmployeeAction(fd);
-      setEditing(false);
+      try {
+        await updateEmployeeAction(fd);
+        setEditing(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     });
   }
 
@@ -132,15 +142,26 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
           )}
         </td>
         <td className="px-3 py-2">
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full ${
-              employee.role === "admin"
-                ? "bg-[color:var(--brand-blue)]/15 text-[color:var(--brand-blue)]"
-                : "bg-[color:var(--brand-grey)] text-[color:var(--muted)]"
-            }`}
-          >
-            {employee.role}
-          </span>
+          {editing ? (
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as "admin" | "member")}
+              className="border border-[color:var(--border)] rounded px-2 py-1 text-sm bg-white"
+            >
+              <option value="member">member</option>
+              <option value="admin">admin</option>
+            </select>
+          ) : (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full ${
+                employee.role === "admin"
+                  ? "bg-[color:var(--brand-blue)]/15 text-[color:var(--brand-blue)]"
+                  : "bg-[color:var(--brand-grey)] text-[color:var(--muted)]"
+              }`}
+            >
+              {employee.role}
+            </span>
+          )}
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
           {editing ? (
@@ -156,6 +177,7 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
                 onClick={() => {
                   reset();
                   setEditing(false);
+                  setError(null);
                 }}
                 disabled={pending}
                 className="text-xs px-3 py-1 rounded border border-[color:var(--border)]"
@@ -173,6 +195,13 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
           )}
         </td>
       </tr>
+      {error ? (
+        <tr className="bg-red-50 border-b border-red-200">
+          <td colSpan={ADMIN_COL_COUNT} className="px-3 py-1.5 text-xs text-red-700">
+            ⚠️ {error}
+          </td>
+        </tr>
+      ) : null}
       <tr className="bg-[color:var(--surface)]/50 border-b border-[color:var(--border)]">
         <td colSpan={ADMIN_COL_COUNT} className="px-3 py-2 text-xs">
           {editing ? (

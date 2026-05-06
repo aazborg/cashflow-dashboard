@@ -261,6 +261,7 @@ export async function updateEmployee(
       | "name"
       | "hubspot_owner_id"
       | "active"
+      | "role"
       | "provision_pct"
       | "default_qualis"
       | "default_showup_rate"
@@ -270,7 +271,7 @@ export async function updateEmployee(
   >,
 ): Promise<Employee | null> {
   const allowed = [
-    "name", "hubspot_owner_id", "active",
+    "name", "hubspot_owner_id", "active", "role",
     "provision_pct", "default_qualis", "default_showup_rate",
     "default_close_rate", "default_avg_contract",
   ] as const;
