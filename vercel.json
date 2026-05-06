@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/cashflow/api/sync/hubspot/deals",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

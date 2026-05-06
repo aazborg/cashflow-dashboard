@@ -32,7 +32,8 @@ export async function proxy(request: NextRequest) {
 
   const isPublic =
     PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + "/")) ||
-    path.startsWith("/api/webhooks/");
+    path.startsWith("/api/webhooks/") ||
+    path.startsWith("/api/sync/");
 
   if (!data.user && !isPublic) {
     const url = request.nextUrl.clone();

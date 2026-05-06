@@ -1,5 +1,6 @@
 import DecideDeleteButtons from "@/components/DecideDeleteButtons";
 import EmployeeRow from "@/components/EmployeeRow";
+import HubspotSyncButton from "@/components/HubspotSyncButton";
 import InviteForm from "@/components/InviteForm";
 import NewProductForm from "@/components/NewProductForm";
 import ProductRow from "@/components/ProductRow";
@@ -36,6 +37,19 @@ export default async function AdminPage() {
           Lösch-Anfragen freigeben und Mitarbeiter einladen.
         </p>
       </div>
+
+      <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-[color:var(--border)]">
+          <h2 className="font-semibold">HubSpot-Synchronisation</h2>
+          <p className="text-xs text-[color:var(--muted)] mt-1">
+            Won-Deals aus der Pipeline „Neukunden". Webhook-Events kommen sofort,
+            der Cron alle 30 Min ist Sicherheitsnetz.
+          </p>
+        </div>
+        <div className="px-4 py-3">
+          <HubspotSyncButton />
+        </div>
+      </section>
 
       <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-[color:var(--border)] flex justify-between items-center">

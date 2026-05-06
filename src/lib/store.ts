@@ -143,6 +143,74 @@ export async function upsertDealByHubspotId(
   return rowToDeal(row as DealRow);
 }
 
+export async function getDealByHubspotId(
+  hubspot_deal_id: string,
+): Promise<Deal | null> {
+  const { data, error } = await supabaseAdmin()
+    .from("deals")
+    .select("*")
+    .eq("hubspot_deal_id", hubspot_deal_id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? rowToDeal(data as DealRow) : null;
+}
+
+/**
+ * Upsert from HubSpot sync. Preserves user-edited fields
+ * (start_datum, anzahl_raten, intervall) when the deal already exists.
+ */
+export async function upsertHubspotDealPreservingUserFields(
+  hubspot_deal_id: string,
+  data: {
+    vorname: string;
+    nachname: string;
+    email: string | null;
+    mitarbeiter_id: string;
+    mitarbeiter_name: string;
+    betrag: number;
+    default_start_datum: string | null;
+  },
+): Promise<{ deal: Deal; created: boolean }> {
+  const existing = await getDealByHubspotId(hubspot_deal_id);
+  if (existing) {
+    const { data: row, error } = await supabaseAdmin()
+      .from("deals")
+      .update({
+        vorname: data.vorname,
+        nachname: data.nachname,
+        email: data.email,
+        mitarbeiter_id: data.mitarbeiter_id,
+        mitarbeiter_name: data.mitarbeiter_name,
+        betrag: data.betrag,
+      })
+      .eq("hubspot_deal_id", hubspot_deal_id)
+      .select()
+      .single();
+    if (error) throw error;
+    return { deal: rowToDeal(row as DealRow), created: false };
+  }
+  const { data: row, error } = await supabaseAdmin()
+    .from("deals")
+    .insert({
+      hubspot_deal_id,
+      source: "hubspot" as const,
+      vorname: data.vorname,
+      nachname: data.nachname,
+      email: data.email,
+      mitarbeiter_id: data.mitarbeiter_id,
+      mitarbeiter_name: data.mitarbeiter_name,
+      betrag: data.betrag,
+      start_datum: data.default_start_datum,
+      anzahl_raten: null,
+      intervall: null,
+      pending_delete: false,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return { deal: rowToDeal(row as DealRow), created: true };
+}
+
 // ── Employees ──────────────────────────────────────────────────────────────
 
 interface EmployeeRow {

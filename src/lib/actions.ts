@@ -13,6 +13,7 @@ import {
   updateEmployee,
   updateProduct,
 } from "./store";
+import { syncHubspotWonDeals, type SyncSummary } from "./hubspot-sync";
 import { getSessionContext } from "./supabase-server";
 import type { Intervall } from "./types";
 import { INTERVALL_OPTIONS } from "./types";
@@ -263,4 +264,25 @@ export async function inviteEmployeeAction(formData: FormData) {
   if (!email || !name) return;
   await inviteEmployee({ email, name, hubspot_owner_id });
   revalidatePath("/admin");
+}
+
+export interface SyncResult {
+  ok: boolean;
+  summary?: SyncSummary;
+  error?: string;
+}
+
+export async function syncHubspotDealsAction(): Promise<SyncResult> {
+  await requireAdmin();
+  try {
+    const summary = await syncHubspotWonDeals();
+    revalidatePath("/daten");
+    revalidatePath("/");
+    return { ok: true, summary };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
