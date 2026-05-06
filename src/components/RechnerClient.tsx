@@ -306,12 +306,7 @@ export default function RechnerClient({
               onChange={() => setMode("provision")}
               className="accent-[color:var(--brand-blue)]"
             />
-            <span className="text-sm">
-              <span className="font-medium">Eigene Provision</span>
-              <span className="text-[color:var(--muted)] ml-1">
-                ({employeeProvision} % auf Cashflow)
-              </span>
-            </span>
+            <span className="text-sm font-medium">Eigene Provision</span>
           </label>
           <label className={`flex items-center gap-2 ${umsatzDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
             <input

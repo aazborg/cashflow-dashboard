@@ -137,16 +137,9 @@ export default async function DashboardPage({
                   </div>
                   {auszahlung != null ? (
                     <div className="text-sm tabular-nums mt-1 pl-2 text-[color:var(--brand-green)] font-medium">
-                      → {formatEUR(auszahlung)}{" "}
-                      <span className="text-xs text-[color:var(--muted)] font-normal">
-                        ({provPct} % Auszahlung)
-                      </span>
+                      → {formatEUR(auszahlung)}
                     </div>
-                  ) : (
-                    <div className="text-xs text-[color:var(--muted)] mt-1 pl-2 italic">
-                      kein Provisionssatz hinterlegt
-                    </div>
-                  )}
+                  ) : null}
                   <div className="text-xs text-[color:var(--muted)] mt-1 pl-2">
                     {r.openPayments} Raten · {r.dealCount} Deals
                   </div>
@@ -238,17 +231,8 @@ export default async function DashboardPage({
 
       {currentName ? (
         <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-[color:var(--border)] flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-[color:var(--border)]">
             <h2 className="font-semibold">Monatsübersicht · {currentName}</h2>
-            {filterId && provisionByMitId.has(filterId) ? (
-              <span className="text-xs text-[color:var(--muted)]">
-                Provisionssatz {provisionByMitId.get(filterId)} %
-              </span>
-            ) : (
-              <span className="text-xs text-[color:var(--brand-orange)]">
-                Provisionssatz im Admin hinterlegen, um Auszahlung zu sehen
-              </span>
-            )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
