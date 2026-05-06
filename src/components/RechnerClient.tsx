@@ -323,7 +323,7 @@ export default function RechnerClient({
               <span className="text-[color:var(--muted)] ml-1">
                 {umsatzDisabled
                   ? "(noch kein Ø-Vertragswert)"
-                  : `(Ø ${formatEUR(teamAvgContract)} aus ${teamAvgContractDealCount} Won-Deals)`}
+                  : `(Ø ${formatEUR(teamAvgContract)})`}
               </span>
             </span>
           </label>
