@@ -156,10 +156,11 @@ export async function getDealByHubspotId(
 }
 
 /**
- * Upsert from HubSpot sync. Preserves user-edited fields
- * (start_datum, anzahl_raten, intervall) when the deal already exists.
+ * Insert-only HubSpot import: legt einen Deal an, wenn er noch nicht
+ * existiert. Wenn ein Deal mit dieser hubspot_deal_id schon da ist, wird
+ * NICHTS überschrieben — bestehende Daten bleiben unverändert.
  */
-export async function upsertHubspotDealPreservingUserFields(
+export async function insertHubspotDealIfMissing(
   hubspot_deal_id: string,
   data: {
     vorname: string;
@@ -173,21 +174,7 @@ export async function upsertHubspotDealPreservingUserFields(
 ): Promise<{ deal: Deal; created: boolean }> {
   const existing = await getDealByHubspotId(hubspot_deal_id);
   if (existing) {
-    const { data: row, error } = await supabaseAdmin()
-      .from("deals")
-      .update({
-        vorname: data.vorname,
-        nachname: data.nachname,
-        email: data.email,
-        mitarbeiter_id: data.mitarbeiter_id,
-        mitarbeiter_name: data.mitarbeiter_name,
-        betrag: data.betrag,
-      })
-      .eq("hubspot_deal_id", hubspot_deal_id)
-      .select()
-      .single();
-    if (error) throw error;
-    return { deal: rowToDeal(row as DealRow), created: false };
+    return { deal: existing, created: false };
   }
   const { data: row, error } = await supabaseAdmin()
     .from("deals")

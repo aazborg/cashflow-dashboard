@@ -34,8 +34,9 @@ export default function HubspotSyncButton() {
       {result?.ok && result.summary ? (
         <div className="text-xs text-[color:var(--muted)]">
           ✓ Fertig in {(result.summary.duration_ms / 1000).toFixed(1)}s —{" "}
-          {result.summary.total} Deals (
-          {result.summary.created} neu, {result.summary.updated} aktualisiert
+          {result.summary.total} Deals geprüft (
+          {result.summary.created} neu angelegt,{" "}
+          {result.summary.skipped_existing} bereits vorhanden, unverändert
           {result.summary.unmatched_owners > 0
             ? `, ${result.summary.unmatched_owners} ohne Mitarbeiter-Zuordnung`
             : ""}

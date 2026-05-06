@@ -1,6 +1,6 @@
 import {
+  insertHubspotDealIfMissing,
   listEmployees,
-  upsertHubspotDealPreservingUserFields,
 } from "./store";
 
 const HUBSPOT_BASE = "https://api.hubapi.com";
@@ -78,7 +78,7 @@ export interface SyncSummary {
   total: number;
   pages: number;
   created: number;
-  updated: number;
+  skipped_existing: number;
   unmatched_owners: number;
   errors: { hubspot_deal_id: string; message: string }[];
   duration_ms: number;
@@ -105,7 +105,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
   let pages = 0;
   let total = 0;
   let created = 0;
-  let updated = 0;
+  let skipped_existing = 0;
   let unmatched_owners = 0;
   const errors: SyncSummary["errors"] = [];
 
@@ -183,7 +183,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
         const close = item.properties.closedate ?? null;
         const default_start_datum = close ? close.slice(0, 10) : null;
 
-        const result = await upsertHubspotDealPreservingUserFields(item.id, {
+        const result = await insertHubspotDealIfMissing(item.id, {
           vorname,
           nachname,
           email: null,
@@ -193,7 +193,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
           default_start_datum,
         });
         if (result.created) created++;
-        else updated++;
+        else skipped_existing++;
       } catch (err) {
         errors.push({
           hubspot_deal_id: item.id,
@@ -209,7 +209,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
     total,
     pages,
     created,
-    updated,
+    skipped_existing,
     unmatched_owners,
     errors,
     duration_ms: Date.now() - started,
