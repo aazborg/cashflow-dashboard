@@ -35,6 +35,7 @@ interface SliderProps {
   value: number;
   onChange: (v: number) => void;
   hint?: string;
+  disabled?: boolean;
   accent: "blue" | "green" | "orange" | "yellow";
 }
 
@@ -48,7 +49,7 @@ function SliderRow(s: SliderProps) {
       ? "var(--brand-orange)"
       : "var(--brand-yellow)";
   return (
-    <div className="bg-white border border-[color:var(--border)] rounded-lg p-4 relative overflow-hidden">
+    <div className={`bg-white border border-[color:var(--border)] rounded-lg p-4 relative overflow-hidden ${s.disabled ? "opacity-75" : ""}`}>
       <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accentColor }} />
       <div className="pl-2">
         <div className="flex items-baseline justify-between mb-1">
@@ -65,6 +66,7 @@ function SliderRow(s: SliderProps) {
           step={s.step}
           value={s.value}
           onChange={(e) => s.onChange(Number(e.target.value))}
+          disabled={s.disabled}
           className="w-full"
           style={{ accentColor }}
         />
@@ -200,8 +202,10 @@ export default function ZieleClient({
   products: ProductOption[];
   baseline: TeamBaseline;
 }) {
+  // Default ist die Planung über den Ø-Vertragswert. Wer nach Produkten
+  // planen will, klickt das Häkchen unten an.
   const [useAvgContract, setUseAvgContract] = useState(
-    products.length === 0 && baseline.avg_contract_value > 0,
+    baseline.avg_contract_value > 0,
   );
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [avgQualisPerWeek, setAvgQualisPerWeek] = useState(0);
@@ -340,33 +344,26 @@ export default function ZieleClient({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white border border-[color:var(--border)] rounded-lg p-4">
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 w-4 h-4 accent-[color:var(--brand-blue)] disabled:opacity-50"
-            checked={useAvgContract}
-            disabled={avgContractDisabled}
-            onChange={(e) => setUseAvgContract(e.target.checked)}
-          />
-          <span>
-            <span className="text-sm font-medium">
-              Aus durchschnittlichem Vertragswert errechnen
-            </span>
-            <span className="block text-xs text-[color:var(--muted)] mt-0.5">
-              {avgContractDisabled
-                ? "Kein Ø-Vertragswert hinterlegt."
-                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)}. Ohne Produkt-Definition planen — Zielumsatz eingeben oder Qualis-Slider drehen.`}
-            </span>
-          </span>
-        </label>
-        {useAvgContract ? (
-          <div className="mt-3 pl-7">
-            <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
+      {useAvgContract ? (
+        <div className="bg-[color:var(--brand-green)]/10 border-2 border-[color:var(--brand-green)] rounded-lg p-5">
+          <div className="flex items-baseline justify-between mb-2 gap-3 flex-wrap">
+            <label
+              htmlFor="zielumsatz-input"
+              className="text-sm font-semibold text-[color:var(--foreground)]"
+            >
               Zielumsatz / Monat
             </label>
-            <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-[color:var(--muted)]">
+              Ø-Vertragswert: {formatEUR(baseline.avg_contract_value)}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[220px]">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xl font-semibold text-[color:var(--muted)]">
+                €
+              </span>
               <input
+                id="zielumsatz-input"
                 type="text"
                 inputMode="numeric"
                 value={zielumsatzInput}
@@ -378,16 +375,37 @@ export default function ZieleClient({
                     commitZielumsatz();
                   }
                 }}
-                placeholder="z. B. 50000"
-                className="block w-48 border border-[color:var(--border)] rounded px-3 py-2 text-base tabular-nums bg-white"
+                placeholder="50.000"
+                className="block w-full border-2 border-[color:var(--brand-green)]/40 focus:border-[color:var(--brand-green)] rounded-md pl-9 pr-3 py-3 text-2xl font-semibold tabular-nums bg-white outline-none"
               />
-              <span className="text-xs text-[color:var(--muted)]">
-                Beim Verlassen / Enter rechnen wir den Qualis-Slider zurück
-                (über Showup × Closing × Ø-Vertragswert).
-              </span>
             </div>
           </div>
-        ) : null}
+          <p className="text-xs text-[color:var(--muted)] mt-2">
+            Eingabe und Enter (oder Klick außerhalb) rechnet den Qualis-Slider
+            zurück — über Showup × Closing × Ø-Vertragswert.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="bg-white border border-[color:var(--border)] rounded-lg p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 w-4 h-4 accent-[color:var(--brand-blue)] disabled:opacity-50"
+            checked={!useAvgContract}
+            disabled={avgContractDisabled && useAvgContract}
+            onChange={(e) => setUseAvgContract(!e.target.checked)}
+          />
+          <span>
+            <span className="text-sm font-medium">
+              Stattdessen nach Produkten planen
+            </span>
+            <span className="block text-xs text-[color:var(--muted)] mt-0.5">
+              Standard ist Planen über den Ø-Vertragswert. Wer pro Produkt
+              Stückzahlen eintragen will, klickt hier.
+            </span>
+          </span>
+        </label>
       </div>
 
       <div className="bg-[color:var(--brand-yellow)]/20 border border-[color:var(--brand-yellow)] rounded-lg px-4 py-3 text-xs">
@@ -424,17 +442,29 @@ export default function ZieleClient({
           Funnel-Annahmen (Default = Team-Ø, kannst du anpassen)
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {useAvgContract ? (
-            <SliderRow
-              label="Qualis vereinbart / Woche"
-              min={0}
-              max={75}
-              step={1}
-              value={avgQualisPerWeek}
-              onChange={(v) => setAvgQualisPerWeek(Math.round(v))}
-              accent="blue"
-            />
-          ) : null}
+          <SliderRow
+            label={
+              useAvgContract
+                ? "Qualis vereinbart / Woche"
+                : "Qualis benötigt / Woche"
+            }
+            min={0}
+            max={75}
+            step={1}
+            value={
+              useAvgContract
+                ? avgQualisPerWeek
+                : Math.min(75, Math.round(qualisPerWeekNeeded))
+            }
+            onChange={(v) => setAvgQualisPerWeek(Math.round(v))}
+            disabled={!useAvgContract}
+            hint={
+              useAvgContract
+                ? undefined
+                : "errechnet aus den Stückzahlen"
+            }
+            accent="blue"
+          />
           <SliderRow
             label="Showup-Rate"
             unit="%"
