@@ -355,11 +355,39 @@ export default function ZieleClient({
             </span>
             <span className="block text-xs text-[color:var(--muted)] mt-0.5">
               {avgContractDisabled
-                ? "Noch keine Won-Deals aus HubSpot synchronisiert — bitte erst im Admin importieren."
-                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)}. Ohne Produkt-Definition planen — einfach Anzahl Abschlüsse pro Monat eintragen.`}
+                ? "Kein Ø-Vertragswert hinterlegt."
+                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)}. Ohne Produkt-Definition planen — Zielumsatz eingeben oder Qualis-Slider drehen.`}
             </span>
           </span>
         </label>
+        {useAvgContract ? (
+          <div className="mt-3 pl-7">
+            <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
+              Zielumsatz / Monat
+            </label>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={zielumsatzInput}
+                onChange={(e) => setZielumsatzInput(e.target.value)}
+                onBlur={commitZielumsatz}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitZielumsatz();
+                  }
+                }}
+                placeholder="z. B. 50000"
+                className="block w-48 border border-[color:var(--border)] rounded px-3 py-2 text-base tabular-nums bg-white"
+              />
+              <span className="text-xs text-[color:var(--muted)]">
+                Beim Verlassen / Enter rechnen wir den Qualis-Slider zurück
+                (über Showup × Closing × Ø-Vertragswert).
+              </span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="bg-[color:var(--brand-yellow)]/20 border border-[color:var(--brand-yellow)] rounded-lg px-4 py-3 text-xs">
@@ -396,6 +424,17 @@ export default function ZieleClient({
           Funnel-Annahmen (Default = Team-Ø, kannst du anpassen)
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {useAvgContract ? (
+            <SliderRow
+              label="Qualis vereinbart / Woche"
+              min={0}
+              max={75}
+              step={1}
+              value={avgQualisPerWeek}
+              onChange={(v) => setAvgQualisPerWeek(Math.round(v))}
+              accent="blue"
+            />
+          ) : null}
           <SliderRow
             label="Showup-Rate"
             unit="%"
@@ -502,14 +541,21 @@ export default function ZieleClient({
 
       <div className="flex items-end justify-between gap-3 pt-2">
         <div>
-          <h2 className="text-lg font-semibold">
-            {useAvgContract ? "Ziel-Anzahl Abschlüsse" : "Ziel-Stückzahl pro Produkt"}
-          </h2>
-          <p className="text-xs text-[color:var(--muted)] mt-1">
-            {useAvgContract
-              ? `Stell ein, wie viele Beratungsgespräche pro Woche du vereinbarst — Showup- und Closing-Rate (oben) ergeben automatisch die Abschlüsse, multipliziert mit dem Ø-Vertragswert (${formatEUR(baseline.avg_contract_value)}).`
-              : "Trag hier ein, wie viele Stück du pro Monat von welchem Produkt verkaufen willst."}
-          </p>
+          {useAvgContract ? (
+            <>
+              <h2 className="text-lg font-semibold">Funnel über Ø-Vertragswert</h2>
+              <p className="text-xs text-[color:var(--muted)] mt-1">
+                Zielumsatz oben oder Qualis-Slider in den Funnel-Annahmen ergeben automatisch Abschlüsse und Umsatz.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold">Ziel-Stückzahl pro Produkt</h2>
+              <p className="text-xs text-[color:var(--muted)] mt-1">
+                Trag hier ein, wie viele Stück du pro Monat von welchem Produkt verkaufen willst.
+              </p>
+            </>
+          )}
         </div>
         <button
           onClick={reset}
@@ -519,62 +565,7 @@ export default function ZieleClient({
         </button>
       </div>
 
-      {useAvgContract ? (
-        <section className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-4">
-          <SliderRow
-            label="Qualis vereinbart / Woche"
-            min={0}
-            max={75}
-            step={1}
-            value={avgQualisPerWeek}
-            onChange={(v) => setAvgQualisPerWeek(Math.round(v))}
-            accent="blue"
-          />
-          <div>
-            <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
-              … oder Zielumsatz / Monat eingeben
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={zielumsatzInput}
-              onChange={(e) => setZielumsatzInput(e.target.value)}
-              onBlur={commitZielumsatz}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  commitZielumsatz();
-                }
-              }}
-              placeholder="z. B. 50000"
-              className="block w-full sm:w-48 border border-[color:var(--border)] rounded px-3 py-2 text-base tabular-nums bg-white"
-            />
-            <div className="text-[11px] text-[color:var(--muted)] mt-1">
-              Wir rechnen den Slider zurück (Showup × Closing × Ø-Vertragswert).
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-[color:var(--muted)] pt-2 border-t border-[color:var(--border)]">
-            <div>
-              Qualis / Monat:{" "}
-              <span className="font-medium text-[color:var(--foreground)] tabular-nums">
-                {avgQualisPerMonth.toLocaleString("de-AT")}
-              </span>
-            </div>
-            <div>
-              Abschlüsse / Monat:{" "}
-              <span className="font-medium text-[color:var(--foreground)] tabular-nums">
-                {avgAbschluesseTotal.toLocaleString("de-AT", { maximumFractionDigits: 1 })}
-              </span>
-            </div>
-            <div>
-              Umsatz / Monat:{" "}
-              <span className="font-medium text-[color:var(--foreground)] tabular-nums">
-                {formatEUR(umsatzAbschluss)}
-              </span>
-            </div>
-          </div>
-        </section>
-      ) : products.length === 0 ? (
+      {useAvgContract ? null : products.length === 0 ? (
         <section className="bg-white border border-[color:var(--border)] rounded-lg p-8 text-center text-sm text-[color:var(--muted)]">
           Noch keine aktiven Produkte angelegt — bitte im Admin pflegen, oder
           oben die Option „Aus durchschnittlichem Vertragswert errechnen" aktivieren.

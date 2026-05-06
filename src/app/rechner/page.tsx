@@ -29,15 +29,8 @@ export default async function RechnerPage() {
   const from = new Date(now.getFullYear(), 0, 1);
   const until = new Date(now.getFullYear() + 1, 11, 1);
 
-  // Team-Ø-Vertragswert aus den HubSpot-Monats-Snapshots (avg_contract pro
-  // Mitarbeiter pro Monat, gemittelt über alle Snapshots mit Wert).
-  const snapshotAvgs = allSnapshots
-    .map((s) => s.avg_contract)
-    .filter((v): v is number => typeof v === "number" && v > 0);
-  const teamAvgContract =
-    snapshotAvgs.length > 0
-      ? snapshotAvgs.reduce((s, v) => s + v, 0) / snapshotAvgs.length
-      : 0;
+  // Fixer Ø-Vertragswert für Planungs-Rechnungen.
+  const teamAvgContract = 8786.4;
 
   // Members see only their own row; admins see all members.
   const visibleEmployees = ctx.isAdmin

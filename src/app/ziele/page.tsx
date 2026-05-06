@@ -22,14 +22,8 @@ export default async function ZielePage() {
     listProducts(),
   ]);
 
-  // Team-Ø-Vertragswert aus den HubSpot-Monats-Snapshots.
-  const snapshotAvgs = snapshots
-    .map((s) => s.avg_contract)
-    .filter((v): v is number => typeof v === "number" && v > 0);
-  const avgContractValue =
-    snapshotAvgs.length > 0
-      ? snapshotAvgs.reduce((s, v) => s + v, 0) / snapshotAvgs.length
-      : 0;
+  // Fixer Ø-Vertragswert für Planungs-Rechnungen.
+  const avgContractValue = 8786.4;
 
   const members = employees.filter((e) => e.role === "member" && e.active);
 
