@@ -110,7 +110,7 @@ function addMonths(monthKey: string, delta: number): string {
   return `${y}-${String(m).padStart(2, "0")}`;
 }
 
-async function fetchAllMeetings(
+async function fetchBeratungsMeetings(
   token: string,
   fromMs: number,
   toMs: number,
@@ -125,6 +125,45 @@ async function fetchAllMeetings(
             { propertyName: "hs_timestamp", operator: "GTE", value: String(fromMs) },
             { propertyName: "hs_timestamp", operator: "LT", value: String(toMs) },
             { propertyName: "hs_activity_type", operator: "EQ", value: MEETING_TYPE },
+          ],
+        },
+      ],
+      properties: ["hs_meeting_outcome", "hs_timestamp"],
+      sorts: [{ propertyName: "hs_timestamp", direction: "ASCENDING" }],
+      limit: 100,
+    };
+    if (after) body.after = after;
+    const j = await hsPost<PagedResponse<HubspotMeeting>>(
+      token,
+      "/crm/v3/objects/meetings/search",
+      body,
+    );
+    all.push(...j.results);
+    after = j.paging?.next?.after;
+  } while (after);
+  return all;
+}
+
+/**
+ * Liest ALLE Meetings (jeder Typ) mit Outcome COMPLETED im Range —
+ * für die Closing-Ratio-Cross-Filter laut HubSpot-Dashboard
+ * "Closing-Ratio bei Erschienen" (kein Activity-Type-Filter).
+ */
+async function fetchCompletedMeetings(
+  token: string,
+  fromMs: number,
+  toMs: number,
+): Promise<HubspotMeeting[]> {
+  const all: HubspotMeeting[] = [];
+  let after: string | undefined;
+  do {
+    const body: Record<string, unknown> = {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "hs_timestamp", operator: "GTE", value: String(fromMs) },
+            { propertyName: "hs_timestamp", operator: "LT", value: String(toMs) },
+            { propertyName: "hs_meeting_outcome", operator: "EQ", value: "COMPLETED" },
           ],
         },
       ],
@@ -274,22 +313,43 @@ export async function syncMonthlySnapshots(
       .map((e) => [e.hubspot_owner_id as string, e] as const),
   );
 
-  // 1. Meetings (erweiterter Range für Closing-Ratio-Cross-Check)
-  const meetings = await fetchAllMeetings(token, meetingsFromMs, rangeToMs);
-
-  // 2. Meeting → Deal associations
-  const m2d = await fetchMeetingDealAssoc(
+  // 1. Beratungsgespräche im Snapshot-Range — für Qualis & Showup-Rate.
+  const beratungsMeetings = await fetchBeratungsMeetings(
     token,
-    meetings.map((m) => m.id),
+    rangeFromMs,
+    rangeToMs,
   );
 
-  // 3. Resolve deal-owner für alle assoz. Deals (für Showup-Aggregation)
+  // 2. Meeting → Deal associations für Beratungsmeetings.
+  const beratungsM2d = await fetchMeetingDealAssoc(
+    token,
+    beratungsMeetings.map((m) => m.id),
+  );
+
+  // 3. Alle COMPLETED-Meetings (jeder Typ, erweiterter Range) — für
+  // Closing-Ratio-Cross-Filter wie im HubSpot-Dashboard
+  // "Closing-Ratio bei Erschienen".
+  const completedMeetings = await fetchCompletedMeetings(
+    token,
+    meetingsFromMs,
+    rangeToMs,
+  );
+  const completedM2d = await fetchMeetingDealAssoc(
+    token,
+    completedMeetings.map((m) => m.id),
+  );
+
+  // 4. Deal-Owner-Lookup für alle assoz. Deals (Beratungs- und Completed-
+  // Meetings zusammen).
   const involvedDealIds = Array.from(
-    new Set(Array.from(m2d.values()).flat()),
+    new Set([
+      ...Array.from(beratungsM2d.values()).flat(),
+      ...Array.from(completedM2d.values()).flat(),
+    ]),
   );
   const dealsForMeetings = await fetchDealsByIds(token, involvedDealIds);
 
-  // 4. Closed (Won + Lost) Deals der Neukunden-Pipeline mit closedate
+  // 5. Closed (Won + Lost) Deals der Neukunden-Pipeline mit closedate
   // im Range
   const closedDeals = await fetchClosedDealsByCloseDate(
     token,
@@ -297,14 +357,10 @@ export async function syncMonthlySnapshots(
     rangeToMs,
   );
 
-  // 5. Build Set: Deals, die mit einem Beratungsgespräch (COMPLETED)
-  // verknüpft sind. Wird für die Closing-Ratio-Filterung verwendet.
-  const dealsWithCompletedBeratung = new Set<string>();
-  for (const m of meetings) {
-    if (m.properties.hs_meeting_outcome !== "COMPLETED") continue;
-    for (const did of m2d.get(m.id) ?? []) {
-      dealsWithCompletedBeratung.add(did);
-    }
+  // 6. Set: Deals mit irgendeinem erschienenen Meeting (COMPLETED).
+  const dealsWithCompletedMeeting = new Set<string>();
+  for (const dealIds of completedM2d.values()) {
+    for (const did of dealIds) dealsWithCompletedMeeting.add(did);
   }
 
   // 6. Aggregate per (owner, month)
@@ -325,14 +381,14 @@ export async function syncMonthlySnapshots(
     return b;
   }
 
-  // 6a. Showup-/Quali-Aggregation aus den Meetings im Snapshot-Range
-  for (const m of meetings) {
+  // 7a. Showup-/Quali-Aggregation aus Beratungsgesprächen im Snapshot-Range
+  for (const m of beratungsMeetings) {
     const ts = m.properties.hs_timestamp;
     const outcome = m.properties.hs_meeting_outcome;
     if (!ts || !outcome || !QUALI_OUTCOMES.has(outcome)) continue;
     const month = monthKeyFromIso(ts);
     if (!months.includes(month)) continue;
-    const dealIds = m2d.get(m.id) ?? [];
+    const dealIds = beratungsM2d.get(m.id) ?? [];
     const owners = new Set<string>();
     for (const did of dealIds) {
       const d = dealsForMeetings.get(did);
@@ -346,13 +402,16 @@ export async function syncMonthlySnapshots(
     }
   }
 
-  // 6b. Closing-Ratio (Won + Lost mit erschienenem Beratungsgespräch)
+  // 7b. Closing-Ratio: Won + Lost Deals mit closedate im Monat, gefiltert
+  // auf solche mit *irgendeinem* erschienenen Meeting (COMPLETED) —
+  // entspricht HubSpot-Filter "Meeting-Ergebnis = Erschienen" ohne
+  // Activity-Type-Beschränkung.
   for (const d of closedDeals) {
     const ts = d.properties.closedate;
     const owner = d.properties.hubspot_owner_id;
     const stage = d.properties.dealstage;
     if (!ts || !owner || !stage) continue;
-    if (!dealsWithCompletedBeratung.has(d.id)) continue; // nur erschienene
+    if (!dealsWithCompletedMeeting.has(d.id)) continue;
     const month = monthKeyFromIso(ts);
     if (!months.includes(month)) continue;
     const b = getBucket(owner, month);
@@ -394,7 +453,7 @@ export async function syncMonthlySnapshots(
   return {
     from_month: months[0],
     to_month: months[months.length - 1],
-    meetings_total: meetings.length,
+    meetings_total: beratungsMeetings.length,
     closed_deals_total: closedDeals.length,
     snapshots_written: written,
     unmatched_owners: unmatched,

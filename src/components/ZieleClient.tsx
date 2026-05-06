@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatEUR } from "@/lib/cashflow";
 import { INTERVALL_MONATE, type Intervall } from "@/lib/types";
 
@@ -223,6 +223,28 @@ export default function ZieleClient({
   const avgQualisPerMonth = avgQualisPerWeek * WEEKS_PER_MONTH;
   const avgAbschluesseTotal =
     avgQualisPerMonth * (showup / 100) * (close / 100);
+  const computedUmsatz = avgAbschluesseTotal * baseline.avg_contract_value;
+
+  // Zielumsatz-Input (bidirektional gekoppelt mit Qualis-Slider).
+  // Bei Slider/Showup/Close-Änderung wird der Input neu befüllt; beim
+  // Tippen bleibt der Wert wie eingegeben, bis blur/Enter den Slider
+  // zurückrechnet.
+  const [zielumsatzInput, setZielumsatzInput] = useState<string>("0");
+  useEffect(() => {
+    setZielumsatzInput(Math.round(computedUmsatz).toString());
+  }, [computedUmsatz]);
+
+  function commitZielumsatz() {
+    const numeric = Number(zielumsatzInput.replace(/[^\d.,]/g, "").replace(",", "."));
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      setZielumsatzInput(Math.round(computedUmsatz).toString());
+      return;
+    }
+    const ratioPerWeek =
+      WEEKS_PER_MONTH * (showup / 100) * (close / 100) * baseline.avg_contract_value;
+    if (ratioPerWeek <= 0) return;
+    setAvgQualisPerWeek(Math.max(0, Math.round(numeric / ratioPerWeek)));
+  }
 
   const productLineItems = useMemo(
     () =>
@@ -498,7 +520,7 @@ export default function ZieleClient({
       </div>
 
       {useAvgContract ? (
-        <section className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-3">
+        <section className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-4">
           <SliderRow
             label="Qualis vereinbart / Woche"
             min={0}
@@ -508,7 +530,30 @@ export default function ZieleClient({
             onChange={(v) => setAvgQualisPerWeek(Math.round(v))}
             accent="blue"
           />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-[color:var(--muted)] pt-2">
+          <div>
+            <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
+              … oder Zielumsatz / Monat eingeben
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={zielumsatzInput}
+              onChange={(e) => setZielumsatzInput(e.target.value)}
+              onBlur={commitZielumsatz}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitZielumsatz();
+                }
+              }}
+              placeholder="z. B. 50000"
+              className="block w-full sm:w-48 border border-[color:var(--border)] rounded px-3 py-2 text-base tabular-nums bg-white"
+            />
+            <div className="text-[11px] text-[color:var(--muted)] mt-1">
+              Wir rechnen den Slider zurück (Showup × Closing × Ø-Vertragswert).
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-[color:var(--muted)] pt-2 border-t border-[color:var(--border)]">
             <div>
               Qualis / Monat:{" "}
               <span className="font-medium text-[color:var(--foreground)] tabular-nums">

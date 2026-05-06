@@ -181,16 +181,16 @@ export default function RechnerClient({
   }, [dataMonth, employee, currentMonthKey]);
 
   const [qualis, setQualis] = useState(baseline.qualis);
-  const [showup, setShowup] = useState(baseline.showup);
-  const [close, setClose] = useState(baseline.close);
+  const [showup, setShowup] = useState(Math.round(baseline.showup));
+  const [close, setClose] = useState(Math.round(baseline.close));
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQualis(baseline.qualis);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setShowup(baseline.showup);
+    setShowup(Math.round(baseline.showup));
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setClose(baseline.close);
+    setClose(Math.round(baseline.close));
   }, [baseline]);
 
   // Provision-Mode → tatsächliche Provision des Mitarbeiters.
@@ -208,8 +208,6 @@ export default function RechnerClient({
       : employeeAvgPrice;
 
   const distribution = employee?.cash_distribution.pct ?? [1];
-  const distributionDealsAnalyzed = employee?.cash_distribution.dealsAnalyzed ?? 0;
-  const sameMonthPct = distribution[0] ?? 1;
 
   const currentMonthIndex = useMemo(() => {
     return employee?.committed_series.findIndex((p) => p.month === currentMonthKey) ?? -1;
@@ -284,7 +282,6 @@ export default function RechnerClient({
   const baselineShowups = baseline.qualis * (baseline.showup / 100);
   const baselineAbschluesse = baselineShowups * (baseline.close / 100);
   const extraAbschluesse = Math.max(0, abschluesse - baselineAbschluesse);
-  const newRevenueThisMonth = additionalRevenueOneShot * sameMonthPct;
 
   const umsatzDisabled = teamAvgContract <= 0;
 
@@ -463,52 +460,6 @@ export default function RechnerClient({
             accent="yellow"
           />
         </div>
-      </div>
-
-      <div className="bg-white border border-[color:var(--border)] rounded-lg px-4 py-3 text-sm">
-        <div className="font-medium mb-1">Verteilung des Cashflows auf die Folgemonate</div>
-        {distributionDealsAnalyzed > 0 ? (
-          <>
-            <div className="text-xs text-[color:var(--muted)] mb-2">
-              Aus {distributionDealsAnalyzed} echten Deals abgeleitet — durchschnittlich
-              kommt vom abgeschlossenen Vertrag <strong className="text-[color:var(--brand-green)]">{(sameMonthPct * 100).toFixed(0)} %</strong> noch im
-              Abschlussmonat ein, der Rest verteilt sich auf die nächsten Monate.
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {distribution.slice(0, 18).map((p, i) => (
-                <div
-                  key={i}
-                  className="flex flex-col items-center text-[10px] tabular-nums"
-                  style={{ width: 36 }}
-                >
-                  <div
-                    className="w-6 bg-[color:var(--brand-blue)]"
-                    style={{ height: Math.max(2, p * 80) + "px" }}
-                  />
-                  <div className="text-[color:var(--muted)] mt-1">
-                    {i === 0 ? "M" : `+${i}`}
-                  </div>
-                  <div>{(p * 100).toFixed(p > 0.05 ? 0 : 1)}%</div>
-                </div>
-              ))}
-              {distribution.length > 18 ? (
-                <div className="text-[10px] text-[color:var(--muted)] self-end pb-3">
-                  …+{distribution.length - 18} weitere Monate
-                </div>
-              ) : null}
-            </div>
-            <div className="text-xs text-[color:var(--muted)] mt-3">
-              Diese Verteilung wird auf den <strong>einmaligen</strong> zusätzlichen
-              Cashflow von {formatEUR(additionalRevenueOneShot)} angewendet. Davon
-              kommen ca. {formatEUR(newRevenueThisMonth)} im Abschlussmonat ein, der
-              Rest verteilt sich über die Folgemonate.
-            </div>
-          </>
-        ) : (
-          <div className="text-xs text-[color:var(--muted)]">
-            Noch zu wenige echte Deals, um eine Verteilung abzuleiten — neuer Cashflow wird vorerst zu 100 % im Abschlussmonat angenommen.
-          </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
