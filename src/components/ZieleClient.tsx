@@ -20,8 +20,12 @@ export interface TeamBaseline {
   qualis_per_member: number;
   showup_rate: number;
   close_rate: number;
+  avg_contract_value: number;
+  avg_contract_deal_count: number;
   source: "snapshots" | "mixed" | "defaults";
 }
+
+const WEEKS_PER_MONTH = 4;
 
 interface SliderProps {
   label: string;
@@ -197,7 +201,11 @@ export default function ZieleClient({
   products: ProductOption[];
   baseline: TeamBaseline;
 }) {
+  const [useAvgContract, setUseAvgContract] = useState(
+    products.length === 0 && baseline.avg_contract_value > 0,
+  );
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [avgAbschluesse, setAvgAbschluesse] = useState(0);
   const [showup, setShowup] = useState(baseline.showup_rate);
   const [close, setClose] = useState(baseline.close_rate);
 
@@ -207,11 +215,12 @@ export default function ZieleClient({
 
   function reset() {
     setQuantities({});
+    setAvgAbschluesse(0);
     setShowup(baseline.showup_rate);
     setClose(baseline.close_rate);
   }
 
-  const lineItems = useMemo(
+  const productLineItems = useMemo(
     () =>
       products
         .map((p) => {
@@ -222,15 +231,24 @@ export default function ZieleClient({
     [products, quantities],
   );
 
-  const abschlussItems = lineItems.filter((x) => !x.product.is_upsell);
-  const upsellItems = lineItems.filter((x) => x.product.is_upsell);
+  const abschlussItems = productLineItems.filter((x) => !x.product.is_upsell);
+  const upsellItems = productLineItems.filter((x) => x.product.is_upsell);
 
-  const abschluesseTotal = abschlussItems.reduce((s, x) => s + x.qty, 0);
-  const umsatzAbschluss = abschlussItems.reduce((s, x) => s + x.revenue, 0);
-  const umsatzUpsell = upsellItems.reduce((s, x) => s + x.revenue, 0);
+  const abschluesseTotal = useAvgContract
+    ? avgAbschluesse
+    : abschlussItems.reduce((s, x) => s + x.qty, 0);
+  const umsatzAbschluss = useAvgContract
+    ? avgAbschluesse * baseline.avg_contract_value
+    : abschlussItems.reduce((s, x) => s + x.revenue, 0);
+  const umsatzUpsell = useAvgContract
+    ? 0
+    : upsellItems.reduce((s, x) => s + x.revenue, 0);
   const umsatzTotal = umsatzAbschluss + umsatzUpsell;
-  const avgDealSize =
-    abschluesseTotal > 0 ? umsatzAbschluss / abschluesseTotal : 0;
+  const avgDealSize = useAvgContract
+    ? baseline.avg_contract_value
+    : abschluesseTotal > 0
+    ? umsatzAbschluss / abschluesseTotal
+    : 0;
 
   const closeRate = close / 100;
   const showupRate = showup / 100;
@@ -253,7 +271,14 @@ export default function ZieleClient({
         cashflow: 0,
       });
     }
-    for (const item of lineItems) {
+    if (useAvgContract) {
+      // Mit dem Ø-Vertragswert: behandeln wir jeden Abschluss als Einmalzahlung
+      // im Monat des Abschlusses (keine Raten-Verteilung bekannt).
+      const monthly = avgAbschluesse * baseline.avg_contract_value;
+      for (let i = 0; i < horizon; i++) series[i].cashflow += monthly;
+      return series;
+    }
+    for (const item of productLineItems) {
       const raten = item.product.default_anzahl_raten ?? 1;
       const intervall = item.product.default_intervall ?? "Einmalzahlung";
       const intervalMonths = INTERVALL_MONATE[intervall];
@@ -269,7 +294,7 @@ export default function ZieleClient({
       }
     }
     return series;
-  }, [lineItems]);
+  }, [useAvgContract, avgAbschluesse, baseline.avg_contract_value, productLineItems]);
 
   const cashflowMax = Math.max(1, ...cashflowSeries.map((p) => p.cashflow));
   const cashflow12mo = cashflowSeries
@@ -283,8 +308,34 @@ export default function ZieleClient({
       ? `${baseline.members_with_snapshot} von ${baseline.members_total} mit Snapshot, Rest mit Admin-Defaults`
       : `Keine Snapshots vorhanden — Werte aus den Admin-Defaults gemittelt`;
 
+  const qualisPerWeekNeeded = qualisNeeded / WEEKS_PER_MONTH;
+  const qualisPerMemberPerWeekNeeded = qualisPerMemberNeeded / WEEKS_PER_MONTH;
+  const avgContractDisabled = baseline.avg_contract_value <= 0;
+
   return (
     <div className="space-y-6">
+      <div className="bg-white border border-[color:var(--border)] rounded-lg p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 w-4 h-4 accent-[color:var(--brand-blue)] disabled:opacity-50"
+            checked={useAvgContract}
+            disabled={avgContractDisabled}
+            onChange={(e) => setUseAvgContract(e.target.checked)}
+          />
+          <span>
+            <span className="text-sm font-medium">
+              Aus durchschnittlichem Vertragswert errechnen
+            </span>
+            <span className="block text-xs text-[color:var(--muted)] mt-0.5">
+              {avgContractDisabled
+                ? "Noch keine Won-Deals aus HubSpot synchronisiert — bitte erst im Admin importieren."
+                : `Ø-Vertragswert: ${formatEUR(baseline.avg_contract_value)} (aus ${baseline.avg_contract_deal_count} gewonnenen Neukunden-Deals). Ohne Produkt-Definition planen — einfach Anzahl Abschlüsse pro Monat eintragen.`}
+            </span>
+          </span>
+        </label>
+      </div>
+
       <div className="bg-[color:var(--brand-yellow)]/20 border border-[color:var(--brand-yellow)] rounded-lg px-4 py-3 text-xs">
         <div className="font-medium mb-1">Team-Ø als Ausgangsbasis</div>
         <div className="text-[color:var(--muted)] mb-2">{baselineSourceLabel}</div>
@@ -346,11 +397,11 @@ export default function ZieleClient({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <ResultCard
-          label="Qualis benötigt / Monat"
-          value={qualisNeeded.toLocaleString("de-AT", { maximumFractionDigits: 0 })}
+          label="Qualis benötigt / Woche"
+          value={qualisPerWeekNeeded.toLocaleString("de-AT", { maximumFractionDigits: 1 })}
           sub={
             baseline.members_total > 0
-              ? `≈ ${qualisPerMemberNeeded.toLocaleString("de-AT", { maximumFractionDigits: 1 })} pro Person (${baseline.members_total} MA)`
+              ? `≈ ${qualisPerMemberPerWeekNeeded.toLocaleString("de-AT", { maximumFractionDigits: 1 })} pro Person (${baseline.members_total} MA)`
               : "Keine Mitarbeiter:innen"
           }
           tone="primary"
@@ -367,6 +418,8 @@ export default function ZieleClient({
           sub={
             avgDealSize > 0
               ? `Ø Vertragswert ${formatEUR(avgDealSize)}`
+              : useAvgContract
+              ? "Anzahl Abschlüsse eintragen"
               : "Noch keine Stückzahlen eingetragen"
           }
           tone="neutral"
@@ -423,9 +476,13 @@ export default function ZieleClient({
 
       <div className="flex items-end justify-between gap-3 pt-2">
         <div>
-          <h2 className="text-lg font-semibold">Ziel-Stückzahl pro Produkt</h2>
+          <h2 className="text-lg font-semibold">
+            {useAvgContract ? "Ziel-Anzahl Abschlüsse" : "Ziel-Stückzahl pro Produkt"}
+          </h2>
           <p className="text-xs text-[color:var(--muted)] mt-1">
-            Trag hier ein, wie viele Stück du pro Monat von welchem Produkt verkaufen willst.
+            {useAvgContract
+              ? `Wie viele Abschlüsse pro Monat? Wird mit dem Ø-Vertragswert (${formatEUR(baseline.avg_contract_value)}) multipliziert.`
+              : "Trag hier ein, wie viele Stück du pro Monat von welchem Produkt verkaufen willst."}
           </p>
         </div>
         <button
@@ -436,18 +493,45 @@ export default function ZieleClient({
         </button>
       </div>
 
-      <ProductTable
-        title="Beratungsprodukte (Erstabschluss)"
-        subtitle="Jedes Stück = ein Beratungsgespräch durch den Funnel."
-        products={products.filter((p) => !p.is_upsell)}
-        quantities={quantities}
-        setQty={setQty}
-        summeStk={abschluesseTotal}
-        summeRevenue={umsatzAbschluss}
-        showStkSumme
-      />
+      {useAvgContract ? (
+        <section className="bg-white border border-[color:var(--border)] rounded-lg p-4">
+          <label className="block">
+            <span className="text-sm font-medium">Abschlüsse / Monat</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={avgAbschluesse || ""}
+              placeholder="0"
+              onChange={(e) => setAvgAbschluesse(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+              className="mt-2 block w-full sm:w-40 border border-[color:var(--border)] rounded px-3 py-2 text-lg tabular-nums bg-white"
+            />
+          </label>
+          <div className="text-xs text-[color:var(--muted)] mt-2">
+            Umsatz/Monat: <span className="font-medium text-[color:var(--foreground)]">{formatEUR(umsatzAbschluss)}</span>
+            {" — "}
+            {avgAbschluesse} × {formatEUR(baseline.avg_contract_value)}
+          </div>
+        </section>
+      ) : products.length === 0 ? (
+        <section className="bg-white border border-[color:var(--border)] rounded-lg p-8 text-center text-sm text-[color:var(--muted)]">
+          Noch keine aktiven Produkte angelegt — bitte im Admin pflegen, oder
+          oben die Option „Aus durchschnittlichem Vertragswert errechnen" aktivieren.
+        </section>
+      ) : (
+        <ProductTable
+          title="Beratungsprodukte (Erstabschluss)"
+          subtitle="Jedes Stück = ein Beratungsgespräch durch den Funnel."
+          products={products.filter((p) => !p.is_upsell)}
+          quantities={quantities}
+          setQty={setQty}
+          summeStk={abschluesseTotal}
+          summeRevenue={umsatzAbschluss}
+          showStkSumme
+        />
+      )}
 
-      {products.some((p) => p.is_upsell) ? (
+      {!useAvgContract && products.some((p) => p.is_upsell) ? (
         <ProductTable
           title="Upsells (in laufender Beratung)"
           subtitle="Werden innerhalb bestehender Beratungen verkauft — keine zusätzlichen Beratungsgespräche nötig, nur Umsatz."

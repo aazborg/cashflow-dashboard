@@ -3,6 +3,7 @@ import ZieleClient, {
   type ProductOption,
 } from "@/components/ZieleClient";
 import {
+  listDeals,
   listEmployees,
   listMonthlySnapshots,
   listProducts,
@@ -16,11 +17,22 @@ export default async function ZielePage() {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
   if (!ctx.isAdmin) redirect("/");
-  const [employees, snapshots, products] = await Promise.all([
+  const [employees, snapshots, products, deals] = await Promise.all([
     listEmployees(),
     listMonthlySnapshots(),
     listProducts(),
+    listDeals(),
   ]);
+
+  // Ø-Vertragswert aus den Won-Deals der Neukunden-Pipeline
+  // (alle aus HubSpot synchronisierten Deals).
+  const hubspotDeals = deals.filter(
+    (d) => d.source === "hubspot" && d.betrag > 0,
+  );
+  const avgContractValue =
+    hubspotDeals.length > 0
+      ? hubspotDeals.reduce((s, d) => s + d.betrag, 0) / hubspotDeals.length
+      : 0;
 
   const members = employees.filter((e) => e.role === "member" && e.active);
 
@@ -64,6 +76,8 @@ export default async function ZielePage() {
     qualis_per_member: teamQualis,
     showup_rate: teamShowup,
     close_rate: teamClose,
+    avg_contract_value: avgContractValue,
+    avg_contract_deal_count: hubspotDeals.length,
     source:
       withSnap.length > 0
         ? withSnap.length === members.length
@@ -93,13 +107,7 @@ export default async function ZielePage() {
           wie viele Beratungsgespräche dafür nötig sind.
         </p>
       </div>
-      {productOptions.length === 0 ? (
-        <div className="bg-white border border-[color:var(--border)] rounded-lg p-8 text-center text-sm text-[color:var(--muted)]">
-          Noch keine aktiven Produkte angelegt — bitte im Admin pflegen.
-        </div>
-      ) : (
-        <ZieleClient products={productOptions} baseline={baseline} />
-      )}
+      <ZieleClient products={productOptions} baseline={baseline} />
     </div>
   );
 }

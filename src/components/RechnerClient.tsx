@@ -41,6 +41,8 @@ const MONATE_LANG = [
   "Juli", "August", "September", "Oktober", "November", "Dezember",
 ];
 
+const WEEKS_PER_MONTH = 4;
+
 function monthLabel(monthKey: string): string {
   const [y, m] = monthKey.split("-").map(Number);
   return `${MONATE_LANG[m - 1]} ${y}`;
@@ -125,10 +127,15 @@ function baselineFromCurrent(e: EmployeeOption | undefined, currentMonth: string
 export default function RechnerClient({
   employees,
   nowIso,
+  teamAvgContract,
+  teamAvgContractDealCount,
 }: {
   employees: EmployeeOption[];
   nowIso: string;
+  teamAvgContract: number;
+  teamAvgContractDealCount: number;
 }) {
+  const [mode, setMode] = useState<"provision" | "umsatz">("provision");
   const [employeeId, setEmployeeId] = useState(employees[0]?.id ?? "");
   const employee = employees.find((e) => e.id === employeeId);
 
@@ -188,9 +195,19 @@ export default function RechnerClient({
     setClose(baseline.close);
   }, [baseline]);
 
-  const provision = employee?.provision_pct ?? 0;
-  const avgPrice =
+  // Provision-Mode → tatsächliche Provision des Mitarbeiters.
+  // Umsatz-Mode → 100 % (zeigt Cashflow als Umsatz, nicht als Provision).
+  const employeeProvision = employee?.provision_pct ?? 0;
+  const provision = mode === "umsatz" ? 100 : employeeProvision;
+
+  // Umsatz-Mode bevorzugt den Team-Ø-Vertragswert (HubSpot-Won-Deals der
+  // Neukunden-Pipeline) als Referenz, sonst Fallback auf Mitarbeiter-Wert.
+  const employeeAvgPrice =
     employee?.derived_avg_contract ?? employee?.default_avg_contract ?? 5000;
+  const avgPrice =
+    mode === "umsatz" && teamAvgContract > 0
+      ? teamAvgContract
+      : employeeAvgPrice;
 
   const distribution = employee?.cash_distribution.pct ?? [1];
   const distributionDealsAnalyzed = employee?.cash_distribution.dealsAnalyzed ?? 0;
@@ -271,8 +288,53 @@ export default function RechnerClient({
   const extraAbschluesse = Math.max(0, abschluesse - baselineAbschluesse);
   const newRevenueThisMonth = additionalRevenueOneShot * sameMonthPct;
 
+  const umsatzDisabled = teamAvgContract <= 0;
+
   return (
     <div className="space-y-6">
+      <div className="bg-white border border-[color:var(--border)] rounded-lg p-4">
+        <div className="text-xs uppercase tracking-wider text-[color:var(--muted)] mb-2">
+          Was möchtest du berechnen?
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="rechner-mode"
+              value="provision"
+              checked={mode === "provision"}
+              onChange={() => setMode("provision")}
+              className="accent-[color:var(--brand-blue)]"
+            />
+            <span className="text-sm">
+              <span className="font-medium">Eigene Provision</span>
+              <span className="text-[color:var(--muted)] ml-1">
+                ({employeeProvision} % auf Cashflow)
+              </span>
+            </span>
+          </label>
+          <label className={`flex items-center gap-2 ${umsatzDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}>
+            <input
+              type="radio"
+              name="rechner-mode"
+              value="umsatz"
+              checked={mode === "umsatz"}
+              disabled={umsatzDisabled}
+              onChange={() => setMode("umsatz")}
+              className="accent-[color:var(--brand-blue)]"
+            />
+            <span className="text-sm">
+              <span className="font-medium">Möglicher Umsatz</span>
+              <span className="text-[color:var(--muted)] ml-1">
+                {umsatzDisabled
+                  ? "(noch kein Ø-Vertragswert)"
+                  : `(Ø ${formatEUR(teamAvgContract)} aus ${teamAvgContractDealCount} Won-Deals)`}
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+
       <div className="bg-white border border-[color:var(--border)] rounded-lg p-4 flex flex-wrap items-end gap-4">
         <div className="flex-1 min-w-48">
           <label className="text-xs uppercase tracking-wider text-[color:var(--muted)]">
@@ -333,7 +395,15 @@ export default function RechnerClient({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <SliderRow label="Qualis vereinbart / Monat" min={0} max={300} step={1} value={qualis} onChange={setQualis} accent="blue" />
+        <SliderRow
+          label="Qualis vereinbart / Woche"
+          min={0}
+          max={Math.ceil(300 / WEEKS_PER_MONTH)}
+          step={1}
+          value={Math.round(qualis / WEEKS_PER_MONTH)}
+          onChange={(weekly) => setQualis(weekly * WEEKS_PER_MONTH)}
+          accent="blue"
+        />
         <SliderRow label="Showup-Rate" unit="%" min={0} max={100} step={1} value={showup} onChange={setShowup} accent="orange" />
         <SliderRow label="Closing-Rate" unit="%" min={0} max={100} step={1} value={close} onChange={setClose} accent="green" />
       </div>
@@ -434,13 +504,15 @@ export default function RechnerClient({
           value={`+ ${formatEUR(additionalRevenueOneShot * (provision / 100))}`}
           sub={
             additionalRevenueOneShot > 0
-              ? "Einmalige Mehr-Auszahlung, verteilt auf Folgemonate"
+              ? mode === "umsatz"
+                ? "Einmaliger Mehr-Umsatz, verteilt auf Folgemonate"
+                : "Einmalige Mehr-Auszahlung, verteilt auf Folgemonate"
               : "Slider auf Ausgangslage — kein Effekt"
           }
           tone="highlight"
         />
         <ResultCard
-          label={`Auszahlung ${monthLabel(currentMonthKey).split(" ")[0]} ${currentYear}`}
+          label={`${mode === "umsatz" ? "Umsatz" : "Auszahlung"} ${monthLabel(currentMonthKey).split(" ")[0]} ${currentYear}`}
           value={formatEUR(restThisMonth)}
           sub={
             thisMonthDelta > 0
@@ -450,7 +522,7 @@ export default function RechnerClient({
           tone="future"
         />
         <ResultCard
-          label={`Provision ${currentYear}`}
+          label={`${mode === "umsatz" ? "Umsatz" : "Provision"} ${currentYear}`}
           value={formatEUR(fullYearWithAdjustment)}
           sub={
             fullYearDelta > 0
@@ -476,7 +548,9 @@ export default function RechnerClient({
                 <th className="px-4 py-2 font-medium text-right">Bestehend (Raten)</th>
                 <th className="px-4 py-2 font-medium text-right">Neu</th>
                 <th className="px-4 py-2 font-medium text-right">Cashflow</th>
-                <th className="px-4 py-2 font-medium text-right">Auszahlung</th>
+                <th className="px-4 py-2 font-medium text-right">
+                  {mode === "umsatz" ? "Umsatz" : "Auszahlung"}
+                </th>
               </tr>
             </thead>
             <tbody>

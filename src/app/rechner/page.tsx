@@ -29,6 +29,14 @@ export default async function RechnerPage() {
   const from = new Date(now.getFullYear(), 0, 1);
   const until = new Date(now.getFullYear() + 1, 11, 1);
 
+  const hubspotDeals = deals.filter(
+    (d) => d.source === "hubspot" && d.betrag > 0,
+  );
+  const teamAvgContract =
+    hubspotDeals.length > 0
+      ? hubspotDeals.reduce((s, d) => s + d.betrag, 0) / hubspotDeals.length
+      : 0;
+
   // Members see only their own row; admins see all members.
   const visibleEmployees = ctx.isAdmin
     ? employees.filter((e) => e.role === "member")
@@ -76,7 +84,12 @@ export default async function RechnerPage() {
           Noch keine Mitarbeiter angelegt — bitte im Admin einladen.
         </div>
       ) : (
-        <RechnerClient employees={options} nowIso={now.toISOString()} />
+        <RechnerClient
+          employees={options}
+          nowIso={now.toISOString()}
+          teamAvgContract={teamAvgContract}
+          teamAvgContractDealCount={hubspotDeals.length}
+        />
       )}
     </div>
   );
