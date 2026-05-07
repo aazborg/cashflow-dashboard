@@ -44,12 +44,21 @@ export interface Deal {
   pending_delete?: boolean;
 }
 
+export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";
+
+export const SETTER_HOURS_OPTIONS: SetterHours[] = [
+  "20h", "25h", "30h", "35h", "40h",
+];
+
 export interface Employee {
   id: string;
   email: string;
   name: string;
   hubspot_owner_id: string | null;
   role: "admin" | "member";
+  is_setter: boolean;
+  is_closer: boolean;
+  setter_hours: SetterHours | null;
   invited_at: string | null;
   active: boolean;
   provision_pct?: number | null;

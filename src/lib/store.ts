@@ -206,6 +206,9 @@ interface EmployeeRow {
   name: string;
   hubspot_owner_id: string | null;
   role: "admin" | "member";
+  is_setter: boolean | null;
+  is_closer: boolean | null;
+  setter_hours: string | null;
   invited_at: string | null;
   active: boolean;
   provision_pct: number | string | null;
@@ -216,12 +219,20 @@ interface EmployeeRow {
 }
 
 function rowToEmployee(r: EmployeeRow): Employee {
+  const setterHours = r.setter_hours;
+  const validHours = ["20h", "25h", "30h", "35h", "40h"] as const;
   return {
     id: r.id,
     email: r.email,
     name: r.name,
     hubspot_owner_id: r.hubspot_owner_id,
     role: r.role,
+    is_setter: r.is_setter ?? false,
+    is_closer: r.is_closer ?? true,
+    setter_hours:
+      setterHours && (validHours as readonly string[]).includes(setterHours)
+        ? (setterHours as Employee["setter_hours"])
+        : null,
     invited_at: r.invited_at,
     active: r.active,
     provision_pct: r.provision_pct == null ? null : Number(r.provision_pct),
@@ -262,6 +273,9 @@ export async function updateEmployee(
       | "hubspot_owner_id"
       | "active"
       | "role"
+      | "is_setter"
+      | "is_closer"
+      | "setter_hours"
       | "provision_pct"
       | "default_qualis"
       | "default_showup_rate"
@@ -272,6 +286,7 @@ export async function updateEmployee(
 ): Promise<Employee | null> {
   const allowed = [
     "name", "hubspot_owner_id", "active", "role",
+    "is_setter", "is_closer", "setter_hours",
     "provision_pct", "default_qualis", "default_showup_rate",
     "default_close_rate", "default_avg_contract",
   ] as const;

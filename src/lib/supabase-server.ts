@@ -47,6 +47,8 @@ export interface SessionContext {
   user: { id: string; email: string };
   employee: Employee;
   isAdmin: boolean;
+  isSetter: boolean;
+  isCloser: boolean;
   /** ID used to match the employee against `deals.mitarbeiter_id` and
    * `monthly_snapshots.mitarbeiter_id`. Falls back to the employee row id when
    * no HubSpot owner is set. */
@@ -67,11 +69,26 @@ export async function getSessionContext(): Promise<SessionContext | null> {
     .ilike("email", user.email)
     .maybeSingle();
   if (!data || data.active === false) return null;
-  const emp = data as Employee;
+  // Defensiv lesen: falls die Migration 0004 noch nicht eingespielt ist,
+  // sind is_setter / is_closer null — dann fallen wir auf sichere Defaults
+  // zurück (Closer = true für bestehende Member).
+  const row = data as Record<string, unknown> & Employee;
+  const emp: Employee = {
+    ...row,
+    is_setter: Boolean(row.is_setter),
+    is_closer: row.is_closer == null ? true : Boolean(row.is_closer),
+    setter_hours:
+      typeof row.setter_hours === "string" &&
+      ["20h", "25h", "30h", "35h", "40h"].includes(row.setter_hours)
+        ? (row.setter_hours as Employee["setter_hours"])
+        : null,
+  };
   return {
     user: { id: user.id, email: user.email },
     employee: emp,
     isAdmin: emp.role === "admin",
+    isSetter: emp.is_setter,
+    isCloser: emp.is_closer,
     ownerId: emp.hubspot_owner_id ?? emp.id,
   };
 }

@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { updateEmployeeAction } from "@/lib/actions";
 import { formatEUR } from "@/lib/cashflow";
-import type { Employee } from "@/lib/types";
+import type { Employee, SetterHours } from "@/lib/types";
+import { SETTER_HOURS_OPTIONS } from "@/lib/types";
 
 const ADMIN_COL_COUNT = 6;
 
@@ -12,6 +13,11 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [name, setName] = useState(employee.name);
   const [ownerId, setOwnerId] = useState(employee.hubspot_owner_id ?? "");
   const [role, setRole] = useState<"admin" | "member">(employee.role);
+  const [isSetter, setIsSetter] = useState(employee.is_setter);
+  const [isCloser, setIsCloser] = useState(employee.is_closer);
+  const [setterHours, setSetterHours] = useState<SetterHours | "">(
+    employee.setter_hours ?? "",
+  );
   const [provision, setProvision] = useState(
     employee.provision_pct != null ? String(employee.provision_pct) : "",
   );
@@ -39,6 +45,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     setName(employee.name);
     setOwnerId(employee.hubspot_owner_id ?? "");
     setRole(employee.role);
+    setIsSetter(employee.is_setter);
+    setIsCloser(employee.is_closer);
+    setSetterHours(employee.setter_hours ?? "");
     setProvision(
       employee.provision_pct != null ? String(employee.provision_pct) : "",
     );
@@ -70,6 +79,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     fd.set("name", name);
     fd.set("hubspot_owner_id", ownerId);
     fd.set("role", role);
+    fd.set("is_setter", String(isSetter));
+    fd.set("is_closer", String(isCloser));
+    fd.set("setter_hours", setterHours);
     fd.set("provision_pct", provision);
     fd.set("default_qualis", qualis);
     fd.set("default_showup_rate", showup);
@@ -143,24 +155,57 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
         </td>
         <td className="px-3 py-2">
           {editing ? (
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as "admin" | "member")}
-              className="border border-[color:var(--border)] rounded px-2 py-1 text-sm bg-white"
-            >
-              <option value="member">member</option>
-              <option value="admin">admin</option>
-            </select>
+            <div className="flex flex-col gap-1">
+              <label className="inline-flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={role === "admin"}
+                  onChange={(e) => setRole(e.target.checked ? "admin" : "member")}
+                  className="accent-[color:var(--brand-blue)]"
+                />
+                <span>Admin</span>
+              </label>
+              <label className="inline-flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={isCloser}
+                  onChange={(e) => setIsCloser(e.target.checked)}
+                  className="accent-[color:var(--brand-blue)]"
+                />
+                <span>Closer</span>
+              </label>
+              <label className="inline-flex items-center gap-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={isSetter}
+                  onChange={(e) => setIsSetter(e.target.checked)}
+                  className="accent-[color:var(--brand-blue)]"
+                />
+                <span>Setter</span>
+              </label>
+            </div>
           ) : (
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full ${
-                employee.role === "admin"
-                  ? "bg-[color:var(--brand-blue)]/15 text-[color:var(--brand-blue)]"
-                  : "bg-[color:var(--brand-grey)] text-[color:var(--muted)]"
-              }`}
-            >
-              {employee.role}
-            </span>
+            <div className="flex flex-wrap gap-1">
+              {employee.role === "admin" ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[color:var(--brand-blue)]/15 text-[color:var(--brand-blue)]">
+                  Admin
+                </span>
+              ) : null}
+              {employee.is_closer ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[color:var(--brand-green)]/15 text-[color:var(--brand-green)]">
+                  Closer
+                </span>
+              ) : null}
+              {employee.is_setter ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[color:var(--brand-orange)]/20 text-[color:var(--brand-orange)]">
+                  Setter
+                  {employee.setter_hours ? ` · ${employee.setter_hours}` : ""}
+                </span>
+              ) : null}
+              {employee.role !== "admin" && !employee.is_closer && !employee.is_setter ? (
+                <span className="text-[10px] text-[color:var(--muted)]">—</span>
+              ) : null}
+            </div>
           )}
         </td>
         <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -261,6 +306,27 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
                   className="border border-[color:var(--border)] rounded px-2 py-1 w-24 text-right tabular-nums bg-white"
                 />
               </label>
+              {isSetter ? (
+                <label className="inline-flex items-center gap-1 border-l border-[color:var(--border)] pl-3 ml-1">
+                  <span className="text-[color:var(--brand-orange)] font-medium">
+                    Setter-Vertrag
+                  </span>
+                  <select
+                    value={setterHours}
+                    onChange={(e) =>
+                      setSetterHours(e.target.value as SetterHours | "")
+                    }
+                    className="border border-[color:var(--border)] rounded px-2 py-1 text-sm bg-white"
+                  >
+                    <option value="">— bitte wählen —</option>
+                    {SETTER_HOURS_OPTIONS.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-wrap gap-x-4 gap-y-1 pl-1 text-[color:var(--muted)]">

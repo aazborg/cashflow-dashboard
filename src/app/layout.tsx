@@ -20,6 +20,7 @@ export default async function RootLayout({
           isAuthed={!!ctx}
           email={ctx?.user.email ?? null}
           isAdmin={!!ctx?.isAdmin}
+          isSetter={!!ctx?.isSetter}
           signOutAction={signOut}
         />
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6">

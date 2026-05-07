@@ -167,6 +167,9 @@ export async function updateEmployeeAction(formData: FormData) {
     name: string;
     hubspot_owner_id: string | null;
     role: "admin" | "member";
+    is_setter: boolean;
+    is_closer: boolean;
+    setter_hours: "20h" | "25h" | "30h" | "35h" | "40h" | null;
     provision_pct: number | null;
     default_qualis: number | null;
     default_showup_rate: number | null;
@@ -178,6 +181,22 @@ export async function updateEmployeeAction(formData: FormData) {
 
   const roleRaw = String(formData.get("role") ?? "").trim();
   if (roleRaw === "admin" || roleRaw === "member") patch.role = roleRaw;
+
+  // Mehrfach-Rollen (orthogonal zur admin/member-Spalte): is_setter, is_closer.
+  // Werden nur gesetzt, wenn die jeweilige Spalte im Formular vorhanden ist.
+  if (formData.has("is_setter")) {
+    patch.is_setter = formData.get("is_setter") === "true";
+  }
+  if (formData.has("is_closer")) {
+    patch.is_closer = formData.get("is_closer") === "true";
+  }
+  const hoursRaw = String(formData.get("setter_hours") ?? "").trim();
+  if (formData.has("setter_hours")) {
+    if (hoursRaw === "") patch.setter_hours = null;
+    else if (["20h", "25h", "30h", "35h", "40h"].includes(hoursRaw)) {
+      patch.setter_hours = hoursRaw as "20h" | "25h" | "30h" | "35h" | "40h";
+    }
+  }
 
   // Schutz: nicht den letzten aktiven Admin auf member herabstufen.
   if (patch.role === "member") {
@@ -221,6 +240,7 @@ export async function updateEmployeeAction(formData: FormData) {
   revalidatePath("/admin");
   revalidatePath("/daten");
   revalidatePath("/rechner");
+  revalidatePath("/setter");
   revalidatePath("/");
 }
 

@@ -8,11 +8,18 @@ import { usePathname } from "next/navigation";
 interface SiteHeaderProps {
   email: string | null;
   isAdmin: boolean;
+  isSetter: boolean;
   isAuthed: boolean;
   signOutAction: () => Promise<void>;
 }
 
-export function SiteHeader({ email, isAdmin, isAuthed, signOutAction }: SiteHeaderProps) {
+export function SiteHeader({
+  email,
+  isAdmin,
+  isSetter,
+  isAuthed,
+  signOutAction,
+}: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -41,6 +48,7 @@ export function SiteHeader({ email, isAdmin, isAuthed, signOutAction }: SiteHead
               <NavLink href="/">Dashboard</NavLink>
               <NavLink href="/daten">Daten</NavLink>
               <NavLink href="/rechner">Rechner</NavLink>
+              {isSetter || isAdmin ? <NavLink href="/setter">Setter</NavLink> : null}
               {isAdmin ? <NavLink href="/ziele">Ziele</NavLink> : null}
               {isAdmin ? <NavLink href="/admin">Admin</NavLink> : null}
             </nav>
@@ -97,6 +105,7 @@ export function SiteHeader({ email, isAdmin, isAuthed, signOutAction }: SiteHead
             <MobileNavLink href="/">Dashboard</MobileNavLink>
             <MobileNavLink href="/daten">Daten</MobileNavLink>
             <MobileNavLink href="/rechner">Rechner</MobileNavLink>
+            {isSetter || isAdmin ? <MobileNavLink href="/setter">Setter</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/ziele">Ziele</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/admin">Admin</MobileNavLink> : null}
             <div className="mt-2 pt-3 border-t border-[color:var(--foreground)]/10 flex items-center justify-between gap-3 text-xs text-[color:var(--foreground)]/70">
