@@ -143,17 +143,30 @@ async function resolveOwner(
 }
 
 export async function POST(req: NextRequest) {
-  const expected = process.env.HUBSPOT_WEBHOOK_SECRET;
-  if (expected) {
-    const got = req.headers.get("x-webhook-secret");
-    if (got !== expected) return unauthorized();
-  }
-
   let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  // Secret kann auf 3 Arten kommen — HubSpot Workflows können keinen
+  // Custom-Header senden, daher zusätzlich als Body-Feld oder URL-Param:
+  // 1. Header `x-webhook-secret`
+  // 2. URL-Param `?s=...`
+  // 3. Body-Feld `webhook_secret`
+  const expected = process.env.HUBSPOT_WEBHOOK_SECRET;
+  if (expected) {
+    const fromHeader = req.headers.get("x-webhook-secret");
+    const fromQuery = new URL(req.url).searchParams.get("s");
+    const fromBody =
+      typeof body === "object" && body !== null
+        ? ((body as Record<string, unknown>).webhook_secret as
+            | string
+            | undefined)
+        : undefined;
+    const got = fromHeader || fromQuery || fromBody;
+    if (got !== expected) return unauthorized();
   }
 
   const employees = await listEmployees();
