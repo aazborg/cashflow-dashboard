@@ -142,6 +142,19 @@ export default async function GesamtCashflowPage({
   const grandTotal = rows.reduce((s, r) => s + r.totalOriginal, 0);
   const commissionTotal = rows.reduce((s, r) => s + r.total, 0);
   const restTotal = grandTotal - commissionTotal;
+  // Gesamte Auszahlung über den sichtbaren Zeitraum (variabel + Fixum,
+  // berücksichtigt Jun/Nov-Doppel und Dienstverhältnis-Filter).
+  const grandAuszahlung = rows.reduce((s, r) => {
+    let mSum = 0;
+    for (const m of mitarbeiter) {
+      mSum += monthlyPayout(m.id, r.byMitarbeiter[m.id] ?? 0, r.month);
+    }
+    return s + mSum;
+  }, 0);
+  const auszahlungPctOfTotal =
+    grandTotal > 0 ? (grandAuszahlung / grandTotal) * 100 : 0;
+  const fmtPct = (n: number): string =>
+    n.toLocaleString("de-AT", { maximumFractionDigits: 1 }) + " %";
 
   // Differenz pro Mitarbeiter (Original − Provisions-Basis) — wo der
   // Mitarbeiter seinen Betrag nach unten korrigiert hat, kommt diese
@@ -169,7 +182,7 @@ export default async function GesamtCashflowPage({
         <YearFilter years={availableYears} current={selectedYear} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           label={`Gesamt-Cashflow ${selectedYear}+`}
           value={formatEUR(grandTotal)}
@@ -180,13 +193,19 @@ export default async function GesamtCashflowPage({
           label="Provisions-Basis Σ"
           value={formatEUR(commissionTotal)}
           sub="Summe der editierbaren Mitarbeiter-Beträge"
-          accent="green"
+          accent="yellow"
         />
         <KpiCard
           label="Company-Rest Σ"
           value={formatEUR(restTotal)}
-          sub="Differenz Original − Provisionsbasis (Mitarbeiter haben gekürzt)"
+          sub="Differenz Original − Provisionsbasis"
           accent="orange"
+        />
+        <KpiCard
+          label="Gesamt-Auszahlung Σ"
+          value={formatEUR(grandAuszahlung)}
+          sub={`${fmtPct(auszahlungPctOfTotal)} vom Gesamt-Cashflow · Provision + Fixum`}
+          accent="green"
         />
       </div>
 
@@ -261,6 +280,9 @@ export default async function GesamtCashflowPage({
                       {totalAuszahlung > 0.5 ? (
                         <div className="text-[10px] text-[color:var(--brand-green)] font-normal">
                           Auszahlung {formatEUR(totalAuszahlung)}
+                          {r.totalOriginal > 0
+                            ? ` · ${fmtPct((totalAuszahlung / r.totalOriginal) * 100)}`
+                            : ""}
                         </div>
                       ) : null}
                     </td>
@@ -282,6 +304,7 @@ export default async function GesamtCashflowPage({
                           {pay > 0.5 ? (
                             <div className="text-[10px] text-[color:var(--brand-green)] font-normal">
                               Auszahlung {formatEUR(pay)}
+                              {cf > 0 ? ` · ${fmtPct((pay / cf) * 100)}` : ""}
                             </div>
                           ) : null}
                         </td>
