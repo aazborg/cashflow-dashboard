@@ -38,6 +38,97 @@ interface HubspotOwnersResponse {
   paging?: { next?: { after: string } };
 }
 
+interface HubspotAssociationsBatchResponse {
+  results: {
+    from: { id: string };
+    to: { toObjectId: string }[];
+  }[];
+}
+
+interface HubspotContactBatchResponse {
+  results: {
+    id: string;
+    properties: { email?: string };
+  }[];
+}
+
+async function fetchDealContactEmails(
+  token: string,
+  dealIds: string[],
+): Promise<Map<string, string>> {
+  // Map of dealId -> primary contact email.
+  const dealToEmail = new Map<string, string>();
+  if (dealIds.length === 0) return dealToEmail;
+
+  const assocRes = await fetch(
+    `${HUBSPOT_BASE}/crm/v4/associations/deals/contacts/batch/read`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        inputs: dealIds.map((id) => ({ id })),
+      }),
+    },
+  );
+  if (!assocRes.ok) {
+    throw new Error(
+      `HubSpot associations ${assocRes.status}: ${await assocRes
+        .text()
+        .catch(() => "")}`,
+    );
+  }
+  const assocJson =
+    (await assocRes.json()) as HubspotAssociationsBatchResponse;
+
+  // Pick the first associated contact per deal.
+  const dealToContact = new Map<string, string>();
+  for (const r of assocJson.results) {
+    const first = r.to[0]?.toObjectId;
+    if (first) dealToContact.set(r.from.id, first);
+  }
+  const contactIds = Array.from(new Set(dealToContact.values()));
+  if (contactIds.length === 0) return dealToEmail;
+
+  const contactToEmail = new Map<string, string>();
+  // The contacts batch endpoint accepts up to 100 ids per request.
+  for (let i = 0; i < contactIds.length; i += 100) {
+    const slice = contactIds.slice(i, i + 100);
+    const res = await fetch(
+      `${HUBSPOT_BASE}/crm/v3/objects/contacts/batch/read`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          properties: ["email"],
+          inputs: slice.map((id) => ({ id })),
+        }),
+      },
+    );
+    if (!res.ok) {
+      throw new Error(
+        `HubSpot contacts ${res.status}: ${await res.text().catch(() => "")}`,
+      );
+    }
+    const json = (await res.json()) as HubspotContactBatchResponse;
+    for (const c of json.results) {
+      const email = c.properties.email?.trim();
+      if (email) contactToEmail.set(c.id, email);
+    }
+  }
+
+  for (const [dealId, contactId] of dealToContact) {
+    const email = contactToEmail.get(contactId);
+    if (email) dealToEmail.set(dealId, email);
+  }
+  return dealToEmail;
+}
+
 async function fetchOwners(token: string): Promise<Map<string, HubspotOwner>> {
   const owners = new Map<string, HubspotOwner>();
   let after: string | undefined;
@@ -155,6 +246,11 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
     pages++;
     total = json.total;
 
+    const emailByDealId = await fetchDealContactEmails(
+      token,
+      json.results.map((r) => r.id),
+    );
+
     for (const item of json.results) {
       try {
         const ownerId = item.properties.hubspot_owner_id ?? "";
@@ -186,7 +282,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
         const result = await insertHubspotDealIfMissing(item.id, {
           vorname,
           nachname,
-          email: null,
+          email: emailByDealId.get(item.id) ?? null,
           mitarbeiter_id,
           mitarbeiter_name,
           betrag: Number.isFinite(betrag) ? betrag : 0,

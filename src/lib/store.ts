@@ -174,6 +174,10 @@ export async function insertHubspotDealIfMissing(
 ): Promise<{ deal: Deal; created: boolean }> {
   const existing = await getDealByHubspotId(hubspot_deal_id);
   if (existing) {
+    if (!existing.email && data.email) {
+      const updated = await updateDeal(existing.id, { email: data.email });
+      return { deal: updated ?? existing, created: false };
+    }
     return { deal: existing, created: false };
   }
   const { data: row, error } = await supabaseAdmin()
