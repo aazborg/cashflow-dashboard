@@ -45,6 +45,7 @@ export function computeMonthlyClosers(
     if (!e.active) continue;
     if (!e.is_closer) continue;
     if (e.is_setter) continue; // Setter werden separat behandelt
+    if (isTestUser(e)) continue;
     if (e.hubspot_owner_id) closerIds.set(e.hubspot_owner_id, e);
     closerIds.set(e.id, e);
   }
@@ -78,6 +79,7 @@ export function computeMonthlyClosers(
   const out: CloserProvision[] = [];
   for (const e of employees) {
     if (!e.active || !e.is_closer || e.is_setter) continue;
+    if (isTestUser(e)) continue;
     if (seen.has(e.id)) continue;
     seen.add(e.id);
 
@@ -113,6 +115,86 @@ export function computeMonthlyClosers(
   return out;
 }
 
+/**
+ * Liefert aktive Setter, für die im gegebenen Monat noch KEIN Qualis-Eintrag
+ * in der DB existiert. "0 eingetragen" gilt als bewusst (Eintrag vorhanden);
+ * komplett fehlende Zeile ist die Erinnerung wert.
+ */
+export interface MissingQualisSetter {
+  mitarbeiter_id: string;
+  name: string;
+  setter_hours: string | null;
+}
+
+export function findMissingQualisSetters(
+  employees: Employee[],
+  qualisHasEntryByMit: Set<string>,
+): MissingQualisSetter[] {
+  const out: MissingQualisSetter[] = [];
+  for (const e of employees) {
+    if (!e.active || !e.is_setter) continue;
+    if (isTestUser(e)) continue;
+    if (!e.setter_hours) continue;
+    const keys = e.hubspot_owner_id ? [e.hubspot_owner_id, e.id] : [e.id];
+    const present = keys.some((k) => qualisHasEntryByMit.has(k));
+    if (!present) {
+      out.push({
+        mitarbeiter_id: e.hubspot_owner_id ?? e.id,
+        name: e.name,
+        setter_hours: e.setter_hours,
+      });
+    }
+  }
+  return out;
+}
+
+export interface ReminderEmail {
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+}
+
+export function buildQualisReminderEmail(
+  month: string,
+  missing: MissingQualisSetter[],
+  adminUrl: string,
+): ReminderEmail {
+  const monLabel = monthLabelDe(month);
+  const subject = `Erinnerung: Qualis für ${monLabel} eintragen`;
+  const greeting = "Hallo Mario";
+  const intro =
+    `bevor die Provisions-Mail an die Steuerberatung rausgeht, fehlen für ` +
+    `${monLabel} noch Qualis-Einträge für folgende Setter:`;
+  const lines = missing.map(
+    (m) => `• ${m.name}${m.setter_hours ? ` (${m.setter_hours})` : ""}`,
+  );
+  const outro =
+    `Bitte trage die Anzahl der erschienenen Qualis pro Setter im Admin-` +
+    `Bereich ein und klicke anschließend auf „Provisions-Mail jetzt senden":\n${adminUrl}`;
+  const sign = "Automatischer Hinweis vom Closing Dashboard.";
+
+  const text = [greeting, "", intro, "", ...lines, "", outro, "", sign].join("\n");
+  const html = `
+    <div style="font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">
+      <p>${escapeHtml(greeting)},</p>
+      <p>${escapeHtml(intro)}</p>
+      <ul>${missing
+        .map(
+          (m) =>
+            `<li>${escapeHtml(m.name)}${
+              m.setter_hours ? ` (${escapeHtml(m.setter_hours)})` : ""
+            }</li>`,
+        )
+        .join("")}</ul>
+      <p>Bitte trage die Anzahl der erschienenen Qualis pro Setter im Admin-Bereich ein und klicke anschließend auf „Provisions-Mail jetzt senden":</p>
+      <p><a href="${escapeHtml(adminUrl)}">${escapeHtml(adminUrl)}</a></p>
+      <p style="color:#6b7280;font-size:12px">${escapeHtml(sign)}</p>
+    </div>
+  `.trim();
+
+  return { subject, textBody: text, htmlBody: html };
+}
+
 export function computeMonthlySetters(
   month: string,
   employees: Employee[],
@@ -121,6 +203,7 @@ export function computeMonthlySetters(
   const out: SetterPayout[] = [];
   for (const e of employees) {
     if (!e.active || !e.is_setter) continue;
+    if (isTestUser(e)) continue;
     const tariff = e.setter_hours ? SETTER_TARIFFS[e.setter_hours] : null;
     if (!tariff) continue;
 
@@ -215,10 +298,17 @@ function formatSetterLine(s: SetterPayout): string {
 }
 
 function formatNumber(n: number): string {
-  return n.toLocaleString("de-AT", {
+  // de-DE statt de-AT — Tausender mit Punkt statt geschütztem Leerzeichen,
+  // damit die Zahlen in Mail-Clients kompakt bleiben (5.509,81 statt 5 509,81).
+  return n.toLocaleString("de-DE", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
+}
+
+function isTestUser(e: Employee): boolean {
+  const n = e.name.trim().toLowerCase();
+  return n === "test" || n.startsWith("test ");
 }
 
 function inferNachname(fullName: string): string {

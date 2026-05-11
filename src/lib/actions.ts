@@ -401,3 +401,110 @@ export async function upsertSetterQualisAction(formData: FormData) {
   await upsertSetterQualis({ mitarbeiter_id, month, qualis });
   revalidatePath("/admin");
 }
+
+export interface SendProvisionsResult {
+  ok: boolean;
+  message: string;
+  mode?: "live" | "reminder" | "blocked";
+  missing?: { name: string; setter_hours: string | null }[];
+}
+
+export async function sendProvisionsNowAction(
+  formData?: FormData,
+): Promise<SendProvisionsResult> {
+  await requireAdmin();
+  const monthRaw = formData ? String(formData.get("month") ?? "").trim() : "";
+  const month =
+    monthRaw && /^\d{4}-\d{2}$/.test(monthRaw)
+      ? monthRaw
+      : (() => {
+          const n = new Date();
+          return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+        })();
+
+  if (process.env.PROVISIONS_EMAIL_LIVE !== "true") {
+    return {
+      ok: false,
+      mode: "blocked",
+      message:
+        "PROVISIONS_EMAIL_LIVE ist nicht auf 'true' gesetzt — produktive Mails an Plank sind deaktiviert. ENV-Variable setzen, um scharf zu schalten.",
+    };
+  }
+  const toEmail = process.env.PROVISIONS_TO_EMAIL;
+  if (!toEmail) {
+    return { ok: false, message: "PROVISIONS_TO_EMAIL ist nicht gesetzt." };
+  }
+  const ccEmail = process.env.PROVISIONS_CC_EMAIL;
+  const fromName = process.env.PROVISIONS_FROM_NAME ?? "Dr. Mario Grabner";
+  const fromEmail = process.env.PROVISIONS_FROM_EMAIL ?? process.env.SMTP_USER;
+  if (!fromEmail) {
+    return {
+      ok: false,
+      message: "PROVISIONS_FROM_EMAIL oder SMTP_USER muss gesetzt sein.",
+    };
+  }
+  const from = `${fromName} <${fromEmail}>`;
+
+  // Heavy lifting in eigenem Module-Load (vermeidet Top-of-File-Imports).
+  const { listDeals, listEmployees, getSetterQualisForMonth } = await import(
+    "./store"
+  );
+  const {
+    buildProvisionsEmail,
+    computeMonthlyClosers,
+    computeMonthlySetters,
+    findMissingQualisSetters,
+  } = await import("./provisions-email");
+  const { sendMail } = await import("./mailer");
+
+  const [deals, employees, qualisMap] = await Promise.all([
+    listDeals(),
+    listEmployees(),
+    getSetterQualisForMonth(month),
+  ]);
+
+  // Wenn Qualis fehlen, blockiere den Send — UI zeigt die Liste.
+  const presenceSet = new Set(qualisMap.keys());
+  const missing = findMissingQualisSetters(employees, presenceSet);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      mode: "blocked",
+      message:
+        "Es fehlen Qualis-Einträge für folgende Setter. Bitte oben eintragen und erneut klicken.",
+      missing: missing.map((m) => ({
+        name: m.name,
+        setter_hours: m.setter_hours,
+      })),
+    };
+  }
+
+  const closers = computeMonthlyClosers(month, deals, employees);
+  const setters = computeMonthlySetters(month, employees, qualisMap);
+  const email = buildProvisionsEmail(month, closers, setters);
+
+  try {
+    await sendMail({
+      from,
+      to: toEmail,
+      cc: ccEmail,
+      subject: email.subject,
+      text: email.textBody,
+      html: email.htmlBody,
+    });
+    return {
+      ok: true,
+      mode: "live",
+      message: `Provisions-Mail für ${month} an ${toEmail} versendet${
+        ccEmail ? ` (CC ${ccEmail})` : ""
+      }. ${closers.length} Closer, ${setters.length} Setter.`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      message:
+        "Versand fehlgeschlagen: " +
+        (err instanceof Error ? err.message : String(err)),
+    };
+  }
+}

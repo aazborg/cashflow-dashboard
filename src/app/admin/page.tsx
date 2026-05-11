@@ -4,6 +4,7 @@ import HubspotSyncButton from "@/components/HubspotSyncButton";
 import InviteForm from "@/components/InviteForm";
 import NewProductForm from "@/components/NewProductForm";
 import ProductRow from "@/components/ProductRow";
+import SendProvisionsButton from "@/components/SendProvisionsButton";
 import SetterQualisGrid from "@/components/SetterQualisGrid";
 import {
   getDeal,
@@ -146,6 +147,7 @@ export default async function AdminPage() {
         </div>
         <div className="px-4 py-3">
           <SetterQualisGrid setters={activeSetters} existing={setterQualis} />
+          <SendProvisionsButton />
         </div>
       </section>
 

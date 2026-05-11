@@ -2,8 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSecondToLastWorkingDayOfMonth } from "@/lib/business-days";
 import {
   buildProvisionsEmail,
+  buildQualisReminderEmail,
   computeMonthlyClosers,
   computeMonthlySetters,
+  findMissingQualisSetters,
 } from "@/lib/provisions-email";
 import { sendMail } from "@/lib/mailer";
 import {
@@ -171,6 +173,59 @@ export async function POST(req: NextRequest) {
     listEmployees(),
     getSetterQualisForMonth(month),
   ]);
+
+  // Fehlen Qualis-Einträge für einen aktiven Setter? Dann erst Reminder an
+  // Mario, nicht die echte Mail an Plank.
+  const presenceSet = new Set(qualisMap.keys());
+  const missing = findMissingQualisSetters(employees, presenceSet);
+  if (missing.length > 0) {
+    const reminderRecipient =
+      process.env.PROVISIONS_FROM_EMAIL ??
+      process.env.PROVISIONS_TEST_RECIPIENT ??
+      process.env.SMTP_USER;
+    if (!reminderRecipient) {
+      return NextResponse.json(
+        { ok: false, error: "Kein Reminder-Empfänger konfiguriert." },
+        { status: 500 },
+      );
+    }
+    const adminUrl =
+      process.env.NEXT_PUBLIC_BASE_URL
+        ? `${process.env.NEXT_PUBLIC_BASE_URL}/admin`
+        : new URL("/admin", req.url).toString().replace("/cashflow", "");
+    const reminder = buildQualisReminderEmail(month, missing, adminUrl);
+    try {
+      const info = await sendMail({
+        from: fromHeader(),
+        to: reminderRecipient,
+        subject: reminder.subject,
+        text: reminder.textBody,
+        html: reminder.htmlBody,
+      });
+      return NextResponse.json({
+        ok: true,
+        sent: true,
+        mode: "reminder",
+        messageId: info.messageId,
+        accepted: info.accepted,
+        month,
+        missingSetters: missing,
+        note:
+          "Provisions-Mail an Plank wurde NICHT gesendet — fehlende Qualis-Einträge. Reminder ging an Mario.",
+      });
+    } catch (err) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+          mode: "reminder",
+          month,
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   const closers = computeMonthlyClosers(month, deals, employees);
   const setters = computeMonthlySetters(month, employees, qualisMap);
   const email = buildProvisionsEmail(month, closers, setters);
