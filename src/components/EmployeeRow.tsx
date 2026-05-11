@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { deleteEmployeeAction, updateEmployeeAction } from "@/lib/actions";
+import {
+  deleteEmployeeAction,
+  toggleEmployeeActiveAction,
+  updateEmployeeAction,
+} from "@/lib/actions";
 import { formatEUR } from "@/lib/cashflow";
 import type { Employee, SetterHours } from "@/lib/types";
 import { SETTER_HOURS_OPTIONS } from "@/lib/types";
@@ -117,7 +121,11 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
 
   return (
     <>
-      <tr className="border-t border-[color:var(--border)]">
+      <tr
+        className={`border-t border-[color:var(--border)] ${
+          employee.active ? "" : "bg-[color:var(--surface)] opacity-60"
+        }`}
+      >
         <td className="px-3 py-2">
           {editing ? (
             <input
@@ -127,7 +135,14 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
               autoFocus
             />
           ) : (
-            <span className="font-medium">{employee.name}</span>
+            <div>
+              <span className="font-medium">{employee.name}</span>
+              {!employee.active ? (
+                <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-[color:var(--brand-yellow)] text-[color:var(--foreground)] font-medium">
+                  inaktiv
+                </span>
+              ) : null}
+            </div>
           )}
         </td>
         <td className="px-3 py-2 text-[color:var(--muted)]">{employee.email}</td>
@@ -278,6 +293,35 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
                 className="text-xs px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
               >
                 Bearbeiten
+              </button>
+              <button
+                onClick={() => {
+                  const msg = employee.active
+                    ? `Mitarbeiter "${employee.name}" deaktivieren?\n\nKein Login mehr, kein Eintrag in der Provisions-Mail an Plank. Cashflows, Deals und historische Auszahlungen bleiben unverändert. Reaktivierung jederzeit möglich.`
+                    : `Mitarbeiter "${employee.name}" wieder aktivieren?\n\nLogin und Provisions-Mail-Eintrag wieder ein.`;
+                  if (!confirm(msg)) return;
+                  setError(null);
+                  const fd = new FormData();
+                  fd.set("id", employee.id);
+                  fd.set("active", String(!employee.active));
+                  startTransition(async () => {
+                    try {
+                      await toggleEmployeeActiveAction(fd);
+                    } catch (err) {
+                      setError(
+                        err instanceof Error ? err.message : String(err),
+                      );
+                    }
+                  });
+                }}
+                disabled={pending}
+                className={`text-xs px-2 py-1 rounded border disabled:opacity-50 ${
+                  employee.active
+                    ? "border-[color:var(--border)] text-[color:var(--ink-soft,#4a4a4a)] hover:bg-[color:var(--brand-yellow)]/30"
+                    : "border-[color:var(--brand-green)] text-[color:var(--brand-green)] hover:bg-[color:var(--brand-green)]/10"
+                }`}
+              >
+                {employee.active ? "Deaktivieren" : "Aktivieren"}
               </button>
               <button
                 onClick={() => {

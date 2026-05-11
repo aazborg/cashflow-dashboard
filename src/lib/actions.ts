@@ -352,6 +352,48 @@ export async function deleteEmployeeAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
+/**
+ * Aktiviert oder deaktiviert einen Mitarbeiter. Inaktive Mitarbeiter:
+ *   - können sich nicht mehr einloggen (Session-Check in getSessionContext)
+ *   - tauchen nicht mehr in der Provisions-Mail an Plank auf
+ *   - alle historischen Cashflows, Deals und Auszahlungen bleiben unangetastet
+ *
+ * Schutz: letzten aktiven Admin nicht deaktivieren; sich selbst nicht
+ * deaktivieren.
+ */
+export async function toggleEmployeeActiveAction(formData: FormData) {
+  const ctx = await requireAdmin();
+  const id = String(formData.get("id") ?? "").trim();
+  const active = formData.get("active") === "true";
+  if (!id) throw new Error("id ist erforderlich.");
+
+  // Self-Deactivate blockieren.
+  if (!active && ctx.employee.id === id) {
+    throw new Error(
+      "Du kannst dich nicht selbst deaktivieren — sonst kommst du nach dem nächsten Login nicht mehr rein.",
+    );
+  }
+
+  // Letzten aktiven Admin nicht deaktivieren.
+  if (!active) {
+    const all = await listEmployees();
+    const target = all.find((e) => e.id === id);
+    if (target?.role === "admin" && target.active) {
+      const otherActiveAdmins = all.filter(
+        (e) => e.role === "admin" && e.active && e.id !== id,
+      );
+      if (otherActiveAdmins.length === 0) {
+        throw new Error(
+          "Mindestens ein aktiver Admin muss bestehen bleiben. Promote zuerst einen anderen Mitarbeiter zu admin.",
+        );
+      }
+    }
+  }
+
+  await updateEmployee(id, { active });
+  revalidatePath("/admin");
+}
+
 export interface SyncResult {
   ok: boolean;
   summary?: SyncSummary;
