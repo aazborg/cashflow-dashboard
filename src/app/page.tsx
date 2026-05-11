@@ -129,11 +129,26 @@ export default async function DashboardPage({
   const yearStart = new Date(selectedYear, 0, 1);
   const { mitarbeiter, rows } = buildCashflow(filteredDeals, { from: yearStart });
   const dealCount = filteredDeals.filter((d) => !d.pending_delete).length;
+  // Anzeige-Cashflow:
+  //   Admins sehen die Original-Beträge aus HubSpot (Company-True-Cashflow);
+  //   Members sehen ihre eigenen, ggf. angepassten betrag-Werte.
+  // Auszahlungs-/Provisionsrechnung verwendet weiterhin den
+  // Provisions-relevanten `betrag` (r.total / r.byMitarbeiter).
+  const displayTotal = (r: (typeof rows)[number]): number =>
+    ctx.isAdmin ? r.totalOriginal : r.total;
+  const displayByMit = (
+    r: (typeof rows)[number],
+    mitId: string,
+  ): number =>
+    ctx.isAdmin
+      ? r.byMitarbeiterOriginal[mitId] ?? 0
+      : r.byMitarbeiter[mitId] ?? 0;
   // Stärkster Monat = höchste Auszahlung (variabel + Fixum, je nach Filter).
   // Bei "Alle": Summe der Auszahlungen über alle Mitarbeiter im Monat;
   // bei Einzelfilter: Auszahlung des gewählten Mitarbeiters.
   const computeRowPayout = (r: (typeof rows)[number]): number => {
-    if (filterId) return monthlyPayout(filterId, r.total, r.month) ?? 0;
+    if (filterId)
+      return monthlyPayout(filterId, r.byMitarbeiter[filterId] ?? r.total, r.month) ?? 0;
     let sum = 0;
     for (const [mitId, amount] of Object.entries(r.byMitarbeiter)) {
       sum += monthlyPayout(mitId, amount, r.month) ?? 0;
@@ -142,7 +157,14 @@ export default async function DashboardPage({
   };
   const peakRow = rows.reduce(
     (a, b) => (computeRowPayout(b) > computeRowPayout(a) ? b : a),
-    rows[0] ?? { total: 0, monthLabel: "—", month: "", byMitarbeiter: {} },
+    rows[0] ?? {
+      total: 0,
+      monthLabel: "—",
+      month: "",
+      byMitarbeiter: {},
+      totalOriginal: 0,
+      byMitarbeiterOriginal: {},
+    },
   );
   const peakPayout = computeRowPayout(peakRow);
 
@@ -153,7 +175,15 @@ export default async function DashboardPage({
     : null;
 
   const outstandingAll = outstandingByMitarbeiter(allDeals);
+  // Admin sieht Original-Beträge (Company-True-Cashflow). Members sehen ihren
+  // Provisions-relevanten Betrag — Original ist für sie ohnehin nicht sichtbar.
+  const outstandingDisplayTotal = (r: (typeof outstandingAll)[number]): number =>
+    ctx.isAdmin ? r.totalOriginal : r.total;
   const outstandingTotal = outstandingAll.reduce((s, r) => s + r.total, 0);
+  const outstandingDisplayTotalSum = outstandingAll.reduce(
+    (s, r) => s + outstandingDisplayTotal(r),
+    0,
+  );
   const currentOutstanding = filterId
     ? outstandingAll.find((r) => r.mitarbeiter_id === filterId)
     : null;
@@ -202,23 +232,25 @@ export default async function DashboardPage({
           value={formatEUR(
             currentOutstanding
               ? currentOutstandingPayout ?? currentOutstanding.total
-              : outstandingPayoutTotal || outstandingTotal,
+              : outstandingPayoutTotal || outstandingDisplayTotalSum,
           )}
           sub={`${
             currentOutstanding
               ? currentOutstanding.openPayments
               : outstandingAll.reduce((s, r) => s + r.openPayments, 0)
           } offene Raten · Cashflow ${formatEUR(
-            currentOutstanding ? currentOutstanding.total : outstandingTotal,
+            currentOutstanding
+              ? outstandingDisplayTotal(currentOutstanding)
+              : outstandingDisplayTotalSum,
           )}`}
           accent="yellow"
         />
         <KpiCard
           label="Stärkster Monat"
-          value={formatEUR(peakPayout > 0 ? peakPayout : peakRow.total)}
+          value={formatEUR(peakPayout > 0 ? peakPayout : displayTotal(peakRow))}
           sub={`${peakRow.monthLabel}${
-            peakPayout > 0 && peakPayout !== peakRow.total
-              ? ` · Cashflow ${formatEUR(peakRow.total)}`
+            peakPayout > 0 && peakPayout !== displayTotal(peakRow)
+              ? ` · Cashflow ${formatEUR(displayTotal(peakRow))}`
               : ""
           }`}
           accent="orange"
@@ -253,7 +285,7 @@ export default async function DashboardPage({
                     {formatEUR(auszahlung ?? r.total)}
                   </div>
                   <div className="text-xs text-[color:var(--muted)] mt-1 pl-2 tabular-nums">
-                    Cashflow {formatEUR(r.total)}
+                    Cashflow {formatEUR(outstandingDisplayTotal(r))}
                   </div>
                   <div className="text-xs text-[color:var(--muted)] mt-1 pl-2">
                     {r.openPayments} Raten · {r.dealCount} Deals
@@ -282,7 +314,7 @@ export default async function DashboardPage({
           </span>
         </div>
         <CashflowChart
-          data={rows.map((r) => ({ monthLabel: r.monthLabel, total: r.total }))}
+          data={rows.map((r) => ({ monthLabel: r.monthLabel, total: displayTotal(r) }))}
           nowIndex={rows.findIndex(
             (r) =>
               r.month ===
@@ -331,15 +363,15 @@ export default async function DashboardPage({
                   >
                     <td className="px-4 py-2 sticky left-0 bg-white">{r.monthLabel}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-medium">
-                      {r.total > 0 ? formatEUR(r.total) : "—"}
+                      {displayTotal(r) > 0 ? formatEUR(displayTotal(r)) : "—"}
                     </td>
                     {mitarbeiter.map((m) => (
                       <td
                         key={m.id}
                         className="px-4 py-2 text-right tabular-nums text-[color:var(--muted)]"
                       >
-                        {(r.byMitarbeiter[m.id] ?? 0) > 0
-                          ? formatEUR(r.byMitarbeiter[m.id]!)
+                        {displayByMit(r, m.id) > 0
+                          ? formatEUR(displayByMit(r, m.id))
                           : "—"}
                       </td>
                     ))}
@@ -421,7 +453,7 @@ export default async function DashboardPage({
                     >
                       <td className="px-4 py-2">{r.monthLabel}</td>
                       <td className="px-4 py-2 text-right tabular-nums">
-                        {r.total > 0 ? formatEUR(r.total) : "—"}
+                        {displayTotal(r) > 0 ? formatEUR(displayTotal(r)) : "—"}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-[color:var(--brand-green)] font-medium">
                         {total > 0 ? (
@@ -473,7 +505,7 @@ export default async function DashboardPage({
                         ) : null}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                        {formatEUR(rows.reduce((s, r) => s + r.total, 0))}
+                        {formatEUR(rows.reduce((s, r) => s + displayTotal(r), 0))}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums font-semibold text-[color:var(--brand-green)]">
                         {filterId &&

@@ -18,6 +18,7 @@ interface DealRow {
   mitarbeiter_id: string;
   mitarbeiter_name: string;
   betrag: number | string;
+  betrag_original: number | string | null;
   start_datum: string | null;
   anzahl_raten: number | null;
   intervall: Intervall | null;
@@ -36,6 +37,7 @@ function rowToDeal(r: DealRow): Deal {
     mitarbeiter_id: r.mitarbeiter_id,
     mitarbeiter_name: r.mitarbeiter_name,
     betrag: Number(r.betrag),
+    betrag_original: r.betrag_original == null ? null : Number(r.betrag_original),
     start_datum: r.start_datum,
     anzahl_raten: r.anzahl_raten,
     intervall: r.intervall,
@@ -77,6 +79,7 @@ export async function createDeal(
       mitarbeiter_id: input.mitarbeiter_id,
       mitarbeiter_name: input.mitarbeiter_name,
       betrag: input.betrag,
+      betrag_original: input.betrag_original ?? input.betrag,
       start_datum: input.start_datum,
       anzahl_raten: input.anzahl_raten,
       intervall: input.intervall,
@@ -97,7 +100,7 @@ export async function updateDeal(
   // Only forward known columns
   const allowed: (keyof Deal)[] = [
     "vorname", "nachname", "email", "mitarbeiter_id", "mitarbeiter_name",
-    "betrag", "start_datum", "anzahl_raten", "intervall",
+    "betrag", "betrag_original", "start_datum", "anzahl_raten", "intervall",
     "hubspot_deal_id", "source", "pending_delete",
   ];
   const update: Record<string, unknown> = {};
@@ -130,6 +133,7 @@ export async function upsertDealByHubspotId(
         mitarbeiter_id: data.mitarbeiter_id,
         mitarbeiter_name: data.mitarbeiter_name,
         betrag: data.betrag,
+        betrag_original: data.betrag_original ?? data.betrag,
         start_datum: data.start_datum,
         anzahl_raten: data.anzahl_raten,
         intervall: data.intervall,
@@ -158,7 +162,10 @@ export async function getDealByHubspotId(
 /**
  * Insert-only HubSpot import: legt einen Deal an, wenn er noch nicht
  * existiert. Wenn ein Deal mit dieser hubspot_deal_id schon da ist, wird
- * NICHTS überschrieben — bestehende Daten bleiben unverändert.
+ * der vom Mitarbeiter editierbare `betrag` NICHT überschrieben — aber der
+ * `betrag_original` (HubSpot-Wahrheit) wird auf den aktuellen HubSpot-Betrag
+ * nachgezogen, damit Umsatzstatistiken immer den Original-Wert haben. Ebenso
+ * wird `email` nachgezogen, wenn HubSpot inzwischen eine liefert.
  */
 export async function insertHubspotDealIfMissing(
   hubspot_deal_id: string,
@@ -174,8 +181,13 @@ export async function insertHubspotDealIfMissing(
 ): Promise<{ deal: Deal; created: boolean }> {
   const existing = await getDealByHubspotId(hubspot_deal_id);
   if (existing) {
-    if (!existing.email && data.email) {
-      const updated = await updateDeal(existing.id, { email: data.email });
+    const patch: Partial<Deal> = {};
+    if (!existing.email && data.email) patch.email = data.email;
+    if (existing.betrag_original !== data.betrag) {
+      patch.betrag_original = data.betrag;
+    }
+    if (Object.keys(patch).length > 0) {
+      const updated = await updateDeal(existing.id, patch);
       return { deal: updated ?? existing, created: false };
     }
     return { deal: existing, created: false };
@@ -191,6 +203,7 @@ export async function insertHubspotDealIfMissing(
       mitarbeiter_id: data.mitarbeiter_id,
       mitarbeiter_name: data.mitarbeiter_name,
       betrag: data.betrag,
+      betrag_original: data.betrag,
       start_datum: data.default_start_datum,
       anzahl_raten: null,
       intervall: null,

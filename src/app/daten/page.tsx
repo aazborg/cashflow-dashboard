@@ -131,7 +131,7 @@ export default async function DatenPage({
                   </td>
                 </tr>
               ) : (
-                visible.map((d) => <DealRow key={d.id} deal={d} />)
+                visible.map((d) => <DealRow key={d.id} deal={d} isAdmin={ctx.isAdmin} />)
               )}
             </tbody>
           </table>

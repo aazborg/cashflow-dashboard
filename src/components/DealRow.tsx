@@ -10,12 +10,16 @@ import { formatEURPrecise } from "@/lib/cashflow";
 
 interface Props {
   deal: Deal;
+  isAdmin: boolean;
 }
 
-export default function DealRow({ deal }: Props) {
+export default function DealRow({ deal, isAdmin }: Props) {
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [betrag, setBetrag] = useState(String(deal.betrag));
+  const [betragOriginal, setBetragOriginal] = useState(
+    deal.betrag_original != null ? String(deal.betrag_original) : "",
+  );
   const [start, setStart] = useState(deal.start_datum ?? "");
   const [raten, setRaten] = useState(
     deal.anzahl_raten != null ? String(deal.anzahl_raten) : "",
@@ -26,6 +30,7 @@ export default function DealRow({ deal }: Props) {
     const fd = new FormData();
     fd.set("id", deal.id);
     fd.set("betrag", betrag);
+    if (isAdmin) fd.set("betrag_original", betragOriginal);
     fd.set("start_datum", start);
     if (raten) fd.set("anzahl_raten", raten);
     if (intervall) fd.set("intervall", intervall);
@@ -72,14 +77,29 @@ export default function DealRow({ deal }: Props) {
       {editing ? (
         <>
           <td className="px-3 py-2">
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={betrag}
-              onChange={(e) => setBetrag(e.target.value)}
-              className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-28 text-right tabular-nums"
-            />
+            <div className="flex flex-col items-end gap-1">
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={betrag}
+                onChange={(e) => setBetrag(e.target.value)}
+                className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-28 text-right tabular-nums"
+                title="Provisions-relevanter Betrag"
+              />
+              {isAdmin ? (
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={betragOriginal}
+                  onChange={(e) => setBetragOriginal(e.target.value)}
+                  className="border border-[color:var(--border)] rounded px-2 py-1 text-xs w-28 text-right tabular-nums text-[color:var(--muted)]"
+                  placeholder="Original (HubSpot)"
+                  title="Original aus HubSpot — wird bei jedem Sync überschrieben, nur für Admin"
+                />
+              ) : null}
+            </div>
           </td>
           <td className="px-3 py-2">
             <input
@@ -138,7 +158,14 @@ export default function DealRow({ deal }: Props) {
       ) : (
         <>
           <td className="px-3 py-2 text-right tabular-nums font-medium">
-            {formatEURPrecise(deal.betrag)}
+            <div>{formatEURPrecise(deal.betrag)}</div>
+            {isAdmin &&
+            deal.betrag_original != null &&
+            deal.betrag_original !== deal.betrag ? (
+              <div className="text-[10px] text-[color:var(--muted)] font-normal tabular-nums">
+                HubSpot: {formatEURPrecise(deal.betrag_original)}
+              </div>
+            ) : null}
           </td>
           <td className="px-3 py-2 text-sm">
             {deal.start_datum

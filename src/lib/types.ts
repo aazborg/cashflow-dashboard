@@ -34,7 +34,13 @@ export interface Deal {
   email: string | null;
   mitarbeiter_id: string;
   mitarbeiter_name: string;
+  /** Provisions-relevanter Betrag — vom Mitarbeiter editierbar. */
   betrag: number;
+  /** Ursprünglicher Dealbetrag aus HubSpot. Wird bei jedem HubSpot-Sync
+   *  überschrieben und ist nur für Admins sichtbar. Wird für Umsatz-
+   *  statistik und Cashflow-Verteilung über Monate verwendet. Optional auf
+   *  Input-Seite (createDeal etc.); auf der DB-Zeile immer befüllt. */
+  betrag_original?: number | null;
   start_datum: string | null;
   anzahl_raten: number | null;
   intervall: Intervall | null;

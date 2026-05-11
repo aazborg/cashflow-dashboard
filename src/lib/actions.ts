@@ -68,6 +68,18 @@ export async function updateDealAction(formData: FormData) {
   if (raten !== null) patch.anzahl_raten = Math.max(1, Math.round(raten));
   if (intervall) patch.intervall = intervall;
   if (betrag !== null) patch.betrag = betrag;
+  // Original-Betrag dürfen nur Admins ändern. Members können das Feld
+  // gar nicht aus dem Formular schicken (UI versteckt es), aber wir
+  // filtern hier zusätzlich serverseitig.
+  if (ctx.isAdmin && formData.has("betrag_original")) {
+    const raw = String(formData.get("betrag_original") ?? "").trim();
+    if (raw === "") {
+      patch.betrag_original = null;
+    } else {
+      const parsed = parseNumber(raw);
+      if (parsed !== null) patch.betrag_original = parsed;
+    }
+  }
 
   await updateDeal(id, patch);
   revalidatePath("/daten");

@@ -4,8 +4,14 @@ import { INTERVALL_MONATE } from "./types";
 export interface MonthRow {
   month: string;
   monthLabel: string;
+  /** Cashflow nach `betrag` (Provisions-Basis). */
   total: number;
   byMitarbeiter: Record<string, number>;
+  /** Cashflow nach `betrag_original` (HubSpot-Wahrheit). Fällt auf `betrag`
+   *  zurück, wenn auf dem Deal kein Original-Betrag hinterlegt ist. Nur
+   *  für Admin-Views relevant. */
+  totalOriginal: number;
+  byMitarbeiterOriginal: Record<string, number>;
 }
 
 function monthKey(d: Date): string {
@@ -22,7 +28,9 @@ const MONTH_NAMES_DE = [
   "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
 ];
 
-export function expandPayments(deal: Deal): { date: Date; amount: number }[] {
+export function expandPayments(
+  deal: Deal,
+): { date: Date; amount: number; amountOriginal: number }[] {
   if (!deal.start_datum || !deal.intervall || !deal.anzahl_raten || deal.anzahl_raten < 1) {
     return [];
   }
@@ -30,9 +38,14 @@ export function expandPayments(deal: Deal): { date: Date; amount: number }[] {
   if (Number.isNaN(start.getTime())) return [];
   const intervalMonths = INTERVALL_MONATE[deal.intervall];
   const rate = deal.betrag / deal.anzahl_raten;
-  const out: { date: Date; amount: number }[] = [];
+  const rateOriginal = (deal.betrag_original ?? deal.betrag) / deal.anzahl_raten;
+  const out: { date: Date; amount: number; amountOriginal: number }[] = [];
   for (let i = 0; i < deal.anzahl_raten; i++) {
-    out.push({ date: addMonths(start, i * intervalMonths), amount: rate });
+    out.push({
+      date: addMonths(start, i * intervalMonths),
+      amount: rate,
+      amountOriginal: rateOriginal,
+    });
   }
   return out;
 }
@@ -77,12 +90,18 @@ export function buildCashflow(
     const m = addMonths(firstMonth, i);
     const key = monthKey(m);
     const byMitarbeiter: Record<string, number> = {};
-    for (const mit of mitarbeiter) byMitarbeiter[mit.id] = 0;
+    const byMitarbeiterOriginal: Record<string, number> = {};
+    for (const mit of mitarbeiter) {
+      byMitarbeiter[mit.id] = 0;
+      byMitarbeiterOriginal[mit.id] = 0;
+    }
     rows.push({
       month: key,
       monthLabel: `${MONTH_NAMES_DE[m.getMonth()]} ${m.getFullYear()}`,
       total: 0,
       byMitarbeiter,
+      totalOriginal: 0,
+      byMitarbeiterOriginal,
     });
   }
 
@@ -96,6 +115,9 @@ export function buildCashflow(
     row.total += p.amount;
     row.byMitarbeiter[p.mitarbeiter_id] =
       (row.byMitarbeiter[p.mitarbeiter_id] ?? 0) + p.amount;
+    row.totalOriginal += p.amountOriginal;
+    row.byMitarbeiterOriginal[p.mitarbeiter_id] =
+      (row.byMitarbeiterOriginal[p.mitarbeiter_id] ?? 0) + p.amountOriginal;
   }
 
   return { mitarbeiter, rows };
@@ -222,7 +244,11 @@ export function cashDistribution(
 export interface OutstandingRow {
   mitarbeiter_id: string;
   mitarbeiter_name: string;
+  /** Outstanding nach `betrag` (Provisions-Basis). */
   total: number;
+  /** Outstanding nach `betrag_original` (HubSpot-Wahrheit). Nur für
+   *  Admin-Views relevant. */
+  totalOriginal: number;
   openPayments: number;
   dealCount: number;
 }
@@ -240,6 +266,7 @@ export function outstandingByMitarbeiter(
         mitarbeiter_id: d.mitarbeiter_id,
         mitarbeiter_name: d.mitarbeiter_name,
         total: 0,
+        totalOriginal: 0,
         openPayments: 0,
         dealCount: 0,
       });
@@ -249,6 +276,7 @@ export function outstandingByMitarbeiter(
     for (const p of expandPayments(d)) {
       if (p.date >= cutoff) {
         row.total += p.amount;
+        row.totalOriginal += p.amountOriginal;
         row.openPayments += 1;
       }
     }
