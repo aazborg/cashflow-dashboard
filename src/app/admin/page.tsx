@@ -4,11 +4,13 @@ import HubspotSyncButton from "@/components/HubspotSyncButton";
 import InviteForm from "@/components/InviteForm";
 import NewProductForm from "@/components/NewProductForm";
 import ProductRow from "@/components/ProductRow";
+import SetterQualisGrid from "@/components/SetterQualisGrid";
 import {
   getDeal,
   listDeleteRequests,
   listEmployees,
   listProducts,
+  listSetterQualis,
 } from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
@@ -19,11 +21,13 @@ export default async function AdminPage() {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
   if (!ctx.isAdmin) redirect("/");
-  const [requests, employees, products] = await Promise.all([
+  const [requests, employees, products, setterQualis] = await Promise.all([
     listDeleteRequests(),
     listEmployees(),
     listProducts(),
+    listSetterQualis(),
   ]);
+  const activeSetters = employees.filter((e) => e.is_setter && e.active);
   const requestsWithDeals = await Promise.all(
     requests.map(async (r) => ({ ...r, deal: await getDeal(r.deal_id) })),
   );
@@ -129,6 +133,20 @@ export default async function AdminPage() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-[color:var(--border)]">
+          <h2 className="font-semibold">Setter-Qualis pro Monat</h2>
+          <p className="text-xs text-[color:var(--muted)] mt-1">
+            Anzahl der erschienenen Qualis je Setter und Monat. Bemessungsgrundlage
+            für die variable Setter-Vergütung in der monatlichen Provisions-E-Mail
+            (Auszahlung = Fixum laut Einstufung + Qualis × € der aktiven Tier-Stufe).
+          </p>
+        </div>
+        <div className="px-4 py-3">
+          <SetterQualisGrid setters={activeSetters} existing={setterQualis} />
+        </div>
       </section>
 
       <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">

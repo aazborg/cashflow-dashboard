@@ -524,6 +524,71 @@ export async function deleteProduct(id: string): Promise<boolean> {
   return (count ?? 0) > 0;
 }
 
+// ── Setter Monthly Qualis ──────────────────────────────────────────────────
+
+interface SetterMonthlyQualisRow {
+  id: string;
+  mitarbeiter_id: string;
+  month: string;
+  qualis: number;
+  updated_at: string;
+}
+
+export async function listSetterQualis(): Promise<
+  import("./types").SetterMonthlyQualis[]
+> {
+  const { data, error } = await supabaseAdmin()
+    .from("setter_monthly_qualis")
+    .select("*")
+    .order("month", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => {
+    const row = r as SetterMonthlyQualisRow;
+    return {
+      id: row.id,
+      mitarbeiter_id: row.mitarbeiter_id,
+      month: row.month,
+      qualis: row.qualis,
+      updated_at: row.updated_at,
+    };
+  });
+}
+
+export async function getSetterQualisForMonth(
+  month: string,
+): Promise<Map<string, number>> {
+  const { data, error } = await supabaseAdmin()
+    .from("setter_monthly_qualis")
+    .select("mitarbeiter_id, qualis")
+    .eq("month", month);
+  if (error) throw error;
+  const out = new Map<string, number>();
+  for (const r of data ?? []) {
+    const row = r as { mitarbeiter_id: string; qualis: number };
+    out.set(row.mitarbeiter_id, row.qualis);
+  }
+  return out;
+}
+
+export async function upsertSetterQualis(input: {
+  mitarbeiter_id: string;
+  month: string;
+  qualis: number;
+}): Promise<void> {
+  const { error } = await supabaseAdmin()
+    .from("setter_monthly_qualis")
+    .upsert(
+      {
+        mitarbeiter_id: input.mitarbeiter_id,
+        month: input.month,
+        qualis: Math.max(0, Math.round(input.qualis)),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "mitarbeiter_id,month" },
+    );
+  if (error) throw error;
+}
+
 // ── Delete requests ────────────────────────────────────────────────────────
 
 interface DeleteRequestRow {

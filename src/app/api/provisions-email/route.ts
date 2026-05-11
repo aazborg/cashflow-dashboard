@@ -2,10 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSecondToLastWorkingDayOfMonth } from "@/lib/business-days";
 import {
   buildProvisionsEmail,
-  computeMonthlyProvisions,
+  computeMonthlyClosers,
+  computeMonthlySetters,
 } from "@/lib/provisions-email";
 import { sendMail } from "@/lib/mailer";
-import { listDeals, listEmployees } from "@/lib/store";
+import {
+  getSetterQualisForMonth,
+  listDeals,
+  listEmployees,
+} from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -46,11 +51,14 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const month = url.searchParams.get("month") || defaultMonth();
   const sendMode = url.searchParams.get("send"); // "test" | null
-  const [deals, employees] = await Promise.all([listDeals(), listEmployees()]);
-  const provisions = computeMonthlyProvisions(month, deals, employees);
-  const email = buildProvisionsEmail(month, provisions, {
-    followUpAnnouncement: false,
-  });
+  const [deals, employees, qualisMap] = await Promise.all([
+    listDeals(),
+    listEmployees(),
+    getSetterQualisForMonth(month),
+  ]);
+  const closers = computeMonthlyClosers(month, deals, employees);
+  const setters = computeMonthlySetters(month, employees, qualisMap);
+  const email = buildProvisionsEmail(month, closers, setters);
 
   if (sendMode === "test") {
     const testRecipient =
@@ -83,7 +91,8 @@ export async function GET(req: NextRequest) {
         messageId: info.messageId,
         accepted: info.accepted,
         month,
-        employeeCount: provisions.length,
+        closerCount: closers.length,
+        setterCount: setters.length,
       });
     } catch (err) {
       return NextResponse.json(
@@ -102,8 +111,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     month,
-    employeeCount: provisions.length,
-    provisions,
+    closerCount: closers.length,
+    setterCount: setters.length,
+    closers,
+    setters,
     email,
     note:
       "Preview-Modus. Mit ?send=test schicke ich dir die Mail testweise an PROVISIONS_TEST_RECIPIENT bzw. PROVISIONS_FROM_EMAIL. Echte Plank-Mail erfolgt nur über POST + CRON_SECRET + PROVISIONS_EMAIL_LIVE=true.",
@@ -155,11 +166,14 @@ export async function POST(req: NextRequest) {
   const ccEmail = process.env.PROVISIONS_CC_EMAIL;
 
   const month = url.searchParams.get("month") || defaultMonth();
-  const [deals, employees] = await Promise.all([listDeals(), listEmployees()]);
-  const provisions = computeMonthlyProvisions(month, deals, employees);
-  const email = buildProvisionsEmail(month, provisions, {
-    followUpAnnouncement: false,
-  });
+  const [deals, employees, qualisMap] = await Promise.all([
+    listDeals(),
+    listEmployees(),
+    getSetterQualisForMonth(month),
+  ]);
+  const closers = computeMonthlyClosers(month, deals, employees);
+  const setters = computeMonthlySetters(month, employees, qualisMap);
+  const email = buildProvisionsEmail(month, closers, setters);
 
   try {
     const info = await sendMail({
@@ -178,7 +192,8 @@ export async function POST(req: NextRequest) {
       accepted: info.accepted,
       rejected: info.rejected,
       month,
-      employeeCount: provisions.length,
+      closerCount: closers.length,
+      setterCount: setters.length,
     });
   } catch (err) {
     return NextResponse.json(

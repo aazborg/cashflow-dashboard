@@ -13,6 +13,7 @@ import {
   updateDeal,
   updateEmployee,
   updateProduct,
+  upsertSetterQualis,
 } from "./store";
 import { syncHubspotWonDeals, type SyncSummary } from "./hubspot-sync";
 import {
@@ -383,4 +384,20 @@ export async function syncHubspotSnapshotsAction(): Promise<SnapshotsResult> {
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+export async function upsertSetterQualisAction(formData: FormData) {
+  await requireAdmin();
+  const mitarbeiter_id = String(formData.get("mitarbeiter_id") ?? "").trim();
+  const month = String(formData.get("month") ?? "").trim();
+  const qualisRaw = String(formData.get("qualis") ?? "").trim();
+  if (!mitarbeiter_id || !/^\d{4}-\d{2}$/.test(month)) {
+    throw new Error("mitarbeiter_id und month (YYYY-MM) sind erforderlich.");
+  }
+  const qualis = Number.parseInt(qualisRaw || "0", 10);
+  if (!Number.isFinite(qualis) || qualis < 0) {
+    throw new Error("qualis muss eine nicht-negative Ganzzahl sein.");
+  }
+  await upsertSetterQualis({ mitarbeiter_id, month, qualis });
+  revalidatePath("/admin");
 }

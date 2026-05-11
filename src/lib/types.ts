@@ -106,6 +106,14 @@ export interface Product {
   is_upsell?: boolean;
 }
 
+export interface SetterMonthlyQualis {
+  id: string;
+  mitarbeiter_id: string;
+  month: string; // YYYY-MM
+  qualis: number;
+  updated_at?: string;
+}
+
 export interface DeleteRequest {
   id: string;
   deal_id: string;

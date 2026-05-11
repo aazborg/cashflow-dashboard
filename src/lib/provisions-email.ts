@@ -1,77 +1,71 @@
 import type { Deal, Employee } from "./types";
 import { expandPayments } from "./cashflow";
-import { SETTER_TARIFFS } from "./setter-tiers";
+import { SETTER_TARIFFS, calcSetterPayout } from "./setter-tiers";
 import { monthLabelDe } from "./business-days";
 
-export interface EmployeeProvision {
+/**
+ * Eintrag für einen Closer im Provisions-Mail.
+ * Format-Schema: <Nachname>: <fixum>+<provision>  bzw.
+ *                <Nachname>: <provision>           (kein Fixum)
+ *                <Nachname>: Fixum (<fixum>)      (keine Provision)
+ */
+export interface CloserProvision {
   mitarbeiter_id: string;
   nachname: string;
-  fixumMonatlich: number; // Fixum-Satz (immer einfach, ohne Jun/Nov-Doppel)
-  provisionEur: number; // variable Provision für den Monat (auf Basis betrag)
+  fixumMonatlich: number; // einfaches Fixum, auch in Jun/Nov nicht verdoppelt
+  provisionEur: number; // betrag-basiert, ohne Original-Differenz
 }
 
 /**
- * Berechnet je Mitarbeiter Fixum-Satz und variable Provision für einen Monat
- * im Format YYYY-MM. Liefert NUR Mitarbeiter mit irgendeinem Auszahlungsanteil.
- *
- * Wichtig:
- *   - Fixum wird einfach ausgewiesen, auch in Juni/November
- *     (die Steuerberatung kennt den doppelten Sonderzahlungs-Monat ohnehin).
- *   - Berücksichtigt employment_start / employment_end — außerhalb dieses
- *     Zeitraums kein Fixum.
- *   - Provision = provision_pct × Summe der monatlichen Raten des
- *     Mitarbeiters auf Basis betrag (nicht betrag_original).
+ * Eintrag für einen Setter im Provisions-Mail.
+ * Format-Schema: <Nachname>: <total>
+ * total = Fixum (aus setter_hours-Tier) + Anzahl-Qualis × perBg-der-aktiven-Stufe
+ * Berechnungsdetails werden nicht in der Mail ausgewiesen — die Steuerberatung
+ * bekommt nur den Auszahlungsbetrag.
  */
-export function computeMonthlyProvisions(
+export interface SetterPayout {
+  mitarbeiter_id: string;
+  nachname: string;
+  fixumMonatlich: number;
+  qualis: number;
+  variableEur: number;
+  totalEur: number;
+}
+
+export function computeMonthlyClosers(
   month: string,
   deals: Deal[],
   employees: Employee[],
-): EmployeeProvision[] {
+): CloserProvision[] {
   const monthDate = parseMonth(month);
   if (!monthDate) return [];
 
-  // Lookup-Maps: mitarbeiter_id auf der Deal-Seite kann hubspot_owner_id oder
-  // employee.id sein — beide ablegen.
-  const provisionByMit = new Map<string, number>();
-  const nachnameByMit = new Map<string, string>();
-  const fixumByMit = new Map<string, number>();
-  const startByMit = new Map<string, string>();
-  const endByMit = new Map<string, string>();
+  const closerIds = new Map<string, Employee>(); // mitId -> employee
   for (const e of employees) {
     if (!e.active) continue;
-    const setterFix = e.setter_hours
-      ? SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0
-      : 0;
-    const closerFix = e.closer_fixum_eur ?? 0;
-    const fix = setterFix + closerFix;
-    const nachname = inferNachname(e.name);
-    const keys = e.hubspot_owner_id ? [e.hubspot_owner_id, e.id] : [e.id];
-    for (const k of keys) {
-      nachnameByMit.set(k, nachname);
-      if (e.provision_pct != null) provisionByMit.set(k, e.provision_pct);
-      if (fix > 0) fixumByMit.set(k, fix);
-      if (e.employment_start) startByMit.set(k, e.employment_start);
-      if (e.employment_end) endByMit.set(k, e.employment_end);
-    }
+    if (!e.is_closer) continue;
+    if (e.is_setter) continue; // Setter werden separat behandelt
+    if (e.hubspot_owner_id) closerIds.set(e.hubspot_owner_id, e);
+    closerIds.set(e.id, e);
   }
 
-  // Variable Provision pro Mitarbeiter: Summe der Monats-Raten × Pct
+  // Variable Provision pro Mitarbeiter
   const variableByMit = new Map<string, number>();
   for (const d of deals) {
     if (d.pending_delete) continue;
-    const pct = provisionByMit.get(d.mitarbeiter_id);
-    if (pct == null) continue;
-    let monthlyBase = 0;
+    const emp = closerIds.get(d.mitarbeiter_id);
+    if (!emp || emp.provision_pct == null) continue;
+    let base = 0;
     for (const p of expandPayments(d)) {
       if (
         p.date.getFullYear() === monthDate.year &&
         p.date.getMonth() === monthDate.monthIndex
       ) {
-        monthlyBase += p.amount;
+        base += p.amount;
       }
     }
-    if (monthlyBase > 0) {
-      const prov = (monthlyBase * pct) / 100;
+    if (base > 0) {
+      const prov = (base * emp.provision_pct) / 100;
       variableByMit.set(
         d.mitarbeiter_id,
         (variableByMit.get(d.mitarbeiter_id) ?? 0) + prov,
@@ -79,92 +73,123 @@ export function computeMonthlyProvisions(
     }
   }
 
-  // Set aller relevanten Mitarbeiter-IDs (Fixum-Empfänger + Provision-Empfänger)
-  const mitIds = new Set<string>([
-    ...variableByMit.keys(),
-    ...fixumByMit.keys(),
-  ]);
+  // Dedupliziere pro Employee (eine Zeile pro Person).
+  const seen = new Set<string>();
+  const out: CloserProvision[] = [];
+  for (const e of employees) {
+    if (!e.active || !e.is_closer || e.is_setter) continue;
+    if (seen.has(e.id)) continue;
+    seen.add(e.id);
 
-  // Dedupliziere — falls hubspot_owner_id und employee.id beide drin sind,
-  // bevorzuge die hubspot_owner_id-Variante (so kommen Deal-Provisionen rein).
-  const seenNachname = new Set<string>();
-  const result: EmployeeProvision[] = [];
-  for (const mitId of mitIds) {
-    const nachname = nachnameByMit.get(mitId);
-    if (!nachname) continue;
-    if (seenNachname.has(nachname)) continue;
-    seenNachname.add(nachname);
+    // Fixum (setter_hours-Tarif + closer_fixum_eur), eingeschränkt durch
+    // employment_start / employment_end.
+    const setterFix = e.setter_hours
+      ? SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0
+      : 0;
+    const closerFix = e.closer_fixum_eur ?? 0;
+    let fix = setterFix + closerFix;
+    if (e.employment_start && month < e.employment_start.slice(0, 7)) fix = 0;
+    if (e.employment_end && month > e.employment_end.slice(0, 7)) fix = 0;
 
-    // Fixum nur, wenn der Monat innerhalb des Dienstverhältnisses liegt.
-    const fixCfg = fixumByMit.get(mitId) ?? 0;
-    let fixum = fixCfg;
-    const start = startByMit.get(mitId);
-    if (start && month < start.slice(0, 7)) fixum = 0;
-    const end = endByMit.get(mitId);
-    if (end && month > end.slice(0, 7)) fixum = 0;
+    const mitKeys = e.hubspot_owner_id ? [e.hubspot_owner_id, e.id] : [e.id];
+    const provision = mitKeys.reduce(
+      (s, k) => s + (variableByMit.get(k) ?? 0),
+      0,
+    );
 
-    const provision = variableByMit.get(mitId) ?? 0;
-    if (fixum <= 0 && provision <= 0) continue;
-    result.push({
-      mitarbeiter_id: mitId,
-      nachname,
-      fixumMonatlich: fixum,
+    if (fix <= 0 && provision <= 0) continue;
+    out.push({
+      mitarbeiter_id: e.hubspot_owner_id ?? e.id,
+      nachname: inferNachname(e.name),
+      fixumMonatlich: fix,
       provisionEur: provision,
     });
   }
 
-  // Stabile Sortierung — höchste Auszahlung zuerst.
-  result.sort(
+  out.sort(
     (a, b) =>
       b.fixumMonatlich + b.provisionEur - (a.fixumMonatlich + a.provisionEur),
   );
-  return result;
+  return out;
+}
+
+export function computeMonthlySetters(
+  month: string,
+  employees: Employee[],
+  qualisByMit: Map<string, number>,
+): SetterPayout[] {
+  const out: SetterPayout[] = [];
+  for (const e of employees) {
+    if (!e.active || !e.is_setter) continue;
+    const tariff = e.setter_hours ? SETTER_TARIFFS[e.setter_hours] : null;
+    if (!tariff) continue;
+
+    // Anzahl Qualis aus DB-Map (Schlüssel: hubspot_owner_id ODER employee.id).
+    const keys = e.hubspot_owner_id ? [e.hubspot_owner_id, e.id] : [e.id];
+    let qualis = 0;
+    for (const k of keys) qualis = Math.max(qualis, qualisByMit.get(k) ?? 0);
+
+    let fix = tariff.fixum;
+    if (e.employment_start && month < e.employment_start.slice(0, 7)) fix = 0;
+    if (e.employment_end && month > e.employment_end.slice(0, 7)) fix = 0;
+
+    const calc = calcSetterPayout(tariff, qualis);
+    // Wenn Fixum durch employment-Filter wegfällt, dann auch im Total fallenlassen.
+    const variableEur = fix > 0 ? calc.variableEur : 0;
+    const totalEur = fix + variableEur;
+    if (totalEur <= 0) continue;
+    out.push({
+      mitarbeiter_id: e.hubspot_owner_id ?? e.id,
+      nachname: inferNachname(e.name),
+      fixumMonatlich: fix,
+      qualis,
+      variableEur,
+      totalEur,
+    });
+  }
+  out.sort((a, b) => b.totalEur - a.totalEur);
+  return out;
 }
 
 export interface ProvisionsEmail {
   subject: string;
-  /** Reiner Text (utf-8). Mailclient kümmert sich um Plain-Rendering. */
   textBody: string;
-  /** HTML-Version mit minimalem Markup für Vorschau. */
   htmlBody: string;
 }
 
 export function buildProvisionsEmail(
   month: string,
-  provisions: EmployeeProvision[],
-  options: { followUpAnnouncement?: boolean } = {},
+  closers: CloserProvision[],
+  setters: SetterPayout[],
 ): ProvisionsEmail {
   const monLabel = monthLabelDe(month);
   const subject = `Provisionen ${monLabel}`;
-  const lines = provisions.map(formatLine);
   const greeting = "Sehr geehrte Frau Plank";
   const intro = "Bitte folgende Provisionen abrechnen:";
-  const followUp = options.followUpAnnouncement
-    ? "Eine weitere E-Mail mit den übrigen Mitarbeitern folgt."
-    : "";
   const sign = "Herzliche Grüße,\nMario Grabner";
 
-  const text = [
-    greeting,
-    "",
-    intro,
-    "",
-    ...lines,
-    "",
-    followUp,
-    followUp ? "" : null,
-    sign,
-  ]
-    .filter((l) => l !== null)
-    .join("\n");
+  const closerLines = closers.map(formatCloserLine);
+  const setterLines = setters.map(formatSetterLine);
 
-  const htmlLines = lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("");
+  // Geblockt: erst Closer, dann Setter mit Leerzeile dazwischen. Wenn eine
+  // Gruppe leer ist, dann nur die andere ohne extra Leerzeile.
+  const body: string[] = [];
+  if (closerLines.length > 0) body.push(...closerLines);
+  if (closerLines.length > 0 && setterLines.length > 0) body.push("");
+  if (setterLines.length > 0) body.push(...setterLines);
+
+  const text = [greeting, "", intro, "", ...body, "", sign].join("\n");
+
+  const htmlBlocks: string[] = [];
+  for (const l of body) {
+    if (l === "") htmlBlocks.push("<div>&nbsp;</div>");
+    else htmlBlocks.push(`<div>${escapeHtml(l)}</div>`);
+  }
   const html = `
     <div style="font-family:Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a">
       <p>${escapeHtml(greeting)}</p>
       <p>${escapeHtml(intro)}</p>
-      <div>${htmlLines}</div>
-      ${followUp ? `<p>${escapeHtml(followUp)}</p>` : ""}
+      <div>${htmlBlocks.join("")}</div>
       <p>${escapeHtml(sign).replace(/\n/g, "<br>")}</p>
     </div>
   `.trim();
@@ -172,16 +197,21 @@ export function buildProvisionsEmail(
   return { subject, textBody: text, htmlBody: html };
 }
 
-function formatLine(p: EmployeeProvision): string {
-  const f = p.fixumMonatlich;
-  const v = p.provisionEur;
+function formatCloserLine(c: CloserProvision): string {
+  const f = c.fixumMonatlich;
+  const v = c.provisionEur;
   if (f > 0 && v > 0) {
-    return `${p.nachname}: ${formatNumber(f)}+${formatNumber(v)}`;
+    return `${c.nachname}: ${formatNumber(f)}+${formatNumber(v)}`;
   }
   if (f > 0) {
-    return `${p.nachname}: Fixum (${formatNumber(f)})`;
+    return `${c.nachname}: Fixum (${formatNumber(f)})`;
   }
-  return `${p.nachname}: ${formatNumber(v)}`;
+  return `${c.nachname}: ${formatNumber(v)}`;
+}
+
+function formatSetterLine(s: SetterPayout): string {
+  // Steuerberatung will nur den Gesamtbetrag — keine Quali-Anzahl, kein Fixum-Detail.
+  return `${s.nachname}: ${formatNumber(s.totalEur)}`;
 }
 
 function formatNumber(n: number): string {
