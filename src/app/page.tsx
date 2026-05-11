@@ -75,13 +75,23 @@ export default async function DashboardPage({
     const p = provisionByMitId.get(mitId);
     return p == null ? null : (amount * p) / 100;
   };
-  // Monatsauszahlung = variabel + Fixum. null nur, wenn beides fehlt.
-  const monthlyPayout = (mitId: string, amount: number) => {
+  // Fixum wird 14× pro Jahr ausgezahlt: Juni und November doppelt
+  // (Urlaubsgeld + Weihnachtsgeld).
+  const fixumPaymentsInMonth = (monthOneBased: number): number =>
+    monthOneBased === 6 || monthOneBased === 11 ? 2 : 1;
+  const monthFromKey = (key: string): number => {
+    const parts = key.split("-");
+    return Number.parseInt(parts[1] ?? "0", 10);
+  };
+  // Monatsauszahlung = variabel + (Fixum × Anzahl Auszahlungen in dem Monat).
+  // null nur, wenn beides fehlt.
+  const monthlyPayout = (mitId: string, amount: number, monthKey: string) => {
     const p = provisionByMitId.get(mitId);
     const fix = fixumByMitId.get(mitId) ?? 0;
     if (p == null && fix === 0) return null;
     const variable = p != null ? (amount * p) / 100 : 0;
-    return variable + fix;
+    const fixCount = fixumPaymentsInMonth(monthFromKey(monthKey));
+    return variable + fix * fixCount;
   };
 
   const filteredDeals = filterId
@@ -94,10 +104,22 @@ export default async function DashboardPage({
   const yearStart = new Date(selectedYear, 0, 1);
   const { mitarbeiter, rows } = buildCashflow(filteredDeals, { from: yearStart });
   const dealCount = filteredDeals.filter((d) => !d.pending_delete).length;
+  // Stärkster Monat = höchste Auszahlung (variabel + Fixum, je nach Filter).
+  // Bei "Alle": Summe der Auszahlungen über alle Mitarbeiter im Monat;
+  // bei Einzelfilter: Auszahlung des gewählten Mitarbeiters.
+  const computeRowPayout = (r: (typeof rows)[number]): number => {
+    if (filterId) return monthlyPayout(filterId, r.total, r.month) ?? 0;
+    let sum = 0;
+    for (const [mitId, amount] of Object.entries(r.byMitarbeiter)) {
+      sum += monthlyPayout(mitId, amount, r.month) ?? 0;
+    }
+    return sum;
+  };
   const peakRow = rows.reduce(
-    (a, b) => (b.total > a.total ? b : a),
-    rows[0] ?? { total: 0, monthLabel: "—" },
+    (a, b) => (computeRowPayout(b) > computeRowPayout(a) ? b : a),
+    rows[0] ?? { total: 0, monthLabel: "—", month: "", byMitarbeiter: {} },
   );
+  const peakPayout = computeRowPayout(peakRow);
 
   const palette = ["#449dd7", "#53b684", "#f28a26", "#ffd857", "#6b7280"];
   const currentName = filterId
@@ -168,8 +190,12 @@ export default async function DashboardPage({
         />
         <KpiCard
           label="Stärkster Monat"
-          value={`${formatEUR(peakRow.total)}`}
-          sub={peakRow.monthLabel}
+          value={formatEUR(peakPayout > 0 ? peakPayout : peakRow.total)}
+          sub={`${peakRow.monthLabel}${
+            peakPayout > 0 && peakPayout !== peakRow.total
+              ? ` · Cashflow ${formatEUR(peakRow.total)}`
+              : ""
+          }`}
           accent="orange"
         />
       </div>
@@ -314,7 +340,11 @@ export default async function DashboardPage({
                     0,
                   );
                   const monthlyFix = fixumByMitId.get(filterId) ?? 0;
-                  const fixumTotal = monthlyFix * yearRows.length;
+                  const fixCountTotal = yearRows.reduce(
+                    (s, r) => s + fixumPaymentsInMonth(monthFromKey(r.month)),
+                    0,
+                  );
+                  const fixumTotal = monthlyFix * fixCountTotal;
                   const yearTotal = variableTotal + fixumTotal;
                   return yearTotal > 0 ? (
                     <div className="text-right">
@@ -327,7 +357,7 @@ export default async function DashboardPage({
                       <div className="text-xs text-[color:var(--muted)] tabular-nums">
                         {formatEUR(variableTotal)} Provision
                         {monthlyFix > 0
-                          ? ` + ${formatEUR(fixumTotal)} Fixum (${yearRows.length}× ${formatEUR(monthlyFix)})`
+                          ? ` + ${formatEUR(fixumTotal)} Fixum (${fixCountTotal}× ${formatEUR(monthlyFix)} · Jun/Nov doppelt)`
                           : ""}
                       </div>
                     </div>
@@ -347,8 +377,11 @@ export default async function DashboardPage({
               <tbody>
                 {rows.map((r) => {
                   const variable = filterId ? payout(filterId, r.total) ?? 0 : 0;
-                  const fixum = filterId ? fixumByMitId.get(filterId) ?? 0 : 0;
+                  const monthlyFix = filterId ? fixumByMitId.get(filterId) ?? 0 : 0;
+                  const fixCount = fixumPaymentsInMonth(monthFromKey(r.month));
+                  const fixum = monthlyFix * fixCount;
                   const total = variable + fixum;
+                  const doubleFix = fixCount === 2 && monthlyFix > 0;
                   return (
                     <tr
                       key={r.month}
@@ -364,11 +397,11 @@ export default async function DashboardPage({
                             {formatEUR(total)}
                             {fixum > 0 && variable > 0 ? (
                               <span className="ml-1 text-xs text-[color:var(--muted)] font-normal">
-                                ({formatEUR(variable)} + {formatEUR(fixum)} fix)
+                                ({formatEUR(variable)} + {doubleFix ? `2× ${formatEUR(monthlyFix)}` : formatEUR(monthlyFix)} fix)
                               </span>
                             ) : fixum > 0 ? (
                               <span className="ml-1 text-xs text-[color:var(--muted)] font-normal">
-                                ({formatEUR(fixum)} fix)
+                                ({doubleFix ? `2× ${formatEUR(monthlyFix)}` : formatEUR(monthlyFix)} fix)
                               </span>
                             ) : null}
                           </>
@@ -386,7 +419,12 @@ export default async function DashboardPage({
                     Summe
                     {filterId && (fixumByMitId.get(filterId) ?? 0) > 0 ? (
                       <span className="text-xs text-[color:var(--muted)] font-normal ml-2">
-                        (inkl. {formatEUR(fixumByMitId.get(filterId) ?? 0)} Fixum/Monat × {rows.length})
+                        (inkl. {formatEUR(fixumByMitId.get(filterId) ?? 0)} Fixum ×{" "}
+                        {rows.reduce(
+                          (s, r) => s + fixumPaymentsInMonth(monthFromKey(r.month)),
+                          0,
+                        )}{" "}
+                        Auszahlungen · Jun/Nov doppelt)
                       </span>
                     ) : null}
                   </td>
@@ -399,7 +437,7 @@ export default async function DashboardPage({
                       (fixumByMitId.get(filterId) ?? 0) > 0)
                       ? formatEUR(
                           rows.reduce(
-                            (s, r) => s + (monthlyPayout(filterId, r.total) ?? 0),
+                            (s, r) => s + (monthlyPayout(filterId, r.total, r.month) ?? 0),
                             0,
                           ),
                         )
