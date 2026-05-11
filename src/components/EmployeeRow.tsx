@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateEmployeeAction } from "@/lib/actions";
+import { deleteEmployeeAction, updateEmployeeAction } from "@/lib/actions";
 import { formatEUR } from "@/lib/cashflow";
 import type { Employee, SetterHours } from "@/lib/types";
 import { SETTER_HOURS_OPTIONS } from "@/lib/types";
@@ -272,12 +272,40 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
               </button>
             </>
           ) : (
-            <button
-              onClick={() => setEditing(true)}
-              className="text-xs px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
-            >
-              Bearbeiten
-            </button>
+            <div className="inline-flex gap-1">
+              <button
+                onClick={() => setEditing(true)}
+                className="text-xs px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
+              >
+                Bearbeiten
+              </button>
+              <button
+                onClick={() => {
+                  if (
+                    !confirm(
+                      `Mitarbeiter "${employee.name}" wirklich endgültig löschen?\n\nVerbundene Setter-Qualis und Funnel-Snapshots werden mitgelöscht. Historische Deals bleiben erhalten (Name ist dort gespeichert).`,
+                    )
+                  )
+                    return;
+                  setError(null);
+                  const fd = new FormData();
+                  fd.set("id", employee.id);
+                  startTransition(async () => {
+                    try {
+                      await deleteEmployeeAction(fd);
+                    } catch (err) {
+                      setError(
+                        err instanceof Error ? err.message : String(err),
+                      );
+                    }
+                  });
+                }}
+                disabled={pending}
+                className="text-xs px-2 py-1 rounded text-[color:var(--brand-orange)] hover:bg-[color:var(--brand-yellow)]/30 disabled:opacity-50"
+              >
+                Löschen
+              </button>
+            </div>
           )}
         </td>
       </tr>

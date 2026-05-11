@@ -358,6 +358,51 @@ export async function updateEmployee(
   return rowToEmployee(data as EmployeeRow);
 }
 
+/**
+ * Hard-Delete eines Mitarbeiters. Verbundene Daten (Funnel-Snapshots,
+ * Setter-Qualis) werden mit aufgeräumt. Deals bleiben unverändert — der
+ * mitarbeiter_name ist dort denormalisiert gespeichert, historische
+ * Provisionen / Cashflow-Beiträge sollen erhalten bleiben.
+ *
+ * Wirft, wenn der zu löschende Mitarbeiter der letzte aktive Admin ist.
+ */
+export async function deleteEmployee(id: string): Promise<void> {
+  const supabase = supabaseAdmin();
+  // 1) Sicherheitscheck: nicht den letzten aktiven Admin löschen.
+  const { data: emp } = await supabase
+    .from("employees")
+    .select("id, role, active, hubspot_owner_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!emp) return; // nichts zu tun
+  if ((emp as { role: string; active: boolean }).role === "admin" && (emp as { active: boolean }).active) {
+    const { count } = await supabase
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "admin")
+      .eq("active", true);
+    if ((count ?? 0) <= 1) {
+      throw new Error(
+        "Mindestens ein aktiver Admin muss bestehen bleiben. Lösche zuerst einen anderen Admin oder degradiere ihn zu 'member'.",
+      );
+    }
+  }
+  // 2) Verbundene Daten aufräumen, die ausschließlich diesen Mitarbeiter referenzieren.
+  const ownerId = (emp as { hubspot_owner_id: string | null }).hubspot_owner_id;
+  const idsToMatch = ownerId ? [id, ownerId] : [id];
+  await supabase
+    .from("setter_monthly_qualis")
+    .delete()
+    .in("mitarbeiter_id", idsToMatch);
+  await supabase
+    .from("monthly_snapshots")
+    .delete()
+    .in("mitarbeiter_id", idsToMatch);
+  // 3) Mitarbeiter-Zeile löschen.
+  const { error } = await supabase.from("employees").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function inviteEmployee(input: {
   email: string;
   name: string;

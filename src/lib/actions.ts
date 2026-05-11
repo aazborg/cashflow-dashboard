@@ -6,6 +6,7 @@ import {
   createDeleteRequest,
   createProduct,
   decideDeleteRequest,
+  deleteEmployee,
   deleteProduct,
   getDeal,
   inviteEmployee,
@@ -335,6 +336,19 @@ export async function inviteEmployeeAction(formData: FormData) {
     String(formData.get("hubspot_owner_id") ?? "").trim() || null;
   if (!email || !name) return;
   await inviteEmployee({ email, name, hubspot_owner_id });
+  revalidatePath("/admin");
+}
+
+export async function deleteEmployeeAction(formData: FormData) {
+  const ctx = await requireAdmin();
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) throw new Error("id ist erforderlich.");
+  // Self-Delete blockieren — der eingeloggte Admin kann sich selbst nicht
+  // wegnehmen, sonst hat er nach Reload keinen Zugang mehr.
+  if (ctx.employee.id === id) {
+    throw new Error("Du kannst dich nicht selbst löschen.");
+  }
+  await deleteEmployee(id);
   revalidatePath("/admin");
 }
 
