@@ -1,11 +1,14 @@
 import Link from "next/link";
 import CashflowChart from "@/components/CashflowChart";
 import MitarbeiterFilter from "@/components/MitarbeiterFilter";
+import YearFilter from "@/components/YearFilter";
 import {
   buildCashflow,
+  expandPayments,
   formatEUR,
   outstandingByMitarbeiter,
 } from "@/lib/cashflow";
+import { SETTER_TARIFFS } from "@/lib/setter-tiers";
 import { listDeals, listEmployees } from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
@@ -15,14 +18,27 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mitarbeiter?: string }>;
+  searchParams: Promise<{ mitarbeiter?: string; year?: string }>;
 }) {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
-  const { mitarbeiter: filterIdRaw } = await searchParams;
+  const { mitarbeiter: filterIdRaw, year: yearRaw } = await searchParams;
   // Members can only see their own cashflow; ignore any filter override.
   const filterId = ctx.isAdmin ? filterIdRaw : ctx.ownerId;
   const [allDeals, employees] = await Promise.all([listDeals(), listEmployees()]);
+
+  // Verfügbare Jahre aus tatsächlichen Zahlungs-Daten zusammenstellen, plus
+  // aktuelles und nächstes Jahr (damit der Filter immer im Voraus verfügbar ist).
+  const currentYear = new Date().getFullYear();
+  const yearsFromPayments = new Set<number>();
+  for (const d of allDeals) {
+    for (const p of expandPayments(d)) yearsFromPayments.add(p.date.getFullYear());
+  }
+  yearsFromPayments.add(currentYear);
+  yearsFromPayments.add(currentYear + 1);
+  const availableYears = [...yearsFromPayments].sort((a, b) => b - a);
+  const parsedYear = Number.parseInt(yearRaw ?? "", 10);
+  const selectedYear = availableYears.includes(parsedYear) ? parsedYear : currentYear;
   const allMitarbeiter = [
     ...new Map(
       allDeals.map((d) => [d.mitarbeiter_id, d.mitarbeiter_name]),
@@ -35,16 +51,43 @@ export default async function DashboardPage({
     if (e.hubspot_owner_id) provisionByMitId.set(e.hubspot_owner_id, e.provision_pct);
     provisionByMitId.set(e.id, e.provision_pct);
   }
+  // Monatliches Fixum aus setter_hours (z.B. 20h → 900 €). Pro Monat fix,
+  // unabhängig vom Cashflow — wird in der Monatsübersicht zur Auszahlung
+  // dazugerechnet.
+  const fixumByMitId = new Map<string, number>();
+  for (const e of employees) {
+    if (!e.setter_hours) continue;
+    const fix = SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0;
+    if (fix <= 0) continue;
+    if (e.hubspot_owner_id) fixumByMitId.set(e.hubspot_owner_id, fix);
+    fixumByMitId.set(e.id, fix);
+  }
+  // Variable Auszahlung (Provision × Cashflow). Wird bei den
+  // Ausständig-Tiles verwendet, weil dort die Gesamt-Restprovision
+  // gezeigt wird — Fixum hat dort keine Bedeutung (das läuft monatlich,
+  // nicht pro offener Rate).
   const payout = (mitId: string, amount: number) => {
     const p = provisionByMitId.get(mitId);
     return p == null ? null : (amount * p) / 100;
+  };
+  // Monatsauszahlung = variabel + Fixum. null nur, wenn beides fehlt.
+  const monthlyPayout = (mitId: string, amount: number) => {
+    const p = provisionByMitId.get(mitId);
+    const fix = fixumByMitId.get(mitId) ?? 0;
+    if (p == null && fix === 0) return null;
+    const variable = p != null ? (amount * p) / 100 : 0;
+    return variable + fix;
   };
 
   const filteredDeals = filterId
     ? allDeals.filter((d) => d.mitarbeiter_id === filterId)
     : allDeals;
 
-  const { mitarbeiter, rows } = buildCashflow(filteredDeals);
+  // Ab Januar des gewählten Jahres rendern — vergangene Monate des Jahres sind
+  // damit sichtbar; zukünftige Monate (auch über das Jahresende hinaus) folgen
+  // wie zuvor aus den expandierten Ratenzahlungen.
+  const yearStart = new Date(selectedYear, 0, 1);
+  const { mitarbeiter, rows } = buildCashflow(filteredDeals, { from: yearStart });
   const dealCount = filteredDeals.filter((d) => !d.pending_delete).length;
   const peakRow = rows.reduce(
     (a, b) => (b.total > a.total ? b : a),
@@ -79,12 +122,15 @@ export default async function DashboardPage({
               : "Live-Übersicht der zukünftigen Zahlungseingänge je Mitarbeiter."}
           </p>
         </div>
-        {ctx.isAdmin ? (
-          <MitarbeiterFilter
-            mitarbeiter={allMitarbeiter}
-            current={filterId ?? null}
-          />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <YearFilter years={availableYears} current={selectedYear} />
+          {ctx.isAdmin ? (
+            <MitarbeiterFilter
+              mitarbeiter={allMitarbeiter}
+              current={filterId ?? null}
+            />
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -168,6 +214,13 @@ export default async function DashboardPage({
         </div>
         <CashflowChart
           data={rows.map((r) => ({ monthLabel: r.monthLabel, total: r.total }))}
+          nowIndex={rows.findIndex(
+            (r) =>
+              r.month ===
+              `${new Date().getFullYear()}-${String(
+                new Date().getMonth() + 1,
+              ).padStart(2, "0")}`,
+          )}
         />
       </section>
 
@@ -245,7 +298,9 @@ export default async function DashboardPage({
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const auszahlung = filterId ? payout(filterId, r.total) : null;
+                  const variable = filterId ? payout(filterId, r.total) ?? 0 : 0;
+                  const fixum = filterId ? fixumByMitId.get(filterId) ?? 0 : 0;
+                  const total = variable + fixum;
                   return (
                     <tr
                       key={r.month}
@@ -256,9 +311,22 @@ export default async function DashboardPage({
                         {r.total > 0 ? formatEUR(r.total) : "—"}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-[color:var(--brand-green)] font-medium">
-                        {auszahlung != null && auszahlung > 0
-                          ? formatEUR(auszahlung)
-                          : "—"}
+                        {total > 0 ? (
+                          <>
+                            {formatEUR(total)}
+                            {fixum > 0 && variable > 0 ? (
+                              <span className="ml-1 text-xs text-[color:var(--muted)] font-normal">
+                                ({formatEUR(variable)} + {formatEUR(fixum)} fix)
+                              </span>
+                            ) : fixum > 0 ? (
+                              <span className="ml-1 text-xs text-[color:var(--muted)] font-normal">
+                                ({formatEUR(fixum)} fix)
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   );
@@ -266,15 +334,24 @@ export default async function DashboardPage({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-[color:var(--border)] bg-[color:var(--surface)]">
-                  <td className="px-4 py-2 font-medium">Summe</td>
+                  <td className="px-4 py-2 font-medium">
+                    Summe
+                    {filterId && (fixumByMitId.get(filterId) ?? 0) > 0 ? (
+                      <span className="text-xs text-[color:var(--muted)] font-normal ml-2">
+                        (inkl. {formatEUR(fixumByMitId.get(filterId) ?? 0)} Fixum/Monat × {rows.length})
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums font-semibold">
                     {formatEUR(rows.reduce((s, r) => s + r.total, 0))}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums font-semibold text-[color:var(--brand-green)]">
-                    {filterId && provisionByMitId.has(filterId)
+                    {filterId &&
+                    (provisionByMitId.has(filterId) ||
+                      (fixumByMitId.get(filterId) ?? 0) > 0)
                       ? formatEUR(
                           rows.reduce(
-                            (s, r) => s + (payout(filterId, r.total) ?? 0),
+                            (s, r) => s + (monthlyPayout(filterId, r.total) ?? 0),
                             0,
                           ),
                         )

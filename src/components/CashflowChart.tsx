@@ -4,6 +4,7 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,9 +13,14 @@ import {
 
 interface Props {
   data: { monthLabel: string; total: number }[];
+  /** Index des aktuellen Monats in `data`, ab dem die Reihe in die Zukunft läuft.
+   *  Wenn nicht gesetzt oder außerhalb des Bereichs, wird keine "heute"-Linie gezeichnet. */
+  nowIndex?: number;
 }
 
-export default function CashflowChart({ data }: Props) {
+export default function CashflowChart({ data, nowIndex }: Props) {
+  const showNowLine =
+    typeof nowIndex === "number" && nowIndex >= 0 && nowIndex < data.length;
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer>
@@ -58,6 +64,19 @@ export default function CashflowChart({ data }: Props) {
               fontSize: 12,
             }}
           />
+          {showNowLine ? (
+            <ReferenceLine
+              x={data[nowIndex!].monthLabel}
+              stroke="#f28a26"
+              strokeDasharray="3 3"
+              label={{
+                value: "heute",
+                position: "top",
+                fill: "#f28a26",
+                fontSize: 11,
+              }}
+            />
+          ) : null}
           <Area
             type="monotone"
             dataKey="total"
