@@ -289,8 +289,38 @@ export default async function DashboardPage({
 
       {currentName ? (
         <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-[color:var(--border)]">
+          <div className="px-4 py-3 border-b border-[color:var(--border)] flex items-center justify-between flex-wrap gap-2">
             <h2 className="font-semibold">Monatsübersicht · {currentName}</h2>
+            {filterId
+              ? (() => {
+                  const yearRows = rows.filter((r) =>
+                    r.month.startsWith(`${selectedYear}-`),
+                  );
+                  const variableTotal = yearRows.reduce(
+                    (s, r) => s + (payout(filterId, r.total) ?? 0),
+                    0,
+                  );
+                  const monthlyFix = fixumByMitId.get(filterId) ?? 0;
+                  const fixumTotal = monthlyFix * yearRows.length;
+                  const yearTotal = variableTotal + fixumTotal;
+                  return yearTotal > 0 ? (
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase tracking-wider text-[color:var(--muted)]">
+                        Jahresverdienst {selectedYear}
+                      </div>
+                      <div className="text-lg font-semibold tabular-nums text-[color:var(--brand-green)]">
+                        {formatEUR(yearTotal)}
+                      </div>
+                      <div className="text-xs text-[color:var(--muted)] tabular-nums">
+                        {formatEUR(variableTotal)} Provision
+                        {monthlyFix > 0
+                          ? ` + ${formatEUR(fixumTotal)} Fixum (${yearRows.length}× ${formatEUR(monthlyFix)})`
+                          : ""}
+                      </div>
+                    </div>
+                  ) : null;
+                })()
+              : null}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
