@@ -24,6 +24,12 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [closerFixum, setCloserFixum] = useState(
     employee.closer_fixum_eur != null ? String(employee.closer_fixum_eur) : "",
   );
+  const [employmentStart, setEmploymentStart] = useState(
+    employee.employment_start ?? "",
+  );
+  const [employmentEnd, setEmploymentEnd] = useState(
+    employee.employment_end ?? "",
+  );
   const [qualis, setQualis] = useState(
     employee.default_qualis != null ? String(employee.default_qualis) : "",
   );
@@ -57,6 +63,8 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     setCloserFixum(
       employee.closer_fixum_eur != null ? String(employee.closer_fixum_eur) : "",
     );
+    setEmploymentStart(employee.employment_start ?? "");
+    setEmploymentEnd(employee.employment_end ?? "");
     setQualis(
       employee.default_qualis != null ? String(employee.default_qualis) : "",
     );
@@ -90,6 +98,8 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     fd.set("setter_hours", setterHours);
     fd.set("provision_pct", provision);
     fd.set("closer_fixum_eur", closerFixum);
+    fd.set("employment_start", employmentStart);
+    fd.set("employment_end", employmentEnd);
     fd.set("default_qualis", qualis);
     fd.set("default_showup_rate", showup);
     fd.set("default_close_rate", quote);
@@ -282,6 +292,30 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
         <td colSpan={ADMIN_COL_COUNT} className="px-3 py-2 text-xs">
           {editing ? (
             <div className="flex flex-wrap items-center gap-3 pl-1">
+              <span className="text-[color:var(--foreground)] font-medium">
+                Dienstverhältnis:
+              </span>
+              <label className="inline-flex items-center gap-1">
+                <span>Start</span>
+                <input
+                  type="date"
+                  value={employmentStart}
+                  onChange={(e) => setEmploymentStart(e.target.value)}
+                  className="border border-[color:var(--border)] rounded px-2 py-1 tabular-nums bg-white"
+                  title="Erster Tag des Dienstverhältnisses — vorher kein Fixum"
+                />
+              </label>
+              <label className="inline-flex items-center gap-1">
+                <span>Ende</span>
+                <input
+                  type="date"
+                  value={employmentEnd}
+                  onChange={(e) => setEmploymentEnd(e.target.value)}
+                  className="border border-[color:var(--border)] rounded px-2 py-1 tabular-nums bg-white"
+                  title="Letzter Tag mit Fixum — ab dem Folgemonat wird kein Fixum mehr addiert"
+                />
+              </label>
+              <span className="border-l border-[color:var(--border)] h-5"></span>
               <span className="text-[color:var(--muted)]">
                 Funnel-Defaults (HubSpot überschreibt diese später):
               </span>
@@ -361,6 +395,20 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
             </div>
           ) : (
             <div className="flex flex-wrap gap-x-4 gap-y-1 pl-1 text-[color:var(--muted)]">
+              {employee.employment_start || employee.employment_end ? (
+                <span>
+                  Dienstverhältnis:{" "}
+                  <span className="text-[color:var(--foreground)] font-medium tabular-nums">
+                    {employee.employment_start
+                      ? new Date(employee.employment_start).toLocaleDateString("de-AT")
+                      : "—"}
+                    {" – "}
+                    {employee.employment_end
+                      ? new Date(employee.employment_end).toLocaleDateString("de-AT")
+                      : "offen"}
+                  </span>
+                </span>
+              ) : null}
               <span>
                 Qualis vereinbart/Monat:{" "}
                 <span className="text-[color:var(--foreground)] font-medium tabular-nums">

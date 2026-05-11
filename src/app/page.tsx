@@ -55,18 +55,43 @@ export default async function DashboardPage({
   //   1) setter_hours → Setter-Tarif-Fixum (20h = 900 €, …)
   //   2) closer_fixum_eur → frei eintragbares Closer-Fixum aus dem Admin
   // Werden addiert, falls beide gesetzt sind (z.B. wenn jemand sowohl Setter
-  // als auch Closer ist).
+  // als auch Closer ist). Zusätzlich pro Mitarbeiter Start/Ende des
+  // Dienstverhältnisses speichern, damit Fixum außerhalb dieses Zeitraums
+  // unterdrückt wird.
   const fixumByMitId = new Map<string, number>();
+  const employmentStartByMitId = new Map<string, string>();
+  const employmentEndByMitId = new Map<string, string>();
   for (const e of employees) {
     const setterFix = e.setter_hours
       ? SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0
       : 0;
     const closerFix = e.closer_fixum_eur ?? 0;
     const fix = setterFix + closerFix;
-    if (fix <= 0) continue;
-    if (e.hubspot_owner_id) fixumByMitId.set(e.hubspot_owner_id, fix);
-    fixumByMitId.set(e.id, fix);
+    if (fix > 0) {
+      if (e.hubspot_owner_id) fixumByMitId.set(e.hubspot_owner_id, fix);
+      fixumByMitId.set(e.id, fix);
+    }
+    if (e.employment_start) {
+      if (e.hubspot_owner_id) employmentStartByMitId.set(e.hubspot_owner_id, e.employment_start);
+      employmentStartByMitId.set(e.id, e.employment_start);
+    }
+    if (e.employment_end) {
+      if (e.hubspot_owner_id) employmentEndByMitId.set(e.hubspot_owner_id, e.employment_end);
+      employmentEndByMitId.set(e.id, e.employment_end);
+    }
   }
+  // Fixum für einen bestimmten Mitarbeiter und Monat: nur wenn der Monat
+  // innerhalb des Dienstverhältnisses liegt. Vergleich geschieht auf
+  // Monatsebene (Jän = "2026-01" vs. employment_end-Monat).
+  const monthlyFixFor = (mitId: string, monthKey: string): number => {
+    const fix = fixumByMitId.get(mitId) ?? 0;
+    if (fix <= 0) return 0;
+    const start = employmentStartByMitId.get(mitId);
+    if (start && monthKey < start.slice(0, 7)) return 0;
+    const end = employmentEndByMitId.get(mitId);
+    if (end && monthKey > end.slice(0, 7)) return 0;
+    return fix;
+  };
   // Variable Auszahlung (Provision × Cashflow). Wird bei den
   // Ausständig-Tiles verwendet, weil dort die Gesamt-Restprovision
   // gezeigt wird — Fixum hat dort keine Bedeutung (das läuft monatlich,
@@ -87,7 +112,7 @@ export default async function DashboardPage({
   // null nur, wenn beides fehlt.
   const monthlyPayout = (mitId: string, amount: number, monthKey: string) => {
     const p = provisionByMitId.get(mitId);
-    const fix = fixumByMitId.get(mitId) ?? 0;
+    const fix = monthlyFixFor(mitId, monthKey);
     if (p == null && fix === 0) return null;
     const variable = p != null ? (amount * p) / 100 : 0;
     const fixCount = fixumPaymentsInMonth(monthFromKey(monthKey));
@@ -339,12 +364,19 @@ export default async function DashboardPage({
                     (s, r) => s + (payout(filterId, r.total) ?? 0),
                     0,
                   );
-                  const monthlyFix = fixumByMitId.get(filterId) ?? 0;
-                  const fixCountTotal = yearRows.reduce(
-                    (s, r) => s + fixumPaymentsInMonth(monthFromKey(r.month)),
-                    0,
-                  );
-                  const fixumTotal = monthlyFix * fixCountTotal;
+                  // Pro Monat Fixum nur wenn innerhalb des Dienstverhältnisses.
+                  let fixumTotal = 0;
+                  let fixCountTotal = 0;
+                  let monthlyFixRef = 0;
+                  for (const r of yearRows) {
+                    const fix = monthlyFixFor(filterId, r.month);
+                    if (fix > 0) {
+                      const cnt = fixumPaymentsInMonth(monthFromKey(r.month));
+                      fixCountTotal += cnt;
+                      fixumTotal += fix * cnt;
+                      monthlyFixRef = fix;
+                    }
+                  }
                   const yearTotal = variableTotal + fixumTotal;
                   return yearTotal > 0 ? (
                     <div className="text-right">
@@ -356,8 +388,8 @@ export default async function DashboardPage({
                       </div>
                       <div className="text-xs text-[color:var(--muted)] tabular-nums">
                         {formatEUR(variableTotal)} Provision
-                        {monthlyFix > 0
-                          ? ` + ${formatEUR(fixumTotal)} Fixum (${fixCountTotal}× ${formatEUR(monthlyFix)} · Jun/Nov doppelt)`
+                        {fixumTotal > 0
+                          ? ` + ${formatEUR(fixumTotal)} Fixum (${fixCountTotal}× ${formatEUR(monthlyFixRef)} · Jun/Nov doppelt)`
                           : ""}
                       </div>
                     </div>
@@ -377,7 +409,7 @@ export default async function DashboardPage({
               <tbody>
                 {rows.map((r) => {
                   const variable = filterId ? payout(filterId, r.total) ?? 0 : 0;
-                  const monthlyFix = filterId ? fixumByMitId.get(filterId) ?? 0 : 0;
+                  const monthlyFix = filterId ? monthlyFixFor(filterId, r.month) : 0;
                   const fixCount = fixumPaymentsInMonth(monthFromKey(r.month));
                   const fixum = monthlyFix * fixCount;
                   const total = variable + fixum;
@@ -414,36 +446,50 @@ export default async function DashboardPage({
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-[color:var(--border)] bg-[color:var(--surface)]">
-                  <td className="px-4 py-2 font-medium">
-                    Summe
-                    {filterId && (fixumByMitId.get(filterId) ?? 0) > 0 ? (
-                      <span className="text-xs text-[color:var(--muted)] font-normal ml-2">
-                        (inkl. {formatEUR(fixumByMitId.get(filterId) ?? 0)} Fixum ×{" "}
-                        {rows.reduce(
-                          (s, r) => s + fixumPaymentsInMonth(monthFromKey(r.month)),
-                          0,
-                        )}{" "}
-                        Auszahlungen · Jun/Nov doppelt)
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                    {formatEUR(rows.reduce((s, r) => s + r.total, 0))}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-[color:var(--brand-green)]">
-                    {filterId &&
-                    (provisionByMitId.has(filterId) ||
-                      (fixumByMitId.get(filterId) ?? 0) > 0)
-                      ? formatEUR(
-                          rows.reduce(
-                            (s, r) => s + (monthlyPayout(filterId, r.total, r.month) ?? 0),
-                            0,
-                          ),
-                        )
-                      : "—"}
-                  </td>
-                </tr>
+                {(() => {
+                  // Effektive Anzahl Fixum-Auszahlungen über den
+                  // angezeigten Zeitraum, unter Berücksichtigung von
+                  // Start/Ende Dienstverhältnis.
+                  let totalFixCount = 0;
+                  let monthlyFixRef = 0;
+                  if (filterId) {
+                    for (const r of rows) {
+                      const fix = monthlyFixFor(filterId, r.month);
+                      if (fix > 0) {
+                        totalFixCount += fixumPaymentsInMonth(monthFromKey(r.month));
+                        monthlyFixRef = fix;
+                      }
+                    }
+                  }
+                  return (
+                    <tr className="border-t-2 border-[color:var(--border)] bg-[color:var(--surface)]">
+                      <td className="px-4 py-2 font-medium">
+                        Summe
+                        {totalFixCount > 0 ? (
+                          <span className="text-xs text-[color:var(--muted)] font-normal ml-2">
+                            (inkl. {formatEUR(monthlyFixRef)} Fixum × {totalFixCount}{" "}
+                            Auszahlungen · Jun/Nov doppelt)
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold">
+                        {formatEUR(rows.reduce((s, r) => s + r.total, 0))}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold text-[color:var(--brand-green)]">
+                        {filterId &&
+                        (provisionByMitId.has(filterId) || totalFixCount > 0)
+                          ? formatEUR(
+                              rows.reduce(
+                                (s, r) =>
+                                  s + (monthlyPayout(filterId, r.total, r.month) ?? 0),
+                                0,
+                              ),
+                            )
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })()}
               </tfoot>
             </table>
           </div>

@@ -172,6 +172,8 @@ export async function updateEmployeeAction(formData: FormData) {
     setter_hours: "20h" | "25h" | "30h" | "35h" | "40h" | null;
     provision_pct: number | null;
     closer_fixum_eur: number | null;
+    employment_start: string | null;
+    employment_end: string | null;
     default_qualis: number | null;
     default_showup_rate: number | null;
     default_close_rate: number | null;
@@ -221,6 +223,16 @@ export async function updateEmployeeAction(formData: FormData) {
     min: 0,
   });
   if (closerFixum !== undefined) patch.closer_fixum_eur = closerFixum;
+
+  // Datumsfelder: leerer String → null, sonst YYYY-MM-DD durchreichen.
+  if (formData.has("employment_start")) {
+    const v = String(formData.get("employment_start") ?? "").trim();
+    patch.employment_start = v === "" ? null : v;
+  }
+  if (formData.has("employment_end")) {
+    const v = String(formData.get("employment_end") ?? "").trim();
+    patch.employment_end = v === "" ? null : v;
+  }
 
   const qualis = parseOptionalNumber(formData.get("default_qualis"), { min: 0 });
   if (qualis !== undefined) patch.default_qualis = qualis;

@@ -217,6 +217,8 @@ interface EmployeeRow {
   active: boolean;
   provision_pct: number | string | null;
   closer_fixum_eur: number | string | null;
+  employment_start: string | null;
+  employment_end: string | null;
   default_qualis: number | string | null;
   default_showup_rate: number | string | null;
   default_close_rate: number | string | null;
@@ -242,6 +244,8 @@ function rowToEmployee(r: EmployeeRow): Employee {
     active: r.active,
     provision_pct: r.provision_pct == null ? null : Number(r.provision_pct),
     closer_fixum_eur: r.closer_fixum_eur == null ? null : Number(r.closer_fixum_eur),
+    employment_start: r.employment_start ?? null,
+    employment_end: r.employment_end ?? null,
     default_qualis: r.default_qualis == null ? null : Number(r.default_qualis),
     default_showup_rate: r.default_showup_rate == null ? null : Number(r.default_showup_rate),
     default_close_rate: r.default_close_rate == null ? null : Number(r.default_close_rate),
@@ -284,6 +288,8 @@ export async function updateEmployee(
       | "setter_hours"
       | "provision_pct"
       | "closer_fixum_eur"
+      | "employment_start"
+      | "employment_end"
       | "default_qualis"
       | "default_showup_rate"
       | "default_close_rate"
@@ -295,6 +301,7 @@ export async function updateEmployee(
     "name", "hubspot_owner_id", "active", "role",
     "is_setter", "is_closer", "setter_hours",
     "provision_pct", "closer_fixum_eur",
+    "employment_start", "employment_end",
     "default_qualis", "default_showup_rate",
     "default_close_rate", "default_avg_contract",
   ] as const;

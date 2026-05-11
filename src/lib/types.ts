@@ -63,6 +63,12 @@ export interface Employee {
   active: boolean;
   provision_pct?: number | null;
   closer_fixum_eur?: number | null;
+  /** Erster Tag des Dienstverhältnisses (YYYY-MM-DD). Vor diesem Monat
+   *  wird kein Fixum in die monatliche Auszahlung addiert. */
+  employment_start?: string | null;
+  /** Letzter Tag des Dienstverhältnisses (YYYY-MM-DD). Ab dem Folgemonat
+   *  wird kein Fixum mehr in die monatliche Auszahlung addiert. */
+  employment_end?: string | null;
   default_qualis?: number | null;
   default_showup_rate?: number | null;
   default_close_rate?: number | null;
