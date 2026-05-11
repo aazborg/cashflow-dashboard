@@ -7,6 +7,10 @@
     {
       "path": "/cashflow/api/sync/hubspot/snapshots",
       "schedule": "30 6 1 * *"
+    },
+    {
+      "path": "/cashflow/api/provisions-email",
+      "schedule": "0 7 * * 1-5"
     }
   ]
 }
