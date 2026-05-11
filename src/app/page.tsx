@@ -168,6 +168,30 @@ export default async function DashboardPage({
   );
   const peakPayout = computeRowPayout(peakRow);
 
+  // Jahresverdienst des gewählten Mitarbeiters im gewählten Kalenderjahr.
+  // Wird oben als KPI-Tile gezeigt, wenn ein Mitarbeiter-Filter aktiv ist.
+  const yearEarnings = (() => {
+    if (!filterId) return null;
+    const yearRows = rows.filter((r) => r.month.startsWith(`${selectedYear}-`));
+    const variable = yearRows.reduce(
+      (s, r) => s + (payout(filterId, r.total) ?? 0),
+      0,
+    );
+    let fixSum = 0;
+    let fixCount = 0;
+    let fixRef = 0;
+    for (const r of yearRows) {
+      const fix = monthlyFixFor(filterId, r.month);
+      if (fix > 0) {
+        const cnt = fixumPaymentsInMonth(monthFromKey(r.month));
+        fixCount += cnt;
+        fixSum += fix * cnt;
+        fixRef = fix;
+      }
+    }
+    return { variable, fixSum, fixCount, fixRef, total: variable + fixSum };
+  })();
+
   const palette = ["#449dd7", "#53b684", "#f28a26", "#ffd857", "#6b7280"];
   const currentName = filterId
     ? allMitarbeiter.find((m) => m.id === filterId)?.name ??
@@ -225,7 +249,11 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div
+        className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
+          yearEarnings ? "lg:grid-cols-4" : "lg:grid-cols-3"
+        }`}
+      >
         <KpiCard label="Aktive Deals" value={String(dealCount)} accent="blue" />
         <KpiCard
           label={currentName ? "Ausständig (ab heute)" : "Ausständig gesamt (ab heute)"}
@@ -255,6 +283,18 @@ export default async function DashboardPage({
           }`}
           accent="orange"
         />
+        {yearEarnings && yearEarnings.total > 0 ? (
+          <KpiCard
+            label={`Jahresverdienst ${selectedYear}`}
+            value={formatEUR(yearEarnings.total)}
+            sub={`${formatEUR(yearEarnings.variable)} Provision${
+              yearEarnings.fixSum > 0
+                ? ` + ${formatEUR(yearEarnings.fixSum)} Fixum (${yearEarnings.fixCount}×)`
+                : ""
+            }`}
+            accent="green"
+          />
+        ) : null}
       </div>
 
       {currentName ? null : (
