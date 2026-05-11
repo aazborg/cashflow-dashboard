@@ -62,6 +62,7 @@ export interface Employee {
   invited_at: string | null;
   active: boolean;
   provision_pct?: number | null;
+  closer_fixum_eur?: number | null;
   default_qualis?: number | null;
   default_showup_rate?: number | null;
   default_close_rate?: number | null;

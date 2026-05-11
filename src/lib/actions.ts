@@ -171,6 +171,7 @@ export async function updateEmployeeAction(formData: FormData) {
     is_closer: boolean;
     setter_hours: "20h" | "25h" | "30h" | "35h" | "40h" | null;
     provision_pct: number | null;
+    closer_fixum_eur: number | null;
     default_qualis: number | null;
     default_showup_rate: number | null;
     default_close_rate: number | null;
@@ -215,6 +216,11 @@ export async function updateEmployeeAction(formData: FormData) {
     max: 100,
   });
   if (provision !== undefined) patch.provision_pct = provision;
+
+  const closerFixum = parseOptionalNumber(formData.get("closer_fixum_eur"), {
+    min: 0,
+  });
+  if (closerFixum !== undefined) patch.closer_fixum_eur = closerFixum;
 
   const qualis = parseOptionalNumber(formData.get("default_qualis"), { min: 0 });
   if (qualis !== undefined) patch.default_qualis = qualis;

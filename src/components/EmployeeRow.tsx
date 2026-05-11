@@ -21,6 +21,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [provision, setProvision] = useState(
     employee.provision_pct != null ? String(employee.provision_pct) : "",
   );
+  const [closerFixum, setCloserFixum] = useState(
+    employee.closer_fixum_eur != null ? String(employee.closer_fixum_eur) : "",
+  );
   const [qualis, setQualis] = useState(
     employee.default_qualis != null ? String(employee.default_qualis) : "",
   );
@@ -50,6 +53,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     setSetterHours(employee.setter_hours ?? "");
     setProvision(
       employee.provision_pct != null ? String(employee.provision_pct) : "",
+    );
+    setCloserFixum(
+      employee.closer_fixum_eur != null ? String(employee.closer_fixum_eur) : "",
     );
     setQualis(
       employee.default_qualis != null ? String(employee.default_qualis) : "",
@@ -83,6 +89,7 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
     fd.set("is_closer", String(isCloser));
     fd.set("setter_hours", setterHours);
     fd.set("provision_pct", provision);
+    fd.set("closer_fixum_eur", closerFixum);
     fd.set("default_qualis", qualis);
     fd.set("default_showup_rate", showup);
     fd.set("default_close_rate", quote);
@@ -130,27 +137,51 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
         </td>
         <td className="px-3 py-2 text-right tabular-nums">
           {editing ? (
-            <div className="inline-flex items-center gap-1">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="100"
-                value={provision}
-                onChange={(e) => setProvision(e.target.value)}
-                placeholder="0"
-                className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-20 text-right tabular-nums"
-              />
-              <span className="text-[color:var(--muted)]">%</span>
+            <div className="flex flex-col items-end gap-1">
+              <div className="inline-flex items-center gap-1">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={provision}
+                  onChange={(e) => setProvision(e.target.value)}
+                  placeholder="0"
+                  className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-20 text-right tabular-nums"
+                />
+                <span className="text-[color:var(--muted)]">%</span>
+              </div>
+              <div className="inline-flex items-center gap-1">
+                <input
+                  type="number"
+                  step="50"
+                  min="0"
+                  value={closerFixum}
+                  onChange={(e) => setCloserFixum(e.target.value)}
+                  placeholder="Fixum"
+                  className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-20 text-right tabular-nums"
+                  title="Closer-Fixum pro Monat in Euro"
+                />
+                <span className="text-[color:var(--muted)]">€ fix</span>
+              </div>
             </div>
-          ) : employee.provision_pct != null ? (
-            <span className="text-[color:var(--brand-green)] font-medium">
-              {employee.provision_pct.toLocaleString("de-AT", {
-                maximumFractionDigits: 2,
-              })} %
-            </span>
           ) : (
-            <span className="text-[color:var(--muted)]">—</span>
+            <div className="flex flex-col items-end gap-0.5">
+              {employee.provision_pct != null ? (
+                <span className="text-[color:var(--brand-green)] font-medium">
+                  {employee.provision_pct.toLocaleString("de-AT", {
+                    maximumFractionDigits: 2,
+                  })} %
+                </span>
+              ) : (
+                <span className="text-[color:var(--muted)]">—</span>
+              )}
+              {employee.closer_fixum_eur != null && employee.closer_fixum_eur > 0 ? (
+                <span className="text-xs text-[color:var(--muted)] tabular-nums">
+                  + {formatEUR(employee.closer_fixum_eur)} fix
+                </span>
+              ) : null}
+            </div>
           )}
         </td>
         <td className="px-3 py-2">

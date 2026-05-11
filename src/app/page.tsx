@@ -51,13 +51,18 @@ export default async function DashboardPage({
     if (e.hubspot_owner_id) provisionByMitId.set(e.hubspot_owner_id, e.provision_pct);
     provisionByMitId.set(e.id, e.provision_pct);
   }
-  // Monatliches Fixum aus setter_hours (z.B. 20h → 900 €). Pro Monat fix,
-  // unabhängig vom Cashflow — wird in der Monatsübersicht zur Auszahlung
-  // dazugerechnet.
+  // Monatliches Fixum: Summe aus zwei Quellen, beide optional.
+  //   1) setter_hours → Setter-Tarif-Fixum (20h = 900 €, …)
+  //   2) closer_fixum_eur → frei eintragbares Closer-Fixum aus dem Admin
+  // Werden addiert, falls beide gesetzt sind (z.B. wenn jemand sowohl Setter
+  // als auch Closer ist).
   const fixumByMitId = new Map<string, number>();
   for (const e of employees) {
-    if (!e.setter_hours) continue;
-    const fix = SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0;
+    const setterFix = e.setter_hours
+      ? SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0
+      : 0;
+    const closerFix = e.closer_fixum_eur ?? 0;
+    const fix = setterFix + closerFix;
     if (fix <= 0) continue;
     if (e.hubspot_owner_id) fixumByMitId.set(e.hubspot_owner_id, fix);
     fixumByMitId.set(e.id, fix);
