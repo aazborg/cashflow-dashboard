@@ -159,10 +159,19 @@ export default function DealRow({ deal, isAdmin }: Props) {
         <>
           <td className="px-3 py-2 text-right tabular-nums font-medium">
             <div>{formatEURPrecise(deal.betrag)}</div>
-            {isAdmin &&
-            deal.betrag_original != null &&
-            deal.betrag_original !== deal.betrag ? (
-              <div className="text-[10px] text-[color:var(--muted)] font-normal tabular-nums">
+            {isAdmin && deal.betrag_original != null ? (
+              <div
+                className={`text-[10px] font-normal tabular-nums ${
+                  deal.betrag_original !== deal.betrag
+                    ? "text-[color:var(--brand-orange)]"
+                    : "text-[color:var(--muted)]"
+                }`}
+                title={
+                  deal.betrag_original !== deal.betrag
+                    ? "Mitarbeiter-Betrag weicht vom HubSpot-Original ab"
+                    : "Original-Betrag aus HubSpot"
+                }
+              >
                 HubSpot: {formatEURPrecise(deal.betrag_original)}
               </div>
             ) : null}
