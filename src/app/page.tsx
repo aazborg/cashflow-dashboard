@@ -110,6 +110,16 @@ export default async function DashboardPage({
   const currentOutstanding = filterId
     ? outstandingAll.find((r) => r.mitarbeiter_id === filterId)
     : null;
+  // Auszahlungsbasis: variable Provision auf den ausstehenden Cashflow.
+  // Fixum bleibt hier außen vor, weil es ein monatliches Grundgehalt ist —
+  // keine "offene Rate" im Receivable-Sinne.
+  const outstandingPayoutTotal = outstandingAll.reduce(
+    (s, r) => s + (payout(r.mitarbeiter_id, r.total) ?? 0),
+    0,
+  );
+  const currentOutstandingPayout = currentOutstanding
+    ? payout(currentOutstanding.mitarbeiter_id, currentOutstanding.total)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -142,12 +152,18 @@ export default async function DashboardPage({
         <KpiCard label="Aktive Deals" value={String(dealCount)} accent="blue" />
         <KpiCard
           label={currentName ? "Ausständig (ab heute)" : "Ausständig gesamt (ab heute)"}
-          value={formatEUR(currentOutstanding ? currentOutstanding.total : outstandingTotal)}
-          sub={
+          value={formatEUR(
             currentOutstanding
-              ? `${currentOutstanding.openPayments} offene Raten`
-              : `${outstandingAll.reduce((s, r) => s + r.openPayments, 0)} offene Raten`
-          }
+              ? currentOutstandingPayout ?? currentOutstanding.total
+              : outstandingPayoutTotal || outstandingTotal,
+          )}
+          sub={`${
+            currentOutstanding
+              ? currentOutstanding.openPayments
+              : outstandingAll.reduce((s, r) => s + r.openPayments, 0)
+          } offene Raten · Cashflow ${formatEUR(
+            currentOutstanding ? currentOutstanding.total : outstandingTotal,
+          )}`}
           accent="yellow"
         />
         <KpiCard
@@ -169,7 +185,6 @@ export default async function DashboardPage({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4">
             {outstandingAll.map((r, i) => {
               const auszahlung = payout(r.mitarbeiter_id, r.total);
-              const provPct = provisionByMitId.get(r.mitarbeiter_id);
               return (
                 <Link
                   key={r.mitarbeiter_id}
@@ -183,14 +198,12 @@ export default async function DashboardPage({
                   <div className="text-xs text-[color:var(--muted)] truncate pl-2">
                     {r.mitarbeiter_name}
                   </div>
-                  <div className="text-lg font-semibold tabular-nums mt-1 pl-2">
-                    {formatEUR(r.total)}
+                  <div className="text-lg font-semibold tabular-nums mt-1 pl-2 text-[color:var(--brand-green)]">
+                    {formatEUR(auszahlung ?? r.total)}
                   </div>
-                  {auszahlung != null ? (
-                    <div className="text-sm tabular-nums mt-1 pl-2 text-[color:var(--brand-green)] font-medium">
-                      → {formatEUR(auszahlung)}
-                    </div>
-                  ) : null}
+                  <div className="text-xs text-[color:var(--muted)] mt-1 pl-2 tabular-nums">
+                    Cashflow {formatEUR(r.total)}
+                  </div>
                   <div className="text-xs text-[color:var(--muted)] mt-1 pl-2">
                     {r.openPayments} Raten · {r.dealCount} Deals
                   </div>
