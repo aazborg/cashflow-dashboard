@@ -7,7 +7,8 @@ import {
   expandPayments,
   formatEUR,
 } from "@/lib/cashflow";
-import { listDeals } from "@/lib/store";
+import { SETTER_TARIFFS } from "@/lib/setter-tiers";
+import { listDeals, listEmployees } from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 
@@ -36,7 +37,61 @@ export default async function GesamtCashflowPage({
   if (!ctx.isAdmin) redirect("/");
 
   const { year: yearRaw } = await searchParams;
-  const allDeals = await listDeals();
+  const [allDeals, employees] = await Promise.all([listDeals(), listEmployees()]);
+
+  // Payout-Lookups analog zum Hauptdashboard.
+  const provisionByMitId = new Map<string, number>();
+  for (const e of employees) {
+    if (e.provision_pct == null) continue;
+    if (e.hubspot_owner_id) provisionByMitId.set(e.hubspot_owner_id, e.provision_pct);
+    provisionByMitId.set(e.id, e.provision_pct);
+  }
+  const fixumByMitId = new Map<string, number>();
+  const employmentStartByMitId = new Map<string, string>();
+  const employmentEndByMitId = new Map<string, string>();
+  for (const e of employees) {
+    const setterFix = e.setter_hours
+      ? SETTER_TARIFFS[e.setter_hours]?.fixum ?? 0
+      : 0;
+    const closerFix = e.closer_fixum_eur ?? 0;
+    const fix = setterFix + closerFix;
+    if (fix > 0) {
+      if (e.hubspot_owner_id) fixumByMitId.set(e.hubspot_owner_id, fix);
+      fixumByMitId.set(e.id, fix);
+    }
+    if (e.employment_start) {
+      if (e.hubspot_owner_id) employmentStartByMitId.set(e.hubspot_owner_id, e.employment_start);
+      employmentStartByMitId.set(e.id, e.employment_start);
+    }
+    if (e.employment_end) {
+      if (e.hubspot_owner_id) employmentEndByMitId.set(e.hubspot_owner_id, e.employment_end);
+      employmentEndByMitId.set(e.id, e.employment_end);
+    }
+  }
+  const fixumPaymentsInMonth = (m: number): number =>
+    m === 6 || m === 11 ? 2 : 1;
+  const monthFromKey = (key: string): number =>
+    Number.parseInt(key.split("-")[1] ?? "0", 10);
+  const monthlyFixFor = (mitId: string, monthKey: string): number => {
+    const fix = fixumByMitId.get(mitId) ?? 0;
+    if (fix <= 0) return 0;
+    const start = employmentStartByMitId.get(mitId);
+    if (start && monthKey < start.slice(0, 7)) return 0;
+    const end = employmentEndByMitId.get(mitId);
+    if (end && monthKey > end.slice(0, 7)) return 0;
+    return fix;
+  };
+  const monthlyPayout = (
+    mitId: string,
+    commissionBase: number,
+    monthKey: string,
+  ): number => {
+    const p = provisionByMitId.get(mitId);
+    const fix = monthlyFixFor(mitId, monthKey);
+    const variable = p != null ? (commissionBase * p) / 100 : 0;
+    const fixCount = fixumPaymentsInMonth(monthFromKey(monthKey));
+    return variable + fix * fixCount;
+  };
 
   const currentYear = new Date().getFullYear();
   const yearsFromPayments = new Set<number>();
@@ -183,6 +238,18 @@ export default async function GesamtCashflowPage({
             <tbody>
               {rows.map((r) => {
                 const restMonth = r.totalOriginal - r.total;
+                const auszahlungByMit: Record<string, number> = {};
+                for (const m of chartMit) {
+                  auszahlungByMit[m.id] = monthlyPayout(
+                    m.id,
+                    r.byMitarbeiter[m.id] ?? 0,
+                    r.month,
+                  );
+                }
+                const totalAuszahlung = Object.values(auszahlungByMit).reduce(
+                  (s, v) => s + v,
+                  0,
+                );
                 return (
                   <tr
                     key={r.month}
@@ -190,7 +257,12 @@ export default async function GesamtCashflowPage({
                   >
                     <td className="px-4 py-2 sticky left-0 bg-white">{r.monthLabel}</td>
                     <td className="px-4 py-2 text-right tabular-nums font-medium">
-                      {r.totalOriginal > 0 ? formatEUR(r.totalOriginal) : "—"}
+                      <div>{r.totalOriginal > 0 ? formatEUR(r.totalOriginal) : "—"}</div>
+                      {totalAuszahlung > 0.5 ? (
+                        <div className="text-[10px] text-[color:var(--brand-green)] font-normal">
+                          Auszahlung {formatEUR(totalAuszahlung)}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums text-[color:var(--muted)]">
                       {r.total > 0 ? formatEUR(r.total) : "—"}
@@ -198,16 +270,23 @@ export default async function GesamtCashflowPage({
                     <td className="px-4 py-2 text-right tabular-nums text-[color:var(--brand-orange)]">
                       {restMonth > 0.5 ? formatEUR(restMonth) : "—"}
                     </td>
-                    {chartMit.map((m) => (
-                      <td
-                        key={m.id}
-                        className="px-4 py-2 text-right tabular-nums text-[color:var(--muted)]"
-                      >
-                        {(r.byMitarbeiterOriginal[m.id] ?? 0) > 0
-                          ? formatEUR(r.byMitarbeiterOriginal[m.id]!)
-                          : "—"}
-                      </td>
-                    ))}
+                    {chartMit.map((m) => {
+                      const cf = r.byMitarbeiterOriginal[m.id] ?? 0;
+                      const pay = auszahlungByMit[m.id];
+                      return (
+                        <td
+                          key={m.id}
+                          className="px-4 py-2 text-right tabular-nums text-[color:var(--muted)]"
+                        >
+                          <div>{cf > 0 ? formatEUR(cf) : "—"}</div>
+                          {pay > 0.5 ? (
+                            <div className="text-[10px] text-[color:var(--brand-green)] font-normal">
+                              Auszahlung {formatEUR(pay)}
+                            </div>
+                          ) : null}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}

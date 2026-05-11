@@ -77,27 +77,32 @@ export default function DealRow({ deal, isAdmin }: Props) {
       {editing ? (
         <>
           <td className="px-3 py-2">
-            <div className="flex flex-col items-end gap-1">
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={betrag}
-                onChange={(e) => setBetrag(e.target.value)}
-                className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-28 text-right tabular-nums"
-                title="Provisions-relevanter Betrag"
-              />
-              {isAdmin ? (
+            <div className="flex flex-col items-end gap-1.5">
+              <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[color:var(--muted)]">
+                Mitarbeiter
                 <input
                   type="number"
                   step="0.01"
                   min="0"
-                  value={betragOriginal}
-                  onChange={(e) => setBetragOriginal(e.target.value)}
-                  className="border border-[color:var(--border)] rounded px-2 py-1 text-xs w-28 text-right tabular-nums text-[color:var(--muted)]"
-                  placeholder="Original (HubSpot)"
-                  title="Original aus HubSpot — wird bei jedem Sync überschrieben, nur für Admin"
+                  value={betrag}
+                  onChange={(e) => setBetrag(e.target.value)}
+                  className="border border-[color:var(--border)] rounded px-2 py-1 text-sm w-28 text-right tabular-nums normal-case tracking-normal text-[color:var(--foreground)]"
+                  title="Provisions-relevanter Betrag — vom Mitarbeiter editierbar"
                 />
+              </label>
+              {isAdmin ? (
+                <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[color:var(--brand-orange)]">
+                  HubSpot
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={betragOriginal}
+                    onChange={(e) => setBetragOriginal(e.target.value)}
+                    className="border border-[color:var(--brand-orange)]/50 rounded px-2 py-1 text-sm w-28 text-right tabular-nums normal-case tracking-normal text-[color:var(--foreground)] bg-[color:var(--brand-yellow)]/10"
+                    title="Original-Dealbetrag aus HubSpot — wird beim nächsten Sync mit dem aktuellen HubSpot-Wert überschrieben"
+                  />
+                </label>
               ) : null}
             </div>
           </td>
