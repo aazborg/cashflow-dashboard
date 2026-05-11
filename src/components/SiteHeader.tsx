@@ -48,6 +48,7 @@ export function SiteHeader({
               <NavLink href="/">Dashboard</NavLink>
               <NavLink href="/daten">Daten</NavLink>
               <NavLink href="/rechner">Rechner</NavLink>
+              {isAdmin ? <NavLink href="/gesamt-cashflow">Gesamt</NavLink> : null}
               {isSetter || isAdmin ? <NavLink href="/setter">Setter</NavLink> : null}
               {isAdmin ? <NavLink href="/ziele">Ziele</NavLink> : null}
               {isAdmin ? <NavLink href="/admin">Admin</NavLink> : null}
@@ -105,6 +106,7 @@ export function SiteHeader({
             <MobileNavLink href="/">Dashboard</MobileNavLink>
             <MobileNavLink href="/daten">Daten</MobileNavLink>
             <MobileNavLink href="/rechner">Rechner</MobileNavLink>
+            {isAdmin ? <MobileNavLink href="/gesamt-cashflow">Gesamt</MobileNavLink> : null}
             {isSetter || isAdmin ? <MobileNavLink href="/setter">Setter</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/ziele">Ziele</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/admin">Admin</MobileNavLink> : null}
