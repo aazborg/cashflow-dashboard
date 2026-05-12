@@ -1,4 +1,4 @@
-import DealRow from "@/components/DealRow";
+import DealsTable from "@/components/DealsTable";
 import NewDealForm from "@/components/NewDealForm";
 import DatenSearchBar from "@/components/DatenSearchBar";
 import DatenPagination from "@/components/DatenPagination";
@@ -104,38 +104,7 @@ export default async function DatenPage({
       />
 
       <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[color:var(--surface)] text-left">
-              <tr>
-                <th className="px-3 py-2 font-medium">Kontakt</th>
-                <th className="px-3 py-2 font-medium">Mitarbeiter</th>
-                <th className="px-3 py-2 font-medium text-right">Betrag</th>
-                <th className="px-3 py-2 font-medium">Startdatum</th>
-                <th className="px-3 py-2 font-medium text-right">Raten</th>
-                <th className="px-3 py-2 font-medium">Intervall</th>
-                <th className="px-3 py-2 font-medium text-right">Rate</th>
-                <th className="px-3 py-2 font-medium text-right">Aktion</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-3 py-12 text-center text-[color:var(--muted)]"
-                  >
-                    {q
-                      ? `Keine Treffer für „${q}".`
-                      : "Noch keine Deals. Lege manuell einen an oder warte auf den nächsten HubSpot-Push."}
-                  </td>
-                </tr>
-              ) : (
-                visible.map((d) => <DealRow key={d.id} deal={d} isAdmin={ctx.isAdmin} />)
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DealsTable deals={visible} isAdmin={ctx.isAdmin} searchQuery={q} />
         <DatenPagination
           page={page}
           totalPages={totalPages}

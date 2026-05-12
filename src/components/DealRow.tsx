@@ -11,9 +11,18 @@ import { formatEURPrecise } from "@/lib/cashflow";
 interface Props {
   deal: Deal;
   isAdmin: boolean;
+  /** Wird nur gerendert, wenn definiert — schaltet die Checkbox-Spalte ein. */
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export default function DealRow({ deal, isAdmin }: Props) {
+export default function DealRow({
+  deal,
+  isAdmin,
+  selected,
+  onToggleSelect,
+}: Props) {
+  const showCheckbox = typeof selected === "boolean" && !!onToggleSelect;
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [betrag, setBetrag] = useState(String(deal.betrag));
@@ -61,8 +70,20 @@ export default function DealRow({ deal, isAdmin }: Props) {
     <tr
       className={`border-t border-[color:var(--border)] ${
         deal.pending_delete ? "bg-[color:var(--brand-yellow)]/20" : ""
-      }`}
+      } ${selected ? "bg-[color:var(--brand-blue)]/10" : ""}`}
     >
+      {showCheckbox ? (
+        <td className="px-3 py-2 w-8">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            disabled={deal.pending_delete}
+            className="accent-[color:var(--brand-blue)] cursor-pointer"
+            aria-label={`Auswählen: ${deal.vorname} ${deal.nachname}`}
+          />
+        </td>
+      ) : null}
       <td className="px-3 py-2">
         <div className="font-medium">
           {deal.vorname} {deal.nachname}

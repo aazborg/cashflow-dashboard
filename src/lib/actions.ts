@@ -6,6 +6,7 @@ import {
   createDeleteRequest,
   createProduct,
   decideDeleteRequest,
+  deleteDealsByIds,
   deleteEmployee,
   deleteProduct,
   getDeal,
@@ -124,6 +125,37 @@ export async function createDealAction(formData: FormData) {
   });
   revalidatePath("/daten");
   revalidatePath("/");
+}
+
+/**
+ * Bulk-Hard-Delete für Admins: löscht eine Liste von Deal-IDs sofort,
+ * ohne Lösch-Request-Workflow. Mitarbeiter (non-admin) bekommen 401.
+ */
+export async function bulkDeleteDealsAction(formData: FormData): Promise<{
+  ok: boolean;
+  deleted: number;
+  error?: string;
+}> {
+  await requireAdmin();
+  const idsRaw = String(formData.get("ids") ?? "");
+  const ids = idsRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (ids.length === 0) return { ok: true, deleted: 0 };
+  try {
+    const deleted = await deleteDealsByIds(ids);
+    revalidatePath("/daten");
+    revalidatePath("/");
+    revalidatePath("/gesamt-cashflow");
+    return { ok: true, deleted };
+  } catch (err) {
+    return {
+      ok: false,
+      deleted: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 export async function requestDeleteAction(formData: FormData) {

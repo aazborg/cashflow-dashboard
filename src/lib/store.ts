@@ -386,6 +386,25 @@ export async function updateEmployee(
 }
 
 /**
+ * Hard-Delete mehrerer Deals in einem Schritt. Verbundene
+ * delete_requests werden mit gelöscht (FK-Cascade gibt's hier nicht,
+ * darum explizit). Liefert die Anzahl tatsächlich gelöschter Zeilen.
+ */
+export async function deleteDealsByIds(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const supabase = supabaseAdmin();
+  // 1) Etwaige offene delete_requests aufräumen, sonst FK-Verstoß
+  await supabase.from("delete_requests").delete().in("deal_id", ids);
+  // 2) Deals selbst löschen
+  const { error, count } = await supabase
+    .from("deals")
+    .delete({ count: "exact" })
+    .in("id", ids);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
  * Hard-Delete eines Mitarbeiters. Verbundene Daten (Funnel-Snapshots,
  * Setter-Qualis) werden mit aufgeräumt. Deals bleiben unverändert — der
  * mitarbeiter_name ist dort denormalisiert gespeichert, historische
