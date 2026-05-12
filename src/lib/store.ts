@@ -117,30 +117,57 @@ export async function updateDeal(
   return data ? rowToDeal(data as DealRow) : null;
 }
 
+/**
+ * Wird vom Legacy-Webhook-Pfad benutzt. Bei BESTEHENDEN Deals dürfen
+ * dashboard-editierte Felder NICHT überschrieben werden (sonst macht der
+ * nächste HubSpot-Sync die Mitarbeiter-Anpassungen kaputt):
+ *   - betrag (Provisions-Basis)     → bleibt
+ *   - start_datum / anzahl_raten / intervall (Cashflow-Plan)  → bleibt
+ *   - email                          → nur befüllen, wenn bisher leer
+ * Folgende Felder werden synchronisiert (HubSpot-Wahrheit):
+ *   - vorname / nachname / mitarbeiter_id / mitarbeiter_name
+ *   - betrag_original (Original-HubSpot-Wert)
+ *
+ * Bei NEUEN Deals werden alle Felder gesetzt; betrag und betrag_original
+ * starten gleich mit dem HubSpot-Wert.
+ */
 export async function upsertDealByHubspotId(
   hubspot_deal_id: string,
   data: Omit<Deal, "id" | "created_at" | "hubspot_deal_id" | "source">,
 ): Promise<Deal> {
+  const existing = await getDealByHubspotId(hubspot_deal_id);
+  if (existing) {
+    const hubspotAmount = data.betrag_original ?? data.betrag;
+    const patch: Partial<Deal> = {
+      vorname: data.vorname,
+      nachname: data.nachname,
+      mitarbeiter_id: data.mitarbeiter_id,
+      mitarbeiter_name: data.mitarbeiter_name,
+    };
+    if (!existing.email && data.email) patch.email = data.email;
+    if (existing.betrag_original !== hubspotAmount) {
+      patch.betrag_original = hubspotAmount;
+    }
+    const updated = await updateDeal(existing.id, patch);
+    return updated ?? existing;
+  }
   const { data: row, error } = await supabaseAdmin()
     .from("deals")
-    .upsert(
-      {
-        hubspot_deal_id,
-        source: "hubspot" as const,
-        vorname: data.vorname,
-        nachname: data.nachname,
-        email: data.email,
-        mitarbeiter_id: data.mitarbeiter_id,
-        mitarbeiter_name: data.mitarbeiter_name,
-        betrag: data.betrag,
-        betrag_original: data.betrag_original ?? data.betrag,
-        start_datum: data.start_datum,
-        anzahl_raten: data.anzahl_raten,
-        intervall: data.intervall,
-        pending_delete: data.pending_delete ?? false,
-      },
-      { onConflict: "hubspot_deal_id" },
-    )
+    .insert({
+      hubspot_deal_id,
+      source: "hubspot" as const,
+      vorname: data.vorname,
+      nachname: data.nachname,
+      email: data.email,
+      mitarbeiter_id: data.mitarbeiter_id,
+      mitarbeiter_name: data.mitarbeiter_name,
+      betrag: data.betrag,
+      betrag_original: data.betrag_original ?? data.betrag,
+      start_datum: data.start_datum,
+      anzahl_raten: data.anzahl_raten,
+      intervall: data.intervall,
+      pending_delete: data.pending_delete ?? false,
+    })
     .select()
     .single();
   if (error) throw error;
