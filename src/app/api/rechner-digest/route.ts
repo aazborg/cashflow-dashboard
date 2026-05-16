@@ -33,23 +33,42 @@ function fromHeader(): string {
  * Nur Admins.
  */
 export async function GET(req: NextRequest) {
-  const ctx = await getSessionContext();
-  if (!ctx?.isAdmin) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-  const url = new URL(req.url);
-  const hours = Math.max(
-    1,
-    Math.min(
-      720,
-      Number.parseInt(url.searchParams.get("hours") ?? "168", 10) || 168,
-    ),
-  );
-  const sendMode = url.searchParams.get("send"); // "test" | null
-  const until = new Date();
-  const since = new Date(until.getTime() - hours * 3_600_000);
-  const events = await listRechnerEventsSince(since);
-  const digest = buildRechnerDigest(events, since, until);
+  try {
+    const ctx = await getSessionContext();
+    if (!ctx?.isAdmin) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const url = new URL(req.url);
+    const hours = Math.max(
+      1,
+      Math.min(
+        720,
+        Number.parseInt(url.searchParams.get("hours") ?? "168", 10) || 168,
+      ),
+    );
+    const sendMode = url.searchParams.get("send"); // "test" | null
+    const until = new Date();
+    const since = new Date(until.getTime() - hours * 3_600_000);
+    let events;
+    try {
+      events = await listRechnerEventsSince(since);
+    } catch (dbErr) {
+      const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      const isMissingTable =
+        /relation .* does not exist/i.test(msg) ||
+        /could not find the table/i.test(msg);
+      return NextResponse.json(
+        {
+          ok: false,
+          error: msg,
+          hint: isMissingTable
+            ? "Migration 0009_rechner_events.sql wurde noch nicht in Supabase ausgeführt."
+            : undefined,
+        },
+        { status: 500 },
+      );
+    }
+    const digest = buildRechnerDigest(events, since, until);
 
   if (sendMode === "test") {
     const recipient =
@@ -89,13 +108,22 @@ export async function GET(req: NextRequest) {
       );
     }
   }
-  return NextResponse.json({
-    ok: true,
-    since: since.toISOString(),
-    until: until.toISOString(),
-    events_count: events.length,
-    digest: { ...digest, htmlBody: undefined },
-  });
+    return NextResponse.json({
+      ok: true,
+      since: since.toISOString(),
+      until: until.toISOString(),
+      events_count: events.length,
+      digest: { ...digest, htmlBody: undefined },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 },
+    );
+  }
 }
 
 /**
