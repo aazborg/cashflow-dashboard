@@ -89,23 +89,30 @@ export function buildRechnerDigest(
     };
   }
 
+  function formatEventLine(e: RechnerEvent): string {
+    const time = fmtTime(e.created_at);
+    if (e.mode === "setter") {
+      // qualis = BGs/Monat, showup = BGs/Woche, avg_contract = Fixum,
+      // expected = Bruttogehalt, data_month = Stunden-Tarif
+      return `  ${time}  Setter-Rechner · BGs/Woche ${e.showup ?? "—"} (= ${e.qualis ?? "—"}/Monat) · Vertrag ${e.data_month ?? "—"} · Fixum ${fmtEur(e.avg_contract)} → Bruttogehalt ${fmtEur(e.expected_value)}`;
+    }
+    const modeLabel = e.mode === "provision" ? "Provision" : "Umsatz";
+    return `  ${time}  Closing-Rechner · Modus: ${modeLabel} · Qualis ${e.qualis ?? "—"} · Showup ${fmtPct(e.showup)} · Close ${fmtPct(e.close_rate)} · Ø ${fmtEur(e.avg_contract)} → erwartet ${fmtEur(e.expected_value)}`;
+  }
+
   const textLines: string[] = [];
   textLines.push("Hallo Mario,");
   textLines.push("");
   textLines.push(
     `im Zeitraum ${since_local} bis ${until_local} haben sich ${groups.length} Mitarbeiter`,
   );
-  textLines.push(`mit dem Zielrechner beschäftigt (${events.length} Events):`);
+  textLines.push(`mit den Zielrechnern beschäftigt (${events.length} Events):`);
   textLines.push("");
   for (const [, rows] of groups) {
     const name = rows[0].mitarbeiter_name;
     textLines.push(`${name} (${rows.length}× Session${rows.length === 1 ? "" : "s"}):`);
     for (const e of rows) {
-      const time = fmtTime(e.created_at);
-      const modeLabel = e.mode === "provision" ? "Provision" : "Umsatz";
-      textLines.push(
-        `  ${time}  Modus: ${modeLabel} · Qualis ${e.qualis ?? "—"} · Showup ${fmtPct(e.showup)} · Close ${fmtPct(e.close_rate)} · Ø ${fmtEur(e.avg_contract)} → erwartet ${fmtEur(e.expected_value)}`,
-      );
+      textLines.push(formatEventLine(e));
     }
     textLines.push("");
   }
@@ -117,8 +124,11 @@ export function buildRechnerDigest(
       const lis = rows
         .map((e) => {
           const time = fmtTime(e.created_at);
+          if (e.mode === "setter") {
+            return `<li><strong>${time}</strong> · <span style="color:#f28a26">Setter-Rechner</span> · BGs/Woche ${e.showup ?? "—"} (= ${e.qualis ?? "—"}/Monat) · Vertrag ${e.data_month ?? "—"} · Fixum ${fmtEur(e.avg_contract)} → Brutto <strong>${fmtEur(e.expected_value)}</strong></li>`;
+          }
           const modeLabel = e.mode === "provision" ? "Provision" : "Umsatz";
-          return `<li><strong>${time}</strong> · Modus: ${modeLabel} · Qualis ${e.qualis ?? "—"} · Showup ${fmtPct(e.showup)} · Close ${fmtPct(e.close_rate)} · Ø ${fmtEur(e.avg_contract)} → <strong>${fmtEur(e.expected_value)}</strong></li>`;
+          return `<li><strong>${time}</strong> · <span style="color:#449dd7">Closing-Rechner</span> · Modus: ${modeLabel} · Qualis ${e.qualis ?? "—"} · Showup ${fmtPct(e.showup)} · Close ${fmtPct(e.close_rate)} · Ø ${fmtEur(e.avg_contract)} → <strong>${fmtEur(e.expected_value)}</strong></li>`;
         })
         .join("");
       return `<div style="margin-bottom:18px"><div style="font-weight:600;margin-bottom:4px">${name} <span style="color:#6b7280;font-weight:400">(${rows.length}× Session${rows.length === 1 ? "" : "s"})</span></div><ul style="margin:0;padding-left:20px;color:#1a1a1a">${lis}</ul></div>`;

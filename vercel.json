@@ -14,7 +14,7 @@
     },
     {
       "path": "/cashflow/api/rechner-digest",
-      "schedule": "0 18 * * *"
+      "schedule": "0 7 * * 1"
     }
   ]
 }

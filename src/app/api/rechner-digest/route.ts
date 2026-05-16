@@ -40,7 +40,10 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const hours = Math.max(
     1,
-    Math.min(168, Number.parseInt(url.searchParams.get("hours") ?? "24", 10) || 24),
+    Math.min(
+      720,
+      Number.parseInt(url.searchParams.get("hours") ?? "168", 10) || 168,
+    ),
   );
   const sendMode = url.searchParams.get("send"); // "test" | null
   const until = new Date();
@@ -96,8 +99,12 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * Cron-Pfad (POST). Sendet den 24-h-Digest an den konfigurierten
- * RECHNER_DIGEST_RECIPIENT (Default: mario.grabner@mynlp.at).
+ * Cron-Pfad (POST). Sendet den 7-Tage-Digest an den konfigurierten
+ * RECHNER_DIGEST_RECIPIENT (Default: mario.grabner@mynlp.at). Skippt
+ * stillschweigend, wenn in den letzten 7 Tagen kein Mitarbeiter einen
+ * Rechner verwendet hat.
+ *
+ * Cron-Schedule: jeden Montag 07:00 UTC (≈ 09:00 Wien).
  *
  * Authorization: Bearer CRON_SECRET
  */
@@ -111,17 +118,15 @@ export async function POST(req: NextRequest) {
   const recipient =
     process.env.RECHNER_DIGEST_RECIPIENT ?? "mario.grabner@mynlp.at";
   const until = new Date();
-  const since = new Date(until.getTime() - 24 * 3_600_000);
+  const since = new Date(until.getTime() - 7 * 24 * 3_600_000);
   const events = await listRechnerEventsSince(since);
   const digest = buildRechnerDigest(events, since, until);
 
-  // Bei 0 Events optional skip — der User hat darum gebeten, "wenn die
-  // Mitarbeiter den Rechner nutzen". Leere Mails sind also nicht gewünscht.
   if (digest.totalEvents === 0) {
     return NextResponse.json({
       ok: true,
       skipped: true,
-      reason: "Keine Rechner-Aktivität in den letzten 24h.",
+      reason: "Keine Rechner-Aktivität in den letzten 7 Tagen.",
     });
   }
   try {

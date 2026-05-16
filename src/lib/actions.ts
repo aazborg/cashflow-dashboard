@@ -481,7 +481,7 @@ export async function logRechnerEventAction(formData: FormData) {
   // im Namen eines anderen Events erzeugt.
   const ctx = await requireSession();
   const mode = String(formData.get("mode") ?? "").trim();
-  if (mode !== "provision" && mode !== "umsatz") return;
+  if (mode !== "provision" && mode !== "umsatz" && mode !== "setter") return;
   const num = (v: FormDataEntryValue | null): number => {
     if (typeof v !== "string") return 0;
     const n = Number.parseFloat(v.replace(",", "."));

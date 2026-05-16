@@ -111,7 +111,7 @@ export interface RechnerEvent {
   mitarbeiter_id: string;
   mitarbeiter_name: string;
   user_email: string | null;
-  mode: "provision" | "umsatz" | null;
+  mode: "provision" | "umsatz" | "setter" | null;
   qualis: number | null;
   showup: number | null;
   close_rate: number | null;

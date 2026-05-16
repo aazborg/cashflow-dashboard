@@ -780,7 +780,7 @@ export async function createRechnerEvent(input: {
   mitarbeiter_id: string;
   mitarbeiter_name: string;
   user_email?: string | null;
-  mode: "provision" | "umsatz";
+  mode: "provision" | "umsatz" | "setter";
   qualis: number;
   showup: number;
   close_rate: number;
@@ -818,8 +818,8 @@ export async function listRechnerEventsSince(
     mitarbeiter_name: r.mitarbeiter_name,
     user_email: r.user_email,
     mode:
-      r.mode === "provision" || r.mode === "umsatz"
-        ? (r.mode as "provision" | "umsatz")
+      r.mode === "provision" || r.mode === "umsatz" || r.mode === "setter"
+        ? (r.mode as "provision" | "umsatz" | "setter")
         : null,
     qualis: r.qualis,
     showup: r.showup == null ? null : Number(r.showup),

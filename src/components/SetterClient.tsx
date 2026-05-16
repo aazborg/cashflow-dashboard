@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { logRechnerEventAction } from "@/lib/actions";
 import { formatEUR } from "@/lib/cashflow";
 import {
   SETTER_TARIFFS,
@@ -36,6 +37,30 @@ export default function SetterClient({
     () => (tariff ? calcSetterPayout(tariff, bgs) : null),
     [tariff, bgs],
   );
+
+  // Silent Telemetry — 3-Sek-Debounce. Erstes Render wird übersprungen.
+  const skipFirstLog = useRef(true);
+  useEffect(() => {
+    if (!setter || !tariff || !calc) return;
+    if (skipFirstLog.current) {
+      skipFirstLog.current = false;
+      return;
+    }
+    if (bgsPerWeek <= 0) return; // nichts berechnet → nicht loggen
+    const timer = setTimeout(() => {
+      const fd = new FormData();
+      fd.set("mode", "setter");
+      fd.set("qualis", String(bgs)); // BGs pro Monat als "qualis"
+      fd.set("showup", String(bgsPerWeek)); // BGs pro Woche als "showup"
+      fd.set("close_rate", "0");
+      fd.set("avg_contract", String(tariff.fixum));
+      fd.set("expected_value", String(calc.bruttogehalt));
+      fd.set("data_month", tariff.hours);
+      logRechnerEventAction(fd).catch(() => {});
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgsPerWeek, bgs, tariff?.hours, calc?.bruttogehalt, setter?.id]);
 
   if (!setter) return null;
 
