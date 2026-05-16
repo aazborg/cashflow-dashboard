@@ -187,12 +187,71 @@ export async function getDealByHubspotId(
 }
 
 /**
- * Insert-only HubSpot import: legt einen Deal an, wenn er noch nicht
- * existiert. Wenn ein Deal mit dieser hubspot_deal_id schon da ist, wird
- * der vom Mitarbeiter editierbare `betrag` NICHT überschrieben — aber der
- * `betrag_original` (HubSpot-Wahrheit) wird auf den aktuellen HubSpot-Betrag
- * nachgezogen, damit Umsatzstatistiken immer den Original-Wert haben. Ebenso
- * wird `email` nachgezogen, wenn HubSpot inzwischen eine liefert.
+ * Sucht einen Deal in der DB, der vom HubSpot-Sync potenziell überschrieben
+ * werden könnte, falls noch keine hubspot_deal_id-Verknüpfung existiert.
+ * Wird genutzt, damit der tägliche Sync existierende manuell angelegte
+ * Deals MIT bestehenden Beträgen findet und verlinkt, statt Duplikate zu
+ * erzeugen.
+ *
+ * Reihenfolge: Email-Match (mit start_datum-Disambiguation, falls mehrere),
+ * dann name+mitarbeiter-Match.
+ */
+async function findLinkableDeal(data: {
+  vorname: string;
+  nachname: string;
+  email: string | null;
+  mitarbeiter_id: string;
+  default_start_datum: string | null;
+}): Promise<DealRow | null> {
+  const supabase = supabaseAdmin();
+  const hubspotMonth = data.default_start_datum?.slice(0, 7) ?? null;
+
+  function pickFromCandidates(rows: DealRow[]): DealRow | null {
+    const open = rows.filter((r) => !r.hubspot_deal_id && !r.pending_delete);
+    if (open.length === 0) return null;
+    if (open.length === 1) return open[0];
+    if (hubspotMonth) {
+      const byMonth = open.filter(
+        (r) =>
+          r.start_datum && r.start_datum.slice(0, 7) === hubspotMonth,
+      );
+      if (byMonth.length === 1) return byMonth[0];
+      const noStart = open.filter((r) => !r.start_datum);
+      if (noStart.length === 1) return noStart[0];
+    }
+    return null; // ambig, lieber nichts tun
+  }
+
+  if (data.email) {
+    const { data: byEmail } = await supabase
+      .from("deals")
+      .select("*")
+      .ilike("email", data.email)
+      .limit(10);
+    const picked = pickFromCandidates((byEmail ?? []) as DealRow[]);
+    if (picked) return picked;
+  }
+
+  const { data: byName } = await supabase
+    .from("deals")
+    .select("*")
+    .ilike("vorname", data.vorname)
+    .ilike("nachname", data.nachname)
+    .eq("mitarbeiter_id", data.mitarbeiter_id)
+    .limit(10);
+  const pickedByName = pickFromCandidates((byName ?? []) as DealRow[]);
+  return pickedByName;
+}
+
+/**
+ * HubSpot-Sync-Endpoint: legt einen Deal an, wenn er noch nicht existiert.
+ * Existiert er bereits — entweder über hubspot_deal_id oder über
+ * Email/Name+Mitarbeiter — wird er verlinkt:
+ *   - hubspot_deal_id gesetzt (falls noch null)
+ *   - betrag_original auf den aktuellen HubSpot-Wert nachgezogen
+ *   - email nachgezogen, wenn HubSpot eine liefert und die Spalte leer war
+ *   - betrag (Provisions-Basis) bleibt unverändert — der Mitarbeiter-Edit
+ *     überlebt jeden Sync
  */
 export async function insertHubspotDealIfMissing(
   hubspot_deal_id: string,
@@ -205,20 +264,40 @@ export async function insertHubspotDealIfMissing(
     betrag: number;
     default_start_datum: string | null;
   },
-): Promise<{ deal: Deal; created: boolean }> {
-  const existing = await getDealByHubspotId(hubspot_deal_id);
-  if (existing) {
+): Promise<{ deal: Deal; created: boolean; linked: boolean }> {
+  // 1) Direkter Match per hubspot_deal_id
+  const byHubspotId = await getDealByHubspotId(hubspot_deal_id);
+  if (byHubspotId) {
     const patch: Partial<Deal> = {};
-    if (!existing.email && data.email) patch.email = data.email;
-    if (existing.betrag_original !== data.betrag) {
+    if (!byHubspotId.email && data.email) patch.email = data.email;
+    if (byHubspotId.betrag_original !== data.betrag) {
       patch.betrag_original = data.betrag;
     }
     if (Object.keys(patch).length > 0) {
-      const updated = await updateDeal(existing.id, patch);
-      return { deal: updated ?? existing, created: false };
+      const updated = await updateDeal(byHubspotId.id, patch);
+      return { deal: updated ?? byHubspotId, created: false, linked: false };
     }
-    return { deal: existing, created: false };
+    return { deal: byHubspotId, created: false, linked: false };
   }
+
+  // 2) Fuzzy-Link: bestehenden Deal ohne hubspot_deal_id finden und verknüpfen,
+  //    statt zu duplizieren.
+  const linkable = await findLinkableDeal(data);
+  if (linkable) {
+    const patch: Partial<Deal> = {
+      hubspot_deal_id,
+      betrag_original: data.betrag,
+    };
+    if (!linkable.email && data.email) patch.email = data.email;
+    const updated = await updateDeal(linkable.id, patch);
+    return {
+      deal: updated ?? (rowToDeal(linkable as DealRow) as Deal),
+      created: false,
+      linked: true,
+    };
+  }
+
+  // 3) Wirklich neuer Deal — anlegen.
   const { data: row, error } = await supabaseAdmin()
     .from("deals")
     .insert({
@@ -239,7 +318,7 @@ export async function insertHubspotDealIfMissing(
     .select()
     .single();
   if (error) throw error;
-  return { deal: rowToDeal(row as DealRow), created: true };
+  return { deal: rowToDeal(row as DealRow), created: true, linked: false };
 }
 
 // ── Employees ──────────────────────────────────────────────────────────────

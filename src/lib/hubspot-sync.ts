@@ -169,6 +169,7 @@ export interface SyncSummary {
   total: number;
   pages: number;
   created: number;
+  linked: number;
   skipped_existing: number;
   unmatched_owners: number;
   errors: { hubspot_deal_id: string; message: string }[];
@@ -196,6 +197,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
   let pages = 0;
   let total = 0;
   let created = 0;
+  let linked = 0;
   let skipped_existing = 0;
   let unmatched_owners = 0;
   const errors: SyncSummary["errors"] = [];
@@ -289,6 +291,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
           default_start_datum,
         });
         if (result.created) created++;
+        else if (result.linked) linked++;
         else skipped_existing++;
       } catch (err) {
         errors.push({
@@ -305,6 +308,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
     total,
     pages,
     created,
+    linked,
     skipped_existing,
     unmatched_owners,
     errors,
