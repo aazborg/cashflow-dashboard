@@ -53,16 +53,28 @@ export async function GET(req: NextRequest) {
     try {
       events = await listRechnerEventsSince(since);
     } catch (dbErr) {
-      const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      // Supabase-Errors sind plain Objects mit .message/.details/.code — kein
+      // Error-Instance. Manuell flach extrahieren.
+      const obj = (dbErr ?? {}) as Record<string, unknown>;
+      const msg =
+        dbErr instanceof Error
+          ? dbErr.message
+          : typeof obj.message === "string"
+            ? obj.message
+            : JSON.stringify(dbErr);
       const isMissingTable =
         /relation .* does not exist/i.test(msg) ||
-        /could not find the table/i.test(msg);
+        /could not find the table/i.test(msg) ||
+        obj.code === "PGRST205" ||
+        obj.code === "42P01";
       return NextResponse.json(
         {
           ok: false,
           error: msg,
+          code: obj.code,
+          details: obj.details,
           hint: isMissingTable
-            ? "Migration 0009_rechner_events.sql wurde noch nicht in Supabase ausgeführt."
+            ? "Migration 0009_rechner_events.sql wurde noch nicht in Supabase ausgeführt. SQL aus dem letzten Chat-Block kopieren und im Supabase SQL Editor laufen lassen."
             : undefined,
         },
         { status: 500 },
