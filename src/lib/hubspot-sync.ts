@@ -193,6 +193,16 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
       .map((e) => [e.hubspot_owner_id as string, e] as const),
   );
 
+  // Optionaler Cutoff: nur Deals, die NACH diesem Datum auf "Closed Won"
+  // gezogen wurden, werden importiert. Verhindert, dass der tägliche Cron
+  // alte historische Deals neu anlegt, die längst manuell aus dem Dashboard
+  // entfernt wurden. ENV-Format: YYYY-MM-DD (z.B. 2026-05-12).
+  const cutoffRaw = process.env.HUBSPOT_SYNC_CUTOFF_CLOSEDATE;
+  const cutoffMillis =
+    cutoffRaw && /^\d{4}-\d{2}-\d{2}$/.test(cutoffRaw)
+      ? Date.parse(`${cutoffRaw}T00:00:00Z`)
+      : null;
+
   let after: string | undefined;
   let pages = 0;
   let total = 0;
@@ -203,23 +213,31 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
   const errors: SyncSummary["errors"] = [];
 
   do {
+    const filters: Array<{
+      propertyName: string;
+      operator: string;
+      value: string;
+    }> = [
+      {
+        propertyName: "pipeline",
+        operator: "EQ",
+        value: NEUKUNDEN_PIPELINE_ID,
+      },
+      {
+        propertyName: "dealstage",
+        operator: "EQ",
+        value: CLOSED_WON_STAGE_ID,
+      },
+    ];
+    if (cutoffMillis !== null && !Number.isNaN(cutoffMillis)) {
+      filters.push({
+        propertyName: "closedate",
+        operator: "GT",
+        value: String(cutoffMillis),
+      });
+    }
     const body = {
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: "pipeline",
-              operator: "EQ",
-              value: NEUKUNDEN_PIPELINE_ID,
-            },
-            {
-              propertyName: "dealstage",
-              operator: "EQ",
-              value: CLOSED_WON_STAGE_ID,
-            },
-          ],
-        },
-      ],
+      filterGroups: [{ filters }],
       properties: [
         "dealname",
         "amount",
