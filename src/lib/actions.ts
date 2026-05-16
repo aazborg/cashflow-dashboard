@@ -5,6 +5,7 @@ import {
   createDeal,
   createDeleteRequest,
   createProduct,
+  createRechnerEvent,
   decideDeleteRequest,
   deleteDealsByIds,
   deleteEmployee,
@@ -472,6 +473,38 @@ export async function syncHubspotSnapshotsAction(): Promise<SnapshotsResult> {
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+export async function logRechnerEventAction(formData: FormData) {
+  // Jeder eingeloggte User darf seine eigene Rechner-Aktivität loggen — wir
+  // pinnen mitarbeiter_id immer auf den eingeloggten Owner, damit niemand
+  // im Namen eines anderen Events erzeugt.
+  const ctx = await requireSession();
+  const mode = String(formData.get("mode") ?? "").trim();
+  if (mode !== "provision" && mode !== "umsatz") return;
+  const num = (v: FormDataEntryValue | null): number => {
+    if (typeof v !== "string") return 0;
+    const n = Number.parseFloat(v.replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const qualis = Math.max(0, Math.round(num(formData.get("qualis"))));
+  const showup = num(formData.get("showup"));
+  const close_rate = num(formData.get("close_rate"));
+  const avg_contract = num(formData.get("avg_contract"));
+  const expected_value = num(formData.get("expected_value"));
+  const data_month = String(formData.get("data_month") ?? "").trim() || null;
+  await createRechnerEvent({
+    mitarbeiter_id: ctx.ownerId,
+    mitarbeiter_name: ctx.employee.name,
+    user_email: ctx.employee.email,
+    mode,
+    qualis,
+    showup,
+    close_rate,
+    avg_contract,
+    expected_value,
+    data_month,
+  });
 }
 
 export async function upsertSetterQualisAction(formData: FormData) {

@@ -759,6 +759,79 @@ export async function upsertSetterQualis(input: {
   if (error) throw error;
 }
 
+// ── Rechner Events ─────────────────────────────────────────────────────────
+
+interface RechnerEventRow {
+  id: string;
+  mitarbeiter_id: string;
+  mitarbeiter_name: string;
+  user_email: string | null;
+  mode: string | null;
+  qualis: number | null;
+  showup: number | string | null;
+  close_rate: number | string | null;
+  avg_contract: number | string | null;
+  expected_value: number | string | null;
+  data_month: string | null;
+  created_at: string;
+}
+
+export async function createRechnerEvent(input: {
+  mitarbeiter_id: string;
+  mitarbeiter_name: string;
+  user_email?: string | null;
+  mode: "provision" | "umsatz";
+  qualis: number;
+  showup: number;
+  close_rate: number;
+  avg_contract: number;
+  expected_value: number;
+  data_month?: string | null;
+}): Promise<void> {
+  const { error } = await supabaseAdmin().from("rechner_events").insert({
+    mitarbeiter_id: input.mitarbeiter_id,
+    mitarbeiter_name: input.mitarbeiter_name,
+    user_email: input.user_email ?? null,
+    mode: input.mode,
+    qualis: input.qualis,
+    showup: input.showup,
+    close_rate: input.close_rate,
+    avg_contract: input.avg_contract,
+    expected_value: input.expected_value,
+    data_month: input.data_month ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function listRechnerEventsSince(
+  since: Date,
+): Promise<import("./types").RechnerEvent[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("rechner_events")
+    .select("*")
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as RechnerEventRow[]).map((r) => ({
+    id: r.id,
+    mitarbeiter_id: r.mitarbeiter_id,
+    mitarbeiter_name: r.mitarbeiter_name,
+    user_email: r.user_email,
+    mode:
+      r.mode === "provision" || r.mode === "umsatz"
+        ? (r.mode as "provision" | "umsatz")
+        : null,
+    qualis: r.qualis,
+    showup: r.showup == null ? null : Number(r.showup),
+    close_rate: r.close_rate == null ? null : Number(r.close_rate),
+    avg_contract: r.avg_contract == null ? null : Number(r.avg_contract),
+    expected_value:
+      r.expected_value == null ? null : Number(r.expected_value),
+    data_month: r.data_month,
+    created_at: r.created_at,
+  }));
+}
+
 // ── Delete requests ────────────────────────────────────────────────────────
 
 interface DeleteRequestRow {

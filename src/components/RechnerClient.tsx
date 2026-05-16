@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { logRechnerEventAction } from "@/lib/actions";
 import { formatEUR } from "@/lib/cashflow";
 import type {
   CashDistribution,
@@ -216,6 +217,44 @@ export default function RechnerClient({
   const baselineRevenue =
     baseline.qualis * (baseline.showup / 100) * (baseline.close / 100) * avgPrice;
   const currentRevenue = qualis * (showup / 100) * (close / 100) * avgPrice;
+
+  // Debounced Logging — schreibt nach 3 Sekunden Inaktivität ein Event in
+  // rechner_events. Admin bekommt davon einmal täglich einen Digest gemailt.
+  const skipFirstLog = useRef(true);
+  useEffect(() => {
+    if (!employee) return;
+    if (skipFirstLog.current) {
+      skipFirstLog.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      const provPct = employee.provision_pct ?? 0;
+      const expected =
+        mode === "provision" ? currentRevenue * (provPct / 100) : currentRevenue;
+      const fd = new FormData();
+      fd.set("mode", mode);
+      fd.set("qualis", String(qualis));
+      fd.set("showup", String(showup));
+      fd.set("close_rate", String(close));
+      fd.set("avg_contract", String(avgPrice));
+      fd.set("expected_value", String(expected));
+      fd.set("data_month", dataMonth);
+      logRechnerEventAction(fd).catch(() => {
+        // Telemetry darf scheitern, ohne die UI zu blockieren.
+      });
+    }, 3000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    mode,
+    qualis,
+    showup,
+    close,
+    avgPrice,
+    dataMonth,
+    employee?.id,
+    currentRevenue,
+  ]);
   // One-shot: how much extra revenue would have been generated THIS month if you had
   // performed at the slider levels instead of the baseline. Distributes over the
   // following months according to the historical cash distribution.

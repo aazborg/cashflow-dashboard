@@ -106,6 +106,21 @@ export interface Product {
   is_upsell?: boolean;
 }
 
+export interface RechnerEvent {
+  id: string;
+  mitarbeiter_id: string;
+  mitarbeiter_name: string;
+  user_email: string | null;
+  mode: "provision" | "umsatz" | null;
+  qualis: number | null;
+  showup: number | null;
+  close_rate: number | null;
+  avg_contract: number | null;
+  expected_value: number | null;
+  data_month: string | null;
+  created_at: string;
+}
+
 export interface SetterMonthlyQualis {
   id: string;
   mitarbeiter_id: string;
