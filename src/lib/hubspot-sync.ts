@@ -193,14 +193,15 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
       .map((e) => [e.hubspot_owner_id as string, e] as const),
   );
 
-  // Optionaler Cutoff: nur Deals, die NACH diesem Datum auf "Closed Won"
-  // gezogen wurden, werden importiert. Verhindert, dass der tägliche Cron
-  // alte historische Deals neu anlegt, die längst manuell aus dem Dashboard
-  // entfernt wurden. ENV-Format: YYYY-MM-DD (z.B. 2026-05-12).
+  // Optionaler Cutoff: nur Deals, die NACH diesem Datum (Stichtag) auf
+  // "Closed Won" gezogen wurden, werden importiert. Der Stichtag selbst ist
+  // ausgeschlossen — wir vergleichen mit closedate > <stichtag>T23:59:59.999Z.
+  // Beispiel: HUBSPOT_SYNC_CUTOFF_CLOSEDATE=2026-05-12 → nur Deals mit
+  // closedate ab dem 13.5.2026 (UTC) kommen rein, Deals vom 12.5. nicht.
   const cutoffRaw = process.env.HUBSPOT_SYNC_CUTOFF_CLOSEDATE;
   const cutoffMillis =
     cutoffRaw && /^\d{4}-\d{2}-\d{2}$/.test(cutoffRaw)
-      ? Date.parse(`${cutoffRaw}T00:00:00Z`)
+      ? Date.parse(`${cutoffRaw}T23:59:59.999Z`)
       : null;
 
   let after: string | undefined;
