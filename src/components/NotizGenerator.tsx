@@ -822,21 +822,20 @@ export default function NotizGenerator() {
   }
 
   async function copyToClipboard() {
-    // Garantie: jede Notiz die per Email verschickt wird, ist auch
-    // in der Vorlagen-DB gespeichert -- sonst kann sie spaeter
-    // beim Rechnungs-Erstellen nicht wiedergefunden werden.
-    if (!istGespeichert) {
-      const ok = await speichereVorlage();
-      if (!ok) {
-        // Speichern fehlgeschlagen (Email fehlt / Vorlage-Lock /
-        // Server-Error). Banner zeigt schon den Grund.
-        return;
-      }
+    // Mario-Regel: dieser Button speichert IMMER vorher (auch
+    // wenn nichts geaendert wurde) und kopiert dann. So ist
+    // garantiert dass die kopierte Notiz exakt dem DB-Stand
+    // entspricht, ueber den spaeter die Rechnung gefunden wird.
+    const ok = await speichereVorlage();
+    if (!ok) {
+      // Speichern fehlgeschlagen (Email fehlt / Server-Error).
+      // Banner zeigt schon den Grund.
+      return;
     }
     try {
       await navigator.clipboard.writeText(notizText);
-      setCopyStatus("✓ Kopiert!");
-      setTimeout(() => setCopyStatus(""), 2000);
+      setCopyStatus("✓ Gespeichert + kopiert");
+      setTimeout(() => setCopyStatus(""), 2500);
     } catch {
       setCopyStatus("Kopieren fehlgeschlagen — bitte manuell markieren.");
       setTimeout(() => setCopyStatus(""), 4000);
@@ -1111,24 +1110,18 @@ export default function NotizGenerator() {
               type="button"
               onClick={speichereVorlage}
               className="text-xs px-3 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10"
-              title="Speichert unter der Kunden-Email -- pro Email gibt es genau EINE Notiz, neue Speicherungen überschreiben"
+              title="Speichert die Notiz unter der Kunden-Email (pro Email genau eine Notiz, wird beim erneuten Speichern überschrieben)"
             >
-              Notiz speichern
+              Speichern
             </button>
             <button
               type="button"
               onClick={copyToClipboard}
               disabled={!notizText.trim()}
               className="text-xs px-3 py-1 rounded bg-[color:var(--brand-blue)] text-white disabled:opacity-50"
-              title={
-                istGespeichert
-                  ? "Notiz in Zwischenablage kopieren"
-                  : "Speichert die Notiz erst als Vorlage (für spätere Rechnungs-Erstellung), dann kopiert sie."
-              }
+              title="Speichert die Notiz und kopiert sie in die Zwischenablage"
             >
-              {istGespeichert
-                ? "In Zwischenablage kopieren"
-                : "Speichern & kopieren"}
+              Speichern und in Zwischenablage kopieren
             </button>
           </div>
         </div>
