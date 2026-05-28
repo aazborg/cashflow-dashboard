@@ -429,16 +429,25 @@ export default function NotizGenerator() {
           const stillValid = x.selectedTerminIds.filter((id) =>
             freshIds.has(id),
           );
+          // Bei alten Vorlagen (vor dem schema-Update) war
+          // selectedTerminIds oft leer. Wenn nach Refresh Termine
+          // kommen aber keine Auswahl da ist -> alle vor-auswaehlen
+          // damit Mario sofort die Liste sieht und einzelne abhaken
+          // kann.
+          const finalSelected =
+            x.selectedTerminIds.length === 0 && fresh.length > 0
+              ? fresh.map((t) => t.event_id)
+              : stillValid;
+          const aktiv = finalSelected.length > 0;
           return {
             ...x,
             termine: fresh,
             ladeTermine: false,
-            terminBekannt:
-              x.terminBekannt && stillValid.length > 0,
-            selectedTerminIds: stillValid,
+            terminBekannt: aktiv,
+            selectedTerminIds: finalSelected,
             // Auto-Format: 1 Termin -> range, mehrere -> liste
             terminFormat:
-              stillValid.length <= 1 ? "range" : x.terminFormat,
+              finalSelected.length <= 1 ? "range" : x.terminFormat,
           };
         }),
       );
