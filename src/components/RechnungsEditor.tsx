@@ -125,7 +125,6 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
   const [hauptprodukt, setHauptprodukt] = useState<string>("");
-  const [hauptpreis, setHauptpreis] = useState<string>("");
   const [vorschlaege, setVorschlaege] = useState<{
     pflicht: Vorschlag[];
     haeufig: Vorschlag[];
@@ -353,8 +352,6 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 
   async function selectHauptprodukt(name: string) {
     setHauptprodukt(name);
-    const hp = hauptprodukte.find((h) => h.name === name);
-    if (hp?.preis_default != null) setHauptpreis(String(hp.preis_default));
     setVorschlaegeLaden(true);
     setVorschlaege(null);
     try {
@@ -530,10 +527,16 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         email: empfaenger.email,
       },
       rechnungstitel: rechnungstitel || undefined,
+      // verwende_vertrag: Backend holt den Vertrag aus Drive per
+      // Empfaenger-Label und uebernimmt die Preise aus der
+      // Vertrags-Positionsliste -- Mario will keine Preise mehr
+      // im UI eintippen.
+      verwende_vertrag: true,
+      slack_name: empfaenger.label || `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim(),
       hauptartikel: {
         article_id: hauptArticle.id,
         title: hauptArticle.title,
-        preis: parseDecimal(hauptpreis),
+        // preis bleibt null -> Backend ergaenzt aus Vertrag
         tax_percent: 0,
       },
       positionen: zeilen
@@ -543,10 +546,8 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
           id: z.modelId,
           model_typ: z.modelTyp,
           title: z.title,
-          preis: parseDecimal(z.preis),
-          tax_percent: parseInt(z.taxPercent || "0", 10),
-          // Seminar (planned-event) UND Reihe (planned-qualifications)
-          // brauchen die Termin-IDs fuer die SimplyOrg-Einbuchung.
+          // preis/tax bleiben null -> Backend ergaenzt aus Vertrag
+          // (per Name-Match auf die Zusatz-Positionen)
           termine_event_ids:
             (z.kind === "reihe" || z.kind === "seminar")
               ? z.terminEventIds
@@ -733,22 +734,17 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
               {hauptprodukte.map((h) => (
                 <option key={h.name} value={h.name}>
                   {h.name}
-                  {h.preis_default != null
-                    ? ` (${h.preis_default.toLocaleString("de-AT")} €, ${h.anzahl_rechnungen}×)`
+                  {h.anzahl_rechnungen
+                    ? ` (${h.anzahl_rechnungen}× verkauft)`
                     : ""}
                 </option>
               ))}
             </select>
-            <input
-              type="number"
-              step="0.01"
-              value={hauptpreis}
-              onChange={(e) => setHauptpreis(e.target.value)}
-              placeholder="Preis"
-              className="w-28 border border-[color:var(--border)] rounded px-2 py-1 text-sm text-right tabular-nums"
-            />
-            <span className="text-sm self-center text-[color:var(--muted)]">€</span>
           </div>
+          <p className="text-xs text-[color:var(--muted)] mt-1">
+            Preise werden automatisch aus dem signierten Vertrag in
+            Drive geholt — du musst hier nichts eintragen.
+          </p>
           {vorschlaegeLaden ? (
             <p className="text-xs text-[color:var(--muted)] mt-1">
               Lade Vorschläge…
@@ -868,6 +864,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 }
 
 // --- Number helpers ------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function parseDecimal(s: string): number {
   if (!s) return 0;
   const n = Number.parseFloat(s.replace(",", "."));
@@ -1013,29 +1010,7 @@ function ZeileEditor({
         </div>
       ) : null}
 
-      {/* Preis / Tax */}
-      {isPicked ? (
-        <div className="mb-2 flex items-center gap-2 text-sm">
-          <label className="text-xs text-[color:var(--muted)]">Preis</label>
-          <input
-            type="number"
-            step="0.01"
-            value={zeile.preis}
-            onChange={(e) => onUpdate({ preis: e.target.value })}
-            className="w-24 border border-[color:var(--border)] rounded px-2 py-1 text-right tabular-nums"
-          />
-          <span>€</span>
-          <label className="text-xs text-[color:var(--muted)] ml-3">MwSt</label>
-          <input
-            type="number"
-            step="1"
-            value={zeile.taxPercent}
-            onChange={(e) => onUpdate({ taxPercent: e.target.value })}
-            className="w-14 border border-[color:var(--border)] rounded px-2 py-1 text-right tabular-nums"
-          />
-          <span>%</span>
-        </div>
-      ) : null}
+      {/* Preise kommen aus dem Vertrag -- kein UI-Input hier. */}
 
       {/* Freitext-Notiz (rein dokumentarisch, nicht an SimplyOrg gesendet) */}
       <div className="mt-2">
