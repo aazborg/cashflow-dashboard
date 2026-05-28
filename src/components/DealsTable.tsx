@@ -10,9 +10,16 @@ interface Props {
   isAdmin: boolean;
   /** Suchstring, für die "keine Treffer"-Meldung. */
   searchQuery?: string;
+  /** Rechnungs-Bot freigeschaltet (Beta, nur Mario). */
+  canCreateRechnung?: boolean;
 }
 
-export default function DealsTable({ deals, isAdmin, searchQuery }: Props) {
+export default function DealsTable({
+  deals,
+  isAdmin,
+  searchQuery,
+  canCreateRechnung,
+}: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<{
@@ -173,6 +180,7 @@ export default function DealsTable({ deals, isAdmin, searchQuery }: Props) {
                   key={d.id}
                   deal={d}
                   isAdmin={isAdmin}
+                  canCreateRechnung={canCreateRechnung}
                   selected={isAdmin ? selected.has(d.id) : undefined}
                   onToggleSelect={isAdmin ? () => toggle(d.id) : undefined}
                 />

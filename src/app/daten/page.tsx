@@ -4,6 +4,7 @@ import DatenSearchBar from "@/components/DatenSearchBar";
 import DatenPagination from "@/components/DatenPagination";
 import { listDeals, listEmployees } from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
+import { canUseRechnungsBot } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -104,7 +105,12 @@ export default async function DatenPage({
       />
 
       <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
-        <DealsTable deals={visible} isAdmin={ctx.isAdmin} searchQuery={q} />
+        <DealsTable
+          deals={visible}
+          isAdmin={ctx.isAdmin}
+          searchQuery={q}
+          canCreateRechnung={canUseRechnungsBot(ctx)}
+        />
         <DatenPagination
           page={page}
           totalPages={totalPages}

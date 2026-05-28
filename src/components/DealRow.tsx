@@ -7,10 +7,14 @@ import {
 } from "@/lib/actions";
 import { INTERVALL_OPTIONS, type Deal } from "@/lib/types";
 import { formatEURPrecise } from "@/lib/cashflow";
+import RechnungsEditor from "./RechnungsEditor";
 
 interface Props {
   deal: Deal;
   isAdmin: boolean;
+  /** Rechnungs-Bot (Beta) freigeschaltet? Steuert "Rechnung erstellen"-
+   *  Button. Wird in der page.tsx via canUseRechnungsBot ermittelt. */
+  canCreateRechnung?: boolean;
   /** Wird nur gerendert, wenn definiert — schaltet die Checkbox-Spalte ein. */
   selected?: boolean;
   onToggleSelect?: () => void;
@@ -19,9 +23,11 @@ interface Props {
 export default function DealRow({
   deal,
   isAdmin,
+  canCreateRechnung,
   selected,
   onToggleSelect,
 }: Props) {
+  const [rechnungsModalOpen, setRechnungsModalOpen] = useState(false);
   const showCheckbox = typeof selected === "boolean" && !!onToggleSelect;
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
@@ -227,6 +233,15 @@ export default function DealRow({
                 >
                   Bearbeiten
                 </button>
+                {canCreateRechnung ? (
+                  <button
+                    onClick={() => setRechnungsModalOpen(true)}
+                    className="text-xs px-2 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 mr-1"
+                    title="SimplyOrg-Rechnung für diesen Deal erstellen (Beta)"
+                  >
+                    Rechnung
+                  </button>
+                ) : null}
                 <button
                   onClick={requestDelete}
                   disabled={pending}
@@ -239,6 +254,17 @@ export default function DealRow({
           </td>
         </>
       )}
+      {canCreateRechnung && rechnungsModalOpen ? (
+        // key=open-State erzwingt Remount bei jedem Oeffnen, damit
+        // Form-State sauber zurueckgesetzt ist (vgl. RechnungsEditor
+        // -- lazy initial state aus deal.vorname/nachname).
+        <RechnungsEditor
+          key={`${deal.id}-${rechnungsModalOpen}`}
+          deal={deal}
+          open={rechnungsModalOpen}
+          onClose={() => setRechnungsModalOpen(false)}
+        />
+      ) : null}
     </tr>
   );
 }
