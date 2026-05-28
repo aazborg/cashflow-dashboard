@@ -49,6 +49,31 @@ interface Hauptprodukt {
   anzahl_rechnungen: number;
 }
 
+interface VorlageListEntry {
+  id: string;
+  email: string;
+  name: string | null;
+  hauptprodukt: string | null;
+  rechnungstitel: string | null;
+  notiz_text: string | null;
+  rechnung_id: number | null;
+  created_at: string;
+}
+
+interface VorlageFull {
+  id: string;
+  email: string;
+  name: string | null;
+  hauptprodukt: string | null;
+  rechnungstitel: string | null;
+  positionen: Zeile[];
+  notiz_text: string | null;
+  rechnung_id: number | null;
+  rechnung_created_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Vorschlag {
   name: string;
   typ: "seminar" | "artikel";
@@ -246,6 +271,16 @@ function buildNotiz(zeilen: Zeile[]): string {
 
 // --- Komponente -----------------------------------------------------
 export default function NotizGenerator() {
+  // Kunden-Daten (oben im Formular). Email = Lookup-Key fuer Vorlagen
+  // und spaeter fuer die Rechnungs-Erstellung (Bot kann via Email die
+  // gespeicherte Notiz wieder einspielen).
+  const [kundenEmail, setKundenEmail] = useState("");
+  const [kundenName, setKundenName] = useState("");
+  // Vorlagen-Liste fuer die aktuelle Email
+  const [vorlagen, setVorlagen] = useState<VorlageListEntry[]>([]);
+  const [vorlagenLaden, setVorlagenLaden] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string>("");
+
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
   const [hauptprodukt, setHauptprodukt] = useState<string>("");
   const [vorschlaege, setVorschlaege] = useState<{
@@ -255,6 +290,10 @@ export default function NotizGenerator() {
   } | null>(null);
   const [vorschlaegeLaden, setVorschlaegeLaden] = useState(false);
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
+  // Optionaler Rechnungs-Titel-Override (wird nur aus Vorlagen gelesen
+  // und zurueckgespeichert -- aktuell kein eigenes UI hier, das wird
+  // erst beim Rechnungs-Editor relevant).
+  const [rechnungstitel, setRechnungstitel] = useState("");
   // Output-Logik: standardmaessig wird der Text aus den Zeilen
   // generiert. Wenn Mario direkt im Textarea editiert, wird der
   // Edit in 'customNotiz' gespeichert (override). 'Notiz neu
@@ -295,6 +334,115 @@ export default function NotizGenerator() {
       }
     })();
   }, []);
+
+  // --- Vorlagen-Lookup --------------------------------------------------
+  async function ladeVorlagenFuerEmail(email: string) {
+    const lower = email.trim().toLowerCase();
+    if (lower.length < 3 || !lower.includes("@")) {
+      setVorlagen([]);
+      return;
+    }
+    setVorlagenLaden(true);
+    try {
+      const r = await fetch(
+        `/cashflow/api/notiz-vorlagen?email=${encodeURIComponent(lower)}`,
+      );
+      const j = await r.json();
+      if (Array.isArray(j.data)) {
+        setVorlagen(j.data as VorlageListEntry[]);
+      } else {
+        setVorlagen([]);
+      }
+    } catch (e) {
+      console.error("vorlagen", e);
+      setVorlagen([]);
+    } finally {
+      setVorlagenLaden(false);
+    }
+  }
+
+  async function ladeVorlage(id: string) {
+    setSaveStatus("Lade Vorlage…");
+    try {
+      const r = await fetch(`/cashflow/api/notiz-vorlagen/${id}`);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setSaveStatus(`Fehler: ${j.error || r.statusText}`);
+        return;
+      }
+      const v = (await r.json()) as VorlageFull;
+      // State aus Vorlage wiederherstellen
+      setKundenEmail(v.email);
+      setKundenName(v.name || "");
+      setHauptprodukt(v.hauptprodukt || "");
+      setRechnungstitel(v.rechnungstitel || "");
+      // positionen als-ist uebernehmen, aber UI-Felder
+      // (searchResults, searching, ladeTermine) defensiv resetten
+      const restored: Zeile[] = (Array.isArray(v.positionen) ? v.positionen : [])
+        .map((p: Partial<Zeile>) => ({
+          ...leereZeile(),
+          ...p,
+          uid: newUid(),                   // frische UID damit kein React-key-clash
+          searchResults: [],
+          searching: false,
+          ladeTermine: false,
+          collapsed: true,                  // beim Laden alles eingeklappt
+        }));
+      setZeilen(restored);
+      setCustomNotiz(null);
+      setSaveStatus(`✓ Vorlage vom ${new Date(v.created_at).toLocaleString("de-AT")} geladen`);
+      setTimeout(() => setSaveStatus(""), 4000);
+    } catch (e) {
+      setSaveStatus(`Fehler: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function speichereVorlage() {
+    if (!kundenEmail.trim().includes("@")) {
+      setSaveStatus("Kunden-Email oben eintragen, dann speichern.");
+      setTimeout(() => setSaveStatus(""), 4000);
+      return;
+    }
+    if (zeilen.length === 0) {
+      setSaveStatus("Mindestens eine Position erforderlich.");
+      setTimeout(() => setSaveStatus(""), 4000);
+      return;
+    }
+    setSaveStatus("Speichere…");
+    // searchResults/searching/ladeTermine NICHT mitschreiben -- nur Form-Data
+    const positionenClean = zeilen.map((z) => {
+      const cleaned: Partial<Zeile> = { ...z };
+      delete cleaned.searchResults;
+      delete cleaned.searching;
+      delete cleaned.ladeTermine;
+      return cleaned;
+    });
+    try {
+      const r = await fetch(`/cashflow/api/notiz-vorlagen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: kundenEmail.trim(),
+          name: kundenName.trim() || null,
+          hauptprodukt: hauptprodukt || null,
+          rechnungstitel: rechnungstitel || null,
+          positionen: positionenClean,
+          notiz_text: notizText,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setSaveStatus(`Fehler: ${j.error || r.statusText}`);
+        return;
+      }
+      setSaveStatus("✓ Gespeichert");
+      // Liste nachladen damit neue Vorlage erscheint
+      void ladeVorlagenFuerEmail(kundenEmail);
+      setTimeout(() => setSaveStatus(""), 3000);
+    } catch (e) {
+      setSaveStatus(`Fehler: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   async function selectHauptprodukt(name: string) {
     setHauptprodukt(name);
@@ -476,6 +624,85 @@ export default function NotizGenerator() {
         </p>
       </div>
 
+      {/* --- Kunde + Vorlagen --- */}
+      <section className="bg-[color:var(--surface)] border border-[color:var(--border)] rounded-lg p-4">
+        <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-2">
+          Kunde
+        </label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <input
+            type="email"
+            value={kundenEmail}
+            onChange={(e) => setKundenEmail(e.target.value)}
+            onBlur={() => ladeVorlagenFuerEmail(kundenEmail)}
+            placeholder="E-Mail (z.B. max@example.com)"
+            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+          />
+          <input
+            type="text"
+            value={kundenName}
+            onChange={(e) => setKundenName(e.target.value)}
+            placeholder="Name (z.B. Max Mustermann)"
+            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+          />
+        </div>
+        <p className="text-xs text-[color:var(--muted)] mt-1">
+          Email = Schlüssel: spätere Rechnungs-Erstellung kann die hier
+          gespeicherte Notiz wieder einlesen.
+        </p>
+
+        {/* Bestehende Vorlagen für diese Email */}
+        {vorlagenLaden ? (
+          <div className="mt-3 text-xs text-[color:var(--muted)]">
+            Suche Vorlagen…
+          </div>
+        ) : vorlagen.length > 0 ? (
+          <div className="mt-3 p-2 border border-[color:var(--brand-blue)]/30 bg-[color:var(--brand-blue)]/5 rounded text-sm">
+            <div className="text-xs text-[color:var(--muted)] mb-1">
+              {vorlagen.length} bestehende{" "}
+              {vorlagen.length === 1 ? "Vorlage" : "Vorlagen"} für diese Email:
+            </div>
+            <div className="space-y-1">
+              {vorlagen.slice(0, 5).map((v) => (
+                <div
+                  key={v.id}
+                  className="flex items-center justify-between gap-2 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium">
+                      {v.hauptprodukt || "(kein Hauptprodukt)"}
+                    </span>
+                    <span className="text-xs text-[color:var(--muted)]">
+                      {" — "}
+                      {new Date(v.created_at).toLocaleDateString("de-AT", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                      {v.rechnung_id
+                        ? ` · Rechnung #${v.rechnung_id} angelegt`
+                        : ""}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => ladeVorlage(v.id)}
+                    className="text-xs px-2 py-0.5 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 shrink-0"
+                  >
+                    Laden
+                  </button>
+                </div>
+              ))}
+              {vorlagen.length > 5 ? (
+                <div className="text-xs text-[color:var(--muted)] italic">
+                  + {vorlagen.length - 5} weitere
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       {/* --- Hauptprodukt --- */}
       <section className="bg-[color:var(--surface)] border border-[color:var(--border)] rounded-lg p-4">
         <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-2">
@@ -609,6 +836,11 @@ export default function NotizGenerator() {
                 {copyStatus}
               </span>
             ) : null}
+            {saveStatus ? (
+              <span className="text-xs text-[color:var(--brand-blue)]">
+                {saveStatus}
+              </span>
+            ) : null}
             {customNotiz !== null ? (
               <button
                 type="button"
@@ -619,6 +851,15 @@ export default function NotizGenerator() {
                 Neu generieren
               </button>
             ) : null}
+            <button
+              type="button"
+              onClick={speichereVorlage}
+              disabled={!kundenEmail.trim() || zeilen.length === 0}
+              className="text-xs px-3 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 disabled:opacity-50"
+              title="Speichert die Notiz unter der Kunden-Email -- spaeter beim Rechnungs-Erstellen wieder einlesbar"
+            >
+              Als Vorlage speichern
+            </button>
             <button
               type="button"
               onClick={copyToClipboard}
