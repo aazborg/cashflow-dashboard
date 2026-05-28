@@ -244,7 +244,6 @@ function buildNotiz(zeilen: Zeile[]): string {
 export default function NotizGenerator() {
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
   const [hauptprodukt, setHauptprodukt] = useState<string>("");
-  const [hauptpreis, setHauptpreis] = useState<string>("");
   const [vorschlaege, setVorschlaege] = useState<{
     pflicht: Vorschlag[];
     haeufig: Vorschlag[];
@@ -295,8 +294,6 @@ export default function NotizGenerator() {
 
   async function selectHauptprodukt(name: string) {
     setHauptprodukt(name);
-    const hp = hauptprodukte.find((h) => h.name === name);
-    if (hp?.preis_default != null) setHauptpreis(String(hp.preis_default));
     if (!name) {
       setVorschlaege(null);
       return;
@@ -480,32 +477,19 @@ export default function NotizGenerator() {
         <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-2">
           Hauptprodukt
         </label>
-        <div className="flex gap-2">
-          <select
-            value={hauptprodukt}
-            onChange={(e) => selectHauptprodukt(e.target.value)}
-            className="flex-1 border border-[color:var(--border)] rounded px-2 py-1.5 text-sm bg-white"
-          >
-            <option value="">— wählen —</option>
-            {hauptprodukte.map((h) => (
-              <option key={h.name} value={h.name}>
-                {h.name}
-                {h.preis_default != null
-                  ? ` (${h.preis_default.toLocaleString("de-AT")} €, ${h.anzahl_rechnungen}×)`
-                  : ""}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            step="0.01"
-            value={hauptpreis}
-            onChange={(e) => setHauptpreis(e.target.value)}
-            placeholder="Preis"
-            className="w-28 border border-[color:var(--border)] rounded px-2 py-1.5 text-sm text-right tabular-nums"
-          />
-          <span className="text-sm self-center text-[color:var(--muted)]">€</span>
-        </div>
+        <select
+          value={hauptprodukt}
+          onChange={(e) => selectHauptprodukt(e.target.value)}
+          className="w-full border border-[color:var(--border)] rounded px-2 py-1.5 text-sm bg-white"
+        >
+          <option value="">— wählen —</option>
+          {hauptprodukte.map((h) => (
+            <option key={h.name} value={h.name}>
+              {h.name}
+              {h.anzahl_rechnungen ? ` (${h.anzahl_rechnungen}× verkauft)` : ""}
+            </option>
+          ))}
+        </select>
         {vorschlaegeLaden ? (
           <p className="text-xs text-[color:var(--muted)] mt-2">
             Lade Vorschläge…
