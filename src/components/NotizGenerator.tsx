@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { botUrl } from "@/lib/bot-client";
 
 interface Article {
   id: number;
@@ -206,7 +207,7 @@ export default function NotizGenerator() {
   useEffect(() => {
     void (async () => {
       try {
-        const r = await fetch(`/api/bot/hauptprodukte`);
+        const r = await fetch(botUrl("hauptprodukte"));
         if (r.status === 401) {
           setLadeFehler("Login abgelaufen — bitte erneut anmelden.");
           return;
@@ -245,7 +246,7 @@ export default function NotizGenerator() {
     setVorschlaege(null);
     try {
       const r = await fetch(
-        `/api/bot/hauptprodukt/${encodeURIComponent(name)}?min_quote=0.4`,
+        `${botUrl("hauptprodukt")}/${encodeURIComponent(name)}?min_quote=0.4`,
       );
       const j = await r.json();
       if (j.error) {
@@ -315,7 +316,7 @@ export default function NotizGenerator() {
     updateZeile(uid, { searching: true });
     try {
       const endpoint =
-        kind === "artikel" ? `/api/bot/articles` : `/api/bot/seminare`;
+        kind === "artikel" ? botUrl("articles") : botUrl("seminare");
       const r = await fetch(endpoint);
       const j = await r.json();
       const data: (Article | Reihe)[] = j.data ?? [];
@@ -361,7 +362,7 @@ export default function NotizGenerator() {
   async function loadTermine(uid: string, qid: number) {
     updateZeile(uid, { ladeTermine: true });
     try {
-      const r = await fetch(`/api/bot/seminare/${qid}/termine`);
+      const r = await fetch(`${botUrl("seminare")}/${qid}/termine`);
       const j = await r.json();
       const termine: Termin[] = j.data ?? [];
       // Format-Heuristik: 1 Termin -> 'range', 2-10 Termine -> 'liste'

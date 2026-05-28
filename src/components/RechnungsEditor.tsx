@@ -16,6 +16,7 @@
 
 import { useEffect, useState } from "react";
 import type { Deal } from "@/lib/types";
+import { botUrl } from "@/lib/bot-client";
 
 interface Article {
   id: number;
@@ -154,7 +155,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     setEmpfaengerLaden(true);
     try {
       const r = await fetch(
-        `/api/bot/personen?q=${encodeURIComponent(q)}`,
+        `${botUrl("personen")}?q=${encodeURIComponent(q)}`,
       );
       const j = await r.json();
       const hits: PersonHit[] = j.data ?? [];
@@ -169,7 +170,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 
   async function loadHauptprodukte() {
     try {
-      const r = await fetch(`/api/bot/hauptprodukte`);
+      const r = await fetch(botUrl("hauptprodukte"));
       const j = await r.json();
       setHauptprodukte(j.data ?? []);
     } catch (e) {
@@ -185,7 +186,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     setVorschlaege(null);
     try {
       const r = await fetch(
-        `/api/bot/hauptprodukt/${encodeURIComponent(name)}?min_quote=0.4`,
+        `${botUrl("hauptprodukt")}/${encodeURIComponent(name)}?min_quote=0.4`,
       );
       const j = await r.json();
       if (j.error) {
@@ -242,7 +243,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     updateZeile(uid, { searching: true });
     try {
       const endpoint =
-        kind === "artikel" ? `/api/bot/articles` : `/api/bot/seminare`;
+        kind === "artikel" ? botUrl("articles") : botUrl("seminare");
       const r = await fetch(endpoint);
       const j = await r.json();
       const data: (Article | Reihe)[] = j.data ?? [];
@@ -295,7 +296,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
   async function loadTermine(uid: string, qid: number) {
     updateZeile(uid, { ladeTermine: true });
     try {
-      const r = await fetch(`/api/bot/seminare/${qid}/termine`);
+      const r = await fetch(`${botUrl("seminare")}/${qid}/termine`);
       const j = await r.json();
       const termine: Termin[] = j.data ?? [];
       updateZeile(uid, {
@@ -379,7 +380,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     };
     setSubmitting(true);
     try {
-      const r = await fetch(`/api/bot/rechnung`, {
+      const r = await fetch(botUrl("rechnung"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -400,7 +401,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 
   async function findArtikelByName(name: string): Promise<Article | null> {
     try {
-      const r = await fetch(`/api/bot/articles`);
+      const r = await fetch(botUrl("articles"));
       const j = await r.json();
       const arts: Article[] = j.data ?? [];
       const lc = name.toLowerCase().trim();
