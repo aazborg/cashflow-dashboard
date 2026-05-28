@@ -66,6 +66,7 @@ interface Zeile {
   uid: string;                  // local key
   kind: ZeileKind | "";         // leer = nichts gewählt
   modelId: number | null;       // article_id ODER qualification_id
+  modelTyp?: "planned-qualifications" | "planned-event" | "article";
   title: string;
   preis: string;                // input-string (Komma-tolerant)
   taxPercent: string;
@@ -285,16 +286,24 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
           const termine = p.termine ?? [];
           const firstT = termine[0];
           const lastT = termine[termine.length - 1] ?? firstT;
+          // selectedTerminIds-Fallback: wenn Notiz keine Auswahl
+          // hatte (z.B. alte Vorlage ohne terminBekannt), nimm alle.
+          const eventIds = (p.selectedTerminIds && p.selectedTerminIds.length > 0)
+            ? p.selectedTerminIds
+            : termine.map((t) => t.event_id);
           return {
             uid: newUid(),
             kind: rechKind,
             modelId: p.modelId,
+            modelTyp: (p.modelTyp as Zeile["modelTyp"]) ?? (
+              rechKind === "seminar" ? "planned-event"
+              : rechKind === "reihe" ? "planned-qualifications"
+              : "article"
+            ),
             title: p.salesName || p.catalogTitle || "",
             preis: "0",
             taxPercent: "0",
-            terminEventIds: p.terminBekannt
-              ? (p.selectedTerminIds ?? [])
-              : [],
+            terminEventIds: rechKind === "artikel" ? [] : eventIds,
             startDate: firstT?.start_date,
             endDate: lastT?.end_date || lastT?.start_date,
             freitextNotiz: p.freitext ?? "",
@@ -532,11 +541,16 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         .map((z) => ({
           kind: z.kind,
           id: z.modelId,
+          model_typ: z.modelTyp,
           title: z.title,
           preis: parseDecimal(z.preis),
           tax_percent: parseInt(z.taxPercent || "0", 10),
+          // Seminar (planned-event) UND Reihe (planned-qualifications)
+          // brauchen die Termin-IDs fuer die SimplyOrg-Einbuchung.
           termine_event_ids:
-            z.kind === "reihe" ? z.terminEventIds : undefined,
+            (z.kind === "reihe" || z.kind === "seminar")
+              ? z.terminEventIds
+              : undefined,
           start_date: z.startDate,
           end_date: z.endDate,
           freitext_notiz: z.freitextNotiz || undefined,
@@ -880,7 +894,10 @@ function ZeileEditor({
   onPickHit,
   onToggleTermin,
 }: ZeileProps) {
-  const isReihe = zeile.kind === "reihe";
+  // Sowohl Reihen (planned-qualifications) als auch Einzelseminare
+  // (planned-event/'seminar') werden gleich gerendert -- beide
+  // brauchen Termin-Anzeige und Auto-Einbuchungs-Checkbox.
+  const isReihe = zeile.kind === "reihe" || zeile.kind === "seminar";
   const isArtikel = zeile.kind === "artikel";
   const isPicked = zeile.modelId != null;
   return (
