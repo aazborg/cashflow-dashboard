@@ -138,6 +138,16 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitResult, setSubmitResult] = useState<unknown>(null);
 
+  // Notiz-Vorlage fuer diese Deal-Email gefunden? Wird beim Open
+  // automatisch geladen und als Pre-Fill verwendet.
+  const [vorlageInfo, setVorlageInfo] = useState<{
+    id: string;
+    created_at: string;
+    name: string | null;
+    hauptprodukt: string | null;
+  } | null>(null);
+  const [vorlageBanner, setVorlageBanner] = useState<string>("");
+
   // --- Initial: Empfänger-Suche mit Deal-Namen ---
   // React 19: setState im Effekt-Body waere ein cascading render --
   // wir trennen Effekt (reine Side-Effects) von State-Reset (rein
@@ -147,8 +157,111 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     const namen = `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim();
     if (namen) void searchEmpfaenger(namen);
     void loadHauptprodukte();
+    // Notiz-Vorlage fuer die Deal-Email pre-laden -> Mario muss nur
+    // noch Preise eintragen statt alles neu auszuwaehlen.
+    if (deal.email) void ladeNotizVorlageFuerEmail(deal.email);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, deal.id]);
+
+  async function ladeNotizVorlageFuerEmail(email: string) {
+    try {
+      const r = await fetch(
+        `/cashflow/api/notiz-vorlagen?email=${encodeURIComponent(email)}`,
+      );
+      if (!r.ok) return;
+      const j = await r.json();
+      const list = (j.data ?? []) as Array<{
+        id: string;
+        created_at: string;
+        name: string | null;
+        hauptprodukt: string | null;
+      }>;
+      if (list.length === 0) {
+        setVorlageBanner(
+          `Keine Angebots-Notiz für ${email} gespeichert. Lege oben „Angebots-Notiz“ eine an, oder fülle hier manuell aus.`,
+        );
+        return;
+      }
+      // Neueste laden + alle Positionen befuellen
+      await uebernehmeVorlage(list[0].id);
+    } catch (e) {
+      console.error("vorlage-lookup", e);
+    }
+  }
+
+  async function uebernehmeVorlage(id: string) {
+    try {
+      const r = await fetch(`/cashflow/api/notiz-vorlagen/${id}`);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setVorlageBanner(`Vorlage konnte nicht geladen werden: ${j.error || r.statusText}`);
+        return;
+      }
+      const v = await r.json();
+      setVorlageInfo({
+        id: v.id,
+        created_at: v.created_at,
+        name: v.name,
+        hauptprodukt: v.hauptprodukt,
+      });
+      if (v.rechnungstitel) setRechnungstitel(v.rechnungstitel);
+      if (v.hauptprodukt) {
+        setHauptprodukt(v.hauptprodukt);
+        // Hauptprodukt-Vorschläge & Default-Preis auch ziehen
+        void selectHauptprodukt(v.hauptprodukt);
+      }
+      // Notiz-Zeilen -> Rechnungs-Zeilen mappen
+      const restored: Zeile[] = (Array.isArray(v.positionen) ? v.positionen : [])
+        .filter((p: { kind?: string; modelId?: number | null }) =>
+          p.kind && p.modelId != null,
+        )
+        .map((p: {
+          kind: string;
+          modelTyp?: string;
+          modelId: number;
+          salesName?: string;
+          catalogTitle?: string;
+          selectedTerminIds?: number[];
+          terminBekannt?: boolean;
+          freitext?: string;
+          termine?: Termin[];
+        }) => {
+          // Notiz "reihe" mit modelTyp "planned-event" -> Rechnung "seminar"
+          const istEinzel = p.modelTyp === "planned-event";
+          const rechKind: ZeileKind = p.kind === "artikel"
+            ? "artikel"
+            : (istEinzel ? "seminar" : "reihe");
+          const termine = p.termine ?? [];
+          const firstT = termine[0];
+          const lastT = termine[termine.length - 1] ?? firstT;
+          return {
+            uid: newUid(),
+            kind: rechKind,
+            modelId: p.modelId,
+            title: p.salesName || p.catalogTitle || "",
+            preis: "0",
+            taxPercent: "0",
+            terminEventIds: p.terminBekannt
+              ? (p.selectedTerminIds ?? [])
+              : [],
+            startDate: firstT?.start_date,
+            endDate: lastT?.end_date || lastT?.start_date,
+            freitextNotiz: p.freitext ?? "",
+            searchText: p.salesName || p.catalogTitle || "",
+            searchResults: [],
+            searching: false,
+            termine,
+            ladeTermine: false,
+          };
+        });
+      setZeilen(restored);
+      setVorlageBanner(
+        `✓ Vorlage vom ${new Date(v.created_at).toLocaleString("de-AT")} geladen. Trage jetzt die Preise ein.`,
+      );
+    } catch (e) {
+      console.error("vorlage", e);
+    }
+  }
 
   async function searchEmpfaenger(q: string) {
     if (q.trim().length < 2) return;
@@ -445,6 +558,35 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
             ×
           </button>
         </div>
+
+        {/* --- Vorlage-Banner --- */}
+        {vorlageBanner ? (
+          <div
+            className={`mb-4 p-2 rounded text-sm flex items-start justify-between gap-2 ${
+              vorlageBanner.startsWith("✓")
+                ? "bg-green-50 text-green-800"
+                : "bg-[color:var(--brand-yellow)]/30 text-[color:var(--foreground)]"
+            }`}
+          >
+            <div>
+              {vorlageBanner}
+              {vorlageInfo ? (
+                <span className="text-xs block opacity-70 mt-0.5">
+                  Quelle: Angebots-Notiz · Hauptprodukt „
+                  {vorlageInfo.hauptprodukt || "—"}“
+                </span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setVorlageBanner("")}
+              className="text-xs opacity-60 hover:opacity-100 shrink-0"
+              aria-label="Schließen"
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
 
         {/* --- Empfänger --- */}
         <section className="mb-5">
