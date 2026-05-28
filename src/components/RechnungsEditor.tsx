@@ -157,11 +157,62 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     const namen = `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim();
     if (namen) void searchEmpfaenger(namen);
     void loadHauptprodukte();
-    // Notiz-Vorlage fuer die Deal-Email pre-laden -> Mario muss nur
-    // noch Preise eintragen statt alles neu auszuwaehlen.
-    if (deal.email) void ladeNotizVorlageFuerEmail(deal.email);
+    // Notiz-Vorlage suchen: 1) per deal.email (exakt), 2) falls
+    // leer/nichts gefunden, per Name (substring auf 'q=...').
+    if (deal.email) {
+      void ladeNotizVorlageFuerEmail(deal.email);
+    } else if (namen) {
+      void ladeNotizVorlagePerSuche(namen);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, deal.id]);
+
+  // Wenn der SimplyOrg-Empfaenger vom Personen-Endpoint eine Email
+  // mitbringt UND wir noch keine Vorlage geladen haben, nochmal
+  // mit der SimplyOrg-Email lookup -- haeufiger Fall: deal.email
+  // ist leer aber SimplyOrg kennt die Kontakt-Email.
+  useEffect(() => {
+    if (!open) return;
+    if (vorlageInfo) return; // schon geladen
+    if (!empfaenger?.email) return;
+    if (deal.email && deal.email.toLowerCase() === empfaenger.email.toLowerCase()) return;
+    void ladeNotizVorlageFuerEmail(empfaenger.email);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empfaenger?.email]);
+
+  async function ladeNotizVorlagePerSuche(q: string) {
+    try {
+      const r = await fetch(
+        `/cashflow/api/notiz-vorlagen?q=${encodeURIComponent(q)}&limit=5`,
+      );
+      if (!r.ok) return;
+      const j = await r.json();
+      const list = (j.data ?? []) as Array<{
+        id: string;
+        email: string;
+        name: string | null;
+        hauptprodukt: string | null;
+        created_at: string;
+      }>;
+      if (list.length === 0) {
+        setVorlageBanner(
+          `Keine Angebots-Notiz für „${q}" gefunden. Erstelle oben „Angebots-Notiz“ eine, oder fülle hier manuell aus.`,
+        );
+        return;
+      }
+      if (list.length === 1) {
+        await uebernehmeVorlage(list[0].id);
+        return;
+      }
+      // Mehrere Treffer -> Mario informieren, neueste pre-load
+      setVorlageBanner(
+        `${list.length} Vorlagen passen zu „${q}". Lade die neueste (${new Date(list[0].created_at).toLocaleDateString("de-AT")}) — falls falsch, oben „Angebots-Notiz" öffnen + manuell wählen.`,
+      );
+      await uebernehmeVorlage(list[0].id);
+    } catch (e) {
+      console.error("vorlage-suche", e);
+    }
+  }
 
   async function ladeNotizVorlageFuerEmail(email: string) {
     try {
