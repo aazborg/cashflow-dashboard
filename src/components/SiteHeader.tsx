@@ -10,6 +10,7 @@ interface SiteHeaderProps {
   isAdmin: boolean;
   isSetter: boolean;
   isAuthed: boolean;
+  canUseRechnungsBot: boolean;
   signOutAction: () => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export function SiteHeader({
   isAdmin,
   isSetter,
   isAuthed,
+  canUseRechnungsBot,
   signOutAction,
 }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
@@ -48,6 +50,7 @@ export function SiteHeader({
               <NavLink href="/">Dashboard</NavLink>
               <NavLink href="/daten">Daten</NavLink>
               <NavLink href="/rechner">Rechner</NavLink>
+              {canUseRechnungsBot ? <NavLink href="/notiz">Angebots-Notiz</NavLink> : null}
               {isAdmin ? <NavLink href="/gesamt-cashflow">Gesamt</NavLink> : null}
               {isSetter || isAdmin ? <NavLink href="/setter">Setter</NavLink> : null}
               {isAdmin ? <NavLink href="/ziele">Ziele</NavLink> : null}
@@ -106,6 +109,7 @@ export function SiteHeader({
             <MobileNavLink href="/">Dashboard</MobileNavLink>
             <MobileNavLink href="/daten">Daten</MobileNavLink>
             <MobileNavLink href="/rechner">Rechner</MobileNavLink>
+            {canUseRechnungsBot ? <MobileNavLink href="/notiz">Angebots-Notiz</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/gesamt-cashflow">Gesamt</MobileNavLink> : null}
             {isSetter || isAdmin ? <MobileNavLink href="/setter">Setter</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/ziele">Ziele</MobileNavLink> : null}

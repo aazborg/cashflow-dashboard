@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { getSessionContext } from "@/lib/supabase-server";
+import { canUseRechnungsBot } from "@/lib/permissions";
 import { signOut } from "@/lib/auth-actions";
 import { SiteHeader } from "@/components/SiteHeader";
 
@@ -21,6 +22,7 @@ export default async function RootLayout({
           email={ctx?.user.email ?? null}
           isAdmin={!!ctx?.isAdmin}
           isSetter={!!ctx?.isSetter}
+          canUseRechnungsBot={canUseRechnungsBot(ctx)}
           signOutAction={signOut}
         />
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6">
