@@ -87,6 +87,9 @@ interface Zeile {
   praefixText: string;
   // Optionales Suffix nach dem Eintrag
   freitext: string;
+  // UI: ist die Zeile aufgeklappt? Auto-Suggests starten eingeklappt,
+  // manuelle/neue Zeilen aufgeklappt.
+  collapsed: boolean;
 }
 
 function newUid(): string {
@@ -109,6 +112,7 @@ function leereZeile(): Zeile {
     terminFormat: "range",
     praefixText: "",
     freitext: "",
+    collapsed: false,  // neu/manuell -> direkt aufgeklappt
   };
 }
 
@@ -331,7 +335,7 @@ export default function NotizGenerator() {
     z.kind = v.typ === "seminar" ? "reihe" : "artikel";
     z.salesName = v.name;
     z.catalogTitle = v.name;
-    // terminBekannt default = false (User muss bewusst aktivieren)
+    z.collapsed = true; // Auto-Suggest startet eingeklappt
     return z;
   }
 
@@ -532,13 +536,43 @@ export default function NotizGenerator() {
           <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)]">
             Positionen ({zeilen.length})
           </label>
-          <button
-            type="button"
-            onClick={() => addZeile()}
-            className="text-xs px-3 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
-          >
-            + Position
-          </button>
+          <div className="flex items-center gap-1">
+            {zeilen.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setZeilen((prev) =>
+                      prev.map((z) => ({ ...z, collapsed: true })),
+                    )
+                  }
+                  className="text-xs px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
+                  title="Alle Positionen einklappen"
+                >
+                  ▶ Alle
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setZeilen((prev) =>
+                      prev.map((z) => ({ ...z, collapsed: false })),
+                    )
+                  }
+                  className="text-xs px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
+                  title="Alle Positionen ausklappen"
+                >
+                  ▼ Alle
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => addZeile()}
+              className="text-xs px-3 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
+            >
+              + Position
+            </button>
+          </div>
         </div>
         {zeilen.length === 0 ? (
           <p className="text-sm text-[color:var(--muted)] italic">
@@ -639,17 +673,71 @@ function ZeileEditor({
   const isReihe = zeile.kind === "reihe";
   const isArtikel = zeile.kind === "artikel";
   const isPicked = zeile.modelId != null;
+  const collapsed = zeile.collapsed;
+
+  // Zusammenfassung im eingeklappten Header
+  const summary = (() => {
+    if (!zeile.kind) return "(neu)";
+    const name = zeile.salesName.trim() || "(kein Name)";
+    if (zeile.kind === "artikel") {
+      return zeile.freitext.trim()
+        ? `${name} ${zeile.freitext.trim()}`
+        : name;
+    }
+    if (!zeile.terminBekannt
+        || zeile.selectedTerminIds.length === 0) {
+      return zeile.freitext.trim()
+        ? `${name} ${zeile.freitext.trim()}`
+        : name;
+    }
+    const akt = zeile.termine.filter((t) =>
+      zeile.selectedTerminIds.includes(t.event_id),
+    );
+    if (akt.length === 0) return name;
+    if (akt.length === 1) {
+      return `${name} — ${akt[0].start_date}`
+        + (akt[0].end_date && akt[0].end_date !== akt[0].start_date
+            ? ` bis ${akt[0].end_date}` : "");
+    }
+    return `${name} — ${akt.length} Termine `
+      + `(${akt[0].start_date} … ${akt[akt.length - 1].end_date
+                                    || akt[akt.length - 1].start_date})`;
+  })();
+
   return (
-    <div className="border border-[color:var(--border)] rounded p-3 bg-[color:var(--background)]">
-      <div className="flex items-start justify-between mb-2">
-        <div className="text-xs uppercase tracking-wider text-[color:var(--muted)]">
-          Pos {idx}
-          {isReihe ? " · Seminar/Reihe" : isArtikel ? " · Artikel" : ""}
-        </div>
-        <div className="flex items-center gap-1">
+    <div className="border border-[color:var(--border)] rounded bg-[color:var(--background)]">
+      <div
+        className={`flex items-start justify-between gap-2 px-3 py-2 ${
+          collapsed ? "cursor-pointer hover:bg-[color:var(--surface)]" : ""
+        }`}
+        onClick={collapsed ? () => onUpdate({ collapsed: false }) : undefined}
+      >
+        <div className="flex items-start gap-2 min-w-0 flex-1">
           <button
             type="button"
-            onClick={() => onMove(-1)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpdate({ collapsed: !collapsed });
+            }}
+            className="text-xs w-5 shrink-0 text-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+            title={collapsed ? "Ausklappen" : "Einklappen"}
+          >
+            {collapsed ? "▶" : "▼"}
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs uppercase tracking-wider text-[color:var(--muted)]">
+              Pos {idx}
+              {isReihe ? " · Seminar/Reihe" : isArtikel ? " · Artikel" : ""}
+            </div>
+            {collapsed ? (
+              <div className="text-sm truncate">{summary}</div>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onMove(-1); }}
             disabled={first}
             className="text-xs px-1.5 py-0.5 rounded border border-[color:var(--border)] disabled:opacity-30"
             title="Nach oben"
@@ -658,7 +746,7 @@ function ZeileEditor({
           </button>
           <button
             type="button"
-            onClick={() => onMove(1)}
+            onClick={(e) => { e.stopPropagation(); onMove(1); }}
             disabled={last}
             className="text-xs px-1.5 py-0.5 rounded border border-[color:var(--border)] disabled:opacity-30"
             title="Nach unten"
@@ -667,13 +755,15 @@ function ZeileEditor({
           </button>
           <button
             type="button"
-            onClick={onRemove}
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
             className="text-xs text-[color:var(--brand-orange)] hover:underline ml-2"
           >
             Entfernen
           </button>
         </div>
       </div>
+      {collapsed ? null : (
+      <div className="px-3 pb-3 pt-0">
 
       {/* Kind-Toggle */}
       {!zeile.kind ? (
@@ -890,6 +980,8 @@ function ZeileEditor({
           className="flex-1 border border-[color:var(--border)] rounded px-2 py-0.5 text-sm"
         />
       </div>
+      </div>
+      )}
     </div>
   );
 }
