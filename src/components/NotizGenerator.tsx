@@ -402,8 +402,10 @@ export default function NotizGenerator() {
       updateZeile(uid, {
         modelId: a.id,
         catalogTitle: a.title,
-        // salesName: nur initial-fuellen wenn Mario noch nichts editiert hat
-        salesName: z.salesName.trim() || a.title,
+        // Such-Term durch Katalog-Name ersetzen. User kann den Text
+        // anschliessend frei editieren (z.B. Sales-Sprache fuer die
+        // Kunden-Notiz), aber der Default ist der saubere Titel.
+        salesName: a.title,
         searchResults: [],
       });
     } else {
@@ -411,7 +413,7 @@ export default function NotizGenerator() {
       updateZeile(uid, {
         modelId: r.qualification_id,
         catalogTitle: r.name,
-        salesName: z.salesName.trim() || r.name,
+        salesName: r.name,
         searchResults: [],
       });
       void loadTermine(uid, r.qualification_id);
