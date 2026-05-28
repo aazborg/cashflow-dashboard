@@ -282,6 +282,12 @@ export default function NotizGenerator() {
   const [vorlagenLaden, setVorlagenLaden] = useState(false);
   // Vorlagen-Browser-Modal (alle Vorlagen mit Suche)
   const [browserOpen, setBrowserOpen] = useState(false);
+  // Sobald aus dem Vorlagen-Browser geladen wurde, merken wir uns
+  // die Email der Original-Vorlage. Damit kann das Speichern
+  // erkennen ob Mario die Email zum NEUEN Kunden umgestellt hat
+  // (sonst legt er versehentlich eine zweite Vorlage unter dem
+  // OLD-Kunden an).
+  const [vorlageGeladenAls, setVorlageGeladenAls] = useState("");
   const [saveStatus, setSaveStatus] = useState<string>("");
 
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
@@ -379,6 +385,9 @@ export default function NotizGenerator() {
       setKundenName(v.name || "");
       setHauptprodukt(v.hauptprodukt || "");
       setRechnungstitel(v.rechnungstitel || "");
+      // Merker: damit Save-Logik erkennt ob Mario die Email
+      // tatsaechlich auf den NEUEN Kunden umgestellt hat.
+      setVorlageGeladenAls(v.email.trim().toLowerCase());
       // positionen als-ist uebernehmen, aber UI-Felder
       // (searchResults, searching, ladeTermine) defensiv resetten
       const restored: Zeile[] = (Array.isArray(v.positionen) ? v.positionen : [])
@@ -464,11 +473,23 @@ export default function NotizGenerator() {
       setSaveStatus(
         "❌ Bitte oben in der Kunden-Sektion eine E-Mail eintragen (das ist der Schlüssel für die Vorlage).",
       );
-      // KEIN timeout -- Fehler bleibt sichtbar bis User reagiert
       return;
     }
     if (zeilen.length === 0) {
       setSaveStatus("❌ Mindestens eine Position erforderlich.");
+      return;
+    }
+    // Vorlage-Schutz: wenn aus dem Vorlagen-Browser geladen UND die
+    // Email steht immer noch beim Original-Kunden, blockieren.
+    if (
+      vorlageGeladenAls
+      && kundenEmail.trim().toLowerCase() === vorlageGeladenAls
+    ) {
+      setSaveStatus(
+        `❌ Du hast die Vorlage von „${vorlageGeladenAls}“ geladen.`
+          + " Bitte trage oben die Email des NEUEN Kunden ein,"
+          + " für den du diese Notiz jetzt erstellst.",
+      );
       return;
     }
     setSaveStatus("Speichere…");
@@ -499,6 +520,9 @@ export default function NotizGenerator() {
         return;
       }
       setSaveStatus("✓ Vorlage gespeichert");
+      // Nach Speichern: Vorlage-Lock zuruecksetzen, weil das jetzt
+      // die "neue" gespeicherte Vorlage fuer diese Email ist.
+      setVorlageGeladenAls(kundenEmail.trim().toLowerCase());
       // Liste nachladen damit neue Vorlage erscheint
       void ladeVorlagenFuerEmail(kundenEmail);
       setTimeout(() => setSaveStatus(""), 3000);
@@ -723,6 +747,14 @@ export default function NotizGenerator() {
           Email = Schlüssel: spätere Rechnungs-Erstellung kann die hier
           gespeicherte Notiz wieder einlesen.
         </p>
+        {vorlageGeladenAls
+          && kundenEmail.trim().toLowerCase() === vorlageGeladenAls ? (
+          <div className="mt-2 px-2 py-1 rounded bg-[color:var(--brand-yellow)]/30 text-xs text-[color:var(--foreground)]">
+            ⚠️ Vorlage von „{vorlageGeladenAls}“ geladen.
+            Wenn du diese Notiz für einen <em>anderen</em> Kunden erstellst,
+            ändere die Email oben — sonst kannst du nicht speichern.
+          </div>
+        ) : null}
 
         {/* Bestehende Vorlagen für diese Email */}
         {vorlagenLaden ? (
