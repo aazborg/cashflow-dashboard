@@ -36,6 +36,15 @@ interface Reihe {
   end_date: string;
 }
 
+interface EinzelSeminar {
+  event_id: number;
+  name: string;
+  blueprint_id?: number | null;
+  start_date: string;
+  end_date: string;
+  kategorie?: string;
+}
+
 interface Termin {
   event_id: number;
   name: string;
@@ -87,6 +96,10 @@ interface Zeile {
   uid: string;
   kind: ZeileKind | "";
   modelId: number | null;
+  // Welche SimplyOrg-Entitaet ist der Pick? 'planned-qualifications'
+  // = Reihe mit Modulen, 'planned-event' = Einzelseminar (z.B. 'Zert.
+  // Mentalcoach' online), 'article' = reiner Artikel.
+  modelTyp?: "planned-qualifications" | "planned-event" | "article";
   // Sales-Name: was in der Notiz auftaucht (was Mario tippt, NICHT
   // der SimplyOrg-Katalog-Name -- den merken wir uns separat)
   salesName: string;
@@ -103,7 +116,7 @@ interface Zeile {
   // (auch wenn termine geladen sind).
   terminBekannt: boolean;
   // UI-State: Suche
-  searchResults: (Article | Reihe)[];
+  searchResults: (Article | Reihe | EinzelSeminar)[];
   searching: boolean;
   // Format fuer die Darstellung der AUSGEWAEHLTEN Termine:
   //   'range' -> "vom <erster.start> - <letzter.end>"
@@ -674,19 +687,34 @@ export default function NotizGenerator() {
     }
     updateZeile(uid, { searching: true });
     try {
-      const endpoint =
-        kind === "artikel" ? botUrl("articles") : botUrl("seminare");
-      const r = await fetch(endpoint);
-      const j = await r.json();
-      const data: (Article | Reihe)[] = j.data ?? [];
       const lq = q.toLowerCase();
-      const hits = data
-        .filter((x) => {
-          const name =
-            "title" in x ? (x as Article).title : (x as Reihe).name;
-          return name.toLowerCase().includes(lq);
-        })
-        .slice(0, 20);
+      if (kind === "artikel") {
+        const r = await fetch(botUrl("articles"));
+        const j = await r.json();
+        const hits = ((j.data as Article[]) ?? [])
+          .filter((a) => (a.title || "").toLowerCase().includes(lq))
+          .slice(0, 20);
+        updateZeile(uid, { searchResults: hits, searching: false });
+        return;
+      }
+      // kind === "reihe" -> SOWOHL Reihen (mit Modulen) ALS AUCH
+      // Einzelseminare (z.B. "Zert. Mentalcoach" online) durchsuchen.
+      const [rRei, rEinz] = await Promise.all([
+        fetch(botUrl("seminare")),
+        fetch(botUrl("einzelseminare")),
+      ]);
+      const jRei = await rRei.json();
+      const jEinz = await rEinz.json();
+      const reihen: Reihe[] = (jRei.data as Reihe[]) ?? [];
+      const einzel: EinzelSeminar[] = (jEinz.data as EinzelSeminar[]) ?? [];
+      const hits = [
+        ...reihen.filter((r) =>
+          (r.name || "").toLowerCase().includes(lq),
+        ),
+        ...einzel.filter((e) =>
+          (e.name || "").toLowerCase().includes(lq),
+        ),
+      ].slice(0, 30);
       updateZeile(uid, { searchResults: hits, searching: false });
     } catch (e) {
       console.error("search", e);
@@ -694,29 +722,53 @@ export default function NotizGenerator() {
     }
   }
 
-  function pickSearchHit(uid: string, hit: Article | Reihe) {
+  function pickSearchHit(uid: string, hit: Article | Reihe | EinzelSeminar) {
     const z = zeilen.find((x) => x.uid === uid);
     if (!z) return;
     if (z.kind === "artikel") {
       const a = hit as Article;
       updateZeile(uid, {
         modelId: a.id,
+        modelTyp: "article",
         catalogTitle: a.title,
-        // Such-Term durch Katalog-Name ersetzen. User kann den Text
-        // anschliessend frei editieren (z.B. Sales-Sprache fuer die
-        // Kunden-Notiz), aber der Default ist der saubere Titel.
         salesName: a.title,
         searchResults: [],
       });
-    } else {
+      return;
+    }
+    // Reihe/Seminar: Differenzierung Reihe vs. Einzelseminar
+    if ("qualification_id" in hit) {
       const r = hit as Reihe;
       updateZeile(uid, {
         modelId: r.qualification_id,
+        modelTyp: "planned-qualifications",
         catalogTitle: r.name,
         salesName: r.name,
         searchResults: [],
       });
       void loadTermine(uid, r.qualification_id);
+    } else {
+      // Einzelseminar (planned-event) -- hat EINEN Termin
+      const e = hit as EinzelSeminar;
+      const termin = {
+        event_id: e.event_id,
+        name: e.name,
+        start_date: e.start_date,
+        end_date: e.end_date,
+        location: e.kategorie ?? "",
+      };
+      updateZeile(uid, {
+        modelId: e.event_id,
+        modelTyp: "planned-event",
+        catalogTitle: e.name,
+        salesName: e.name,
+        searchResults: [],
+        termine: [termin],
+        selectedTerminIds: [e.event_id],
+        terminBekannt: true,
+        terminFormat: "range",
+        ladeTermine: false,
+      });
     }
   }
 
@@ -1128,7 +1180,7 @@ interface ZeileProps {
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
   onSearch: (q: string, kind: ZeileKind) => void;
-  onPickHit: (hit: Article | Reihe) => void;
+  onPickHit: (hit: Article | Reihe | EinzelSeminar) => void;
   onRefreshTermine: () => void;
 }
 
@@ -1285,27 +1337,55 @@ function ZeileEditor({
               <div className="absolute right-2 top-1 text-xs text-[color:var(--muted)]">…</div>
             ) : null}
             {zeile.searchResults.length > 0 && !isPicked ? (
-              <div className="absolute z-10 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-[color:var(--surface)] border border-[color:var(--border)] rounded shadow-lg">
+              <div className="absolute z-10 left-0 right-0 mt-1 max-h-72 overflow-y-auto bg-[color:var(--surface)] border border-[color:var(--border)] rounded shadow-lg">
                 {zeile.searchResults.map((h) => {
-                  const id =
-                    "id" in h ? (h as Article).id : (h as Reihe).qualification_id;
-                  const label =
-                    "title" in h ? (h as Article).title : (h as Reihe).name;
-                  const sub =
-                    "id" in h
-                      ? `Artikel #${(h as Article).id}`
-                      : `Reihe #${(h as Reihe).qualification_id} · ${(h as Reihe).start_date}–${(h as Reihe).end_date}`;
+                  let id: number;
+                  let label: string;
+                  let sub: string;
+                  let badge: string;
+                  let badgeColor: string;
+                  if ("title" in h) {
+                    const a = h as Article;
+                    id = a.id;
+                    label = a.title;
+                    sub = `Artikel · #${a.id}${a.price != null ? ` · ${a.price} €` : ""}`;
+                    badge = "ARTIKEL";
+                    badgeColor = "bg-gray-500";
+                  } else if ("qualification_id" in h) {
+                    const r = h as Reihe;
+                    id = r.qualification_id;
+                    label = r.name;
+                    sub = `Reihe · #${r.qualification_id} · ${r.start_date}–${r.end_date}`;
+                    badge = "REIHE";
+                    badgeColor = "bg-[color:var(--brand-blue)]";
+                  } else {
+                    const e = h as EinzelSeminar;
+                    id = e.event_id;
+                    label = e.name;
+                    sub = `Einzelseminar · #${e.event_id} · ${e.start_date}–${e.end_date}`;
+                    badge = "SEMINAR";
+                    badgeColor = "bg-[color:var(--brand-orange)]";
+                  }
                   return (
                     <button
                       type="button"
-                      key={id}
+                      key={`${badge}-${id}`}
                       onClick={() => onPickHit(h)}
-                      className="block w-full text-left text-sm px-2 py-1 hover:bg-[color:var(--brand-blue)]/10 border-b border-[color:var(--border)] last:border-b-0"
+                      className="block w-full text-left text-sm px-2 py-1.5 hover:bg-[color:var(--brand-blue)]/10 border-b border-[color:var(--border)] last:border-b-0"
                     >
-                      {label}
-                      <span className="text-xs text-[color:var(--muted)] block">
-                        {sub}
-                      </span>
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={`shrink-0 text-[9px] font-semibold tracking-wider text-white px-1.5 py-0.5 rounded ${badgeColor}`}
+                        >
+                          {badge}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate">{label}</div>
+                          <div className="text-xs text-[color:var(--muted)] truncate">
+                            {sub}
+                          </div>
+                        </div>
+                      </div>
                     </button>
                   );
                 })}
