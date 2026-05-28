@@ -288,6 +288,11 @@ export default function NotizGenerator() {
   // (sonst legt er versehentlich eine zweite Vorlage unter dem
   // OLD-Kunden an).
   const [vorlageGeladenAls, setVorlageGeladenAls] = useState("");
+  // Snapshot des letzten erfolgreichen Save -> ueber Hash-Vergleich
+  // wissen wir ob seither editiert wurde (-> 'ungespeichert').
+  // Beim Klick "Kopieren" wird ggf. automatisch erst gespeichert,
+  // damit jede Notiz die in eine Email landet auch in der DB liegt.
+  const [lastSavedHash, setLastSavedHash] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string>("");
 
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
@@ -308,6 +313,50 @@ export default function NotizGenerator() {
   // Edit in 'customNotiz' gespeichert (override). 'Notiz neu
   // generieren' setzt das zurueck.
   const computedNotiz = useMemo(() => buildNotiz(zeilen), [zeilen]);
+
+  // Helper: zentrale Hash-Berechnung, damit currentSaveHash und der
+  // Hash beim Laden aus einer Vorlage exakt gleich strukturiert sind.
+  function computeSaveHash(args: {
+    email: string;
+    name: string;
+    hauptprodukt: string;
+    rechnungstitel: string;
+    zeilen: Zeile[];
+  }): string {
+    return JSON.stringify({
+      email: args.email.trim().toLowerCase(),
+      name: args.name.trim(),
+      hauptprodukt: args.hauptprodukt,
+      rechnungstitel: args.rechnungstitel,
+      zeilen: args.zeilen.map((z) => ({
+        kind: z.kind,
+        modelId: z.modelId,
+        salesName: z.salesName,
+        catalogTitle: z.catalogTitle,
+        selectedTerminIds: z.selectedTerminIds,
+        terminBekannt: z.terminBekannt,
+        terminFormat: z.terminFormat,
+        praefixText: z.praefixText,
+        freitext: z.freitext,
+      })),
+    });
+  }
+  // Hash der speicher-relevanten Felder. Vergleich gegen
+  // lastSavedHash sagt uns ob ungespeicherte Aenderungen offen sind.
+  const currentSaveHash = useMemo(
+    () =>
+      computeSaveHash({
+        email: kundenEmail,
+        name: kundenName,
+        hauptprodukt,
+        rechnungstitel,
+        zeilen,
+      }),
+    [zeilen, kundenEmail, kundenName, hauptprodukt, rechnungstitel],
+  );
+
+  const istGespeichert =
+    lastSavedHash !== null && lastSavedHash === currentSaveHash;
   const [customNotiz, setCustomNotiz] = useState<string | null>(null);
   const notizText = customNotiz ?? computedNotiz;
   const [copyStatus, setCopyStatus] = useState<string>("");
@@ -402,6 +451,17 @@ export default function NotizGenerator() {
         }));
       setZeilen(restored);
       setCustomNotiz(null);
+      // Hash setzen: gilt direkt nach Laden als "in DB synchron" --
+      // Copy-Button kann sofort kopieren ohne erneutes Speichern.
+      setLastSavedHash(
+        computeSaveHash({
+          email: v.email,
+          name: v.name || "",
+          hauptprodukt: v.hauptprodukt || "",
+          rechnungstitel: v.rechnungstitel || "",
+          zeilen: restored,
+        }),
+      );
       setSaveStatus(`✓ Vorlage vom ${new Date(v.created_at).toLocaleString("de-AT")} geladen`);
       setTimeout(() => setSaveStatus(""), 4000);
 
@@ -468,16 +528,16 @@ export default function NotizGenerator() {
     }
   }
 
-  async function speichereVorlage() {
+  async function speichereVorlage(): Promise<boolean> {
     if (!kundenEmail.trim().includes("@")) {
       setSaveStatus(
         "❌ Bitte oben in der Kunden-Sektion eine E-Mail eintragen (das ist der Schlüssel für die Vorlage).",
       );
-      return;
+      return false;
     }
     if (zeilen.length === 0) {
       setSaveStatus("❌ Mindestens eine Position erforderlich.");
-      return;
+      return false;
     }
     // Vorlage-Schutz: wenn aus dem Vorlagen-Browser geladen UND die
     // Email steht immer noch beim Original-Kunden, blockieren.
@@ -490,7 +550,7 @@ export default function NotizGenerator() {
           + " Bitte trage oben die Email des NEUEN Kunden ein,"
           + " für den du diese Notiz jetzt erstellst.",
       );
-      return;
+      return false;
     }
     setSaveStatus("Speichere…");
     // searchResults/searching/ladeTermine NICHT mitschreiben -- nur Form-Data
@@ -517,17 +577,21 @@ export default function NotizGenerator() {
       const j = await r.json();
       if (!r.ok) {
         setSaveStatus(`❌ Fehler: ${j.error || r.statusText}`);
-        return;
+        return false;
       }
       setSaveStatus("✓ Vorlage gespeichert");
       // Nach Speichern: Vorlage-Lock zuruecksetzen, weil das jetzt
       // die "neue" gespeicherte Vorlage fuer diese Email ist.
       setVorlageGeladenAls(kundenEmail.trim().toLowerCase());
+      // Saved-Hash speichern -> "ist gespeichert"-State stimmt
+      setLastSavedHash(currentSaveHash);
       // Liste nachladen damit neue Vorlage erscheint
       void ladeVorlagenFuerEmail(kundenEmail);
       setTimeout(() => setSaveStatus(""), 3000);
+      return true;
     } catch (e) {
       setSaveStatus(`Fehler: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
     }
   }
 
@@ -683,6 +747,17 @@ export default function NotizGenerator() {
   }
 
   async function copyToClipboard() {
+    // Garantie: jede Notiz die per Email verschickt wird, ist auch
+    // in der Vorlagen-DB gespeichert -- sonst kann sie spaeter
+    // beim Rechnungs-Erstellen nicht wiedergefunden werden.
+    if (!istGespeichert) {
+      const ok = await speichereVorlage();
+      if (!ok) {
+        // Speichern fehlgeschlagen (Email fehlt / Vorlage-Lock /
+        // Server-Error). Banner zeigt schon den Grund.
+        return;
+      }
+    }
     try {
       await navigator.clipboard.writeText(notizText);
       setCopyStatus("✓ Kopiert!");
@@ -969,8 +1044,15 @@ export default function NotizGenerator() {
               onClick={copyToClipboard}
               disabled={!notizText.trim()}
               className="text-xs px-3 py-1 rounded bg-[color:var(--brand-blue)] text-white disabled:opacity-50"
+              title={
+                istGespeichert
+                  ? "Notiz in Zwischenablage kopieren"
+                  : "Speichert die Notiz erst als Vorlage (für spätere Rechnungs-Erstellung), dann kopiert sie."
+              }
             >
-              In Zwischenablage kopieren
+              {istGespeichert
+                ? "In Zwischenablage kopieren"
+                : "Speichern & kopieren"}
             </button>
           </div>
         </div>
@@ -1006,6 +1088,23 @@ export default function NotizGenerator() {
           {customNotiz !== null
             ? "Manuell editiert. „Neu generieren“ verwirft Änderungen und übernimmt wieder die Positionen."
             : "Du kannst direkt im Feld editieren — die Änderungen werden nicht in die Positionen zurückgeschrieben."}
+        </p>
+        <p className="text-xs mt-2">
+          {lastSavedHash === null ? (
+            <span className="text-[color:var(--brand-orange)]">
+              ● Noch nicht gespeichert
+              — beim Klick auf „Speichern &amp; kopieren“ wird die Vorlage angelegt.
+            </span>
+          ) : istGespeichert ? (
+            <span className="text-green-700">
+              ● Synchron mit der Vorlagen-DB.
+            </span>
+          ) : (
+            <span className="text-[color:var(--brand-orange)]">
+              ● Ungespeicherte Änderungen
+              — beim Klick auf „Speichern &amp; kopieren“ wird die Vorlage aktualisiert.
+            </span>
+          )}
         </p>
       </section>
 
