@@ -392,8 +392,58 @@ export default function NotizGenerator() {
       setCustomNotiz(null);
       setSaveStatus(`✓ Vorlage vom ${new Date(v.created_at).toLocaleString("de-AT")} geladen`);
       setTimeout(() => setSaveStatus(""), 4000);
+
+      // --- Live-Refresh der Termine ---
+      // Eine Vorlage enthaelt einen Termin-Snapshot vom Zeitpunkt
+      // des Speicherns. Damit Mario aktuelle Termine sehen und ggf.
+      // gegen andere tauschen kann, ziehen wir frische Daten aus
+      // SimplyOrg fuer jede Reihe-Position mit modelId.
+      for (const z of restored) {
+        if (z.kind === "reihe" && z.modelId != null) {
+          void refreshTermineFuerZeile(z.uid, z.modelId);
+        }
+      }
     } catch (e) {
       setSaveStatus(`Fehler: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Live-Refresh: holt aktuelle Reihen-Termine UND behaelt vorhandene
+  // selectedTerminIds nur wenn die event_ids noch existieren.
+  async function refreshTermineFuerZeile(uid: string, qid: number) {
+    setZeilen((prev) =>
+      prev.map((x) => (x.uid === uid ? { ...x, ladeTermine: true } : x)),
+    );
+    try {
+      const r = await fetch(`${botUrl("seminare")}/${qid}/termine`);
+      const j = await r.json();
+      const fresh: Termin[] = j.data ?? [];
+      const freshIds = new Set(fresh.map((t) => t.event_id));
+      setZeilen((prev) =>
+        prev.map((x) => {
+          if (x.uid !== uid) return x;
+          // selectedTerminIds: nur die behalten, die's noch gibt
+          const stillValid = x.selectedTerminIds.filter((id) =>
+            freshIds.has(id),
+          );
+          return {
+            ...x,
+            termine: fresh,
+            ladeTermine: false,
+            terminBekannt:
+              x.terminBekannt && stillValid.length > 0,
+            selectedTerminIds: stillValid,
+            // Auto-Format: 1 Termin -> range, mehrere -> liste
+            terminFormat:
+              stillValid.length <= 1 ? "range" : x.terminFormat,
+          };
+        }),
+      );
+    } catch (e) {
+      console.error("refreshTermine", e);
+      setZeilen((prev) =>
+        prev.map((x) => (x.uid === uid ? { ...x, ladeTermine: false } : x)),
+      );
     }
   }
 
@@ -819,6 +869,11 @@ export default function NotizGenerator() {
               onMove={(dir) => moveZeile(z.uid, dir)}
               onSearch={(q, k) => searchZeile(z.uid, q, k)}
               onPickHit={(hit) => pickSearchHit(z.uid, hit)}
+              onRefreshTermine={() => {
+                if (z.modelId != null) {
+                  void refreshTermineFuerZeile(z.uid, z.modelId);
+                }
+              }}
             />
           ))}
         </div>
@@ -898,6 +953,7 @@ interface ZeileProps {
   onMove: (dir: -1 | 1) => void;
   onSearch: (q: string, kind: ZeileKind) => void;
   onPickHit: (hit: Article | Reihe) => void;
+  onRefreshTermine: () => void;
 }
 
 function ZeileEditor({
@@ -910,6 +966,7 @@ function ZeileEditor({
   onMove,
   onSearch,
   onPickHit,
+  onRefreshTermine,
 }: ZeileProps) {
   const isReihe = zeile.kind === "reihe";
   const isArtikel = zeile.kind === "artikel";
@@ -1080,10 +1137,28 @@ function ZeileEditor({
             ) : null}
           </div>
           {isPicked && zeile.catalogTitle ? (
-            <div className="text-xs text-[color:var(--brand-blue)] mt-0.5">
-              ↳ Zugeordnet zu SimplyOrg-{isReihe ? "Reihe" : "Artikel"}:
-              {" "}
-              {zeile.catalogTitle} (#{zeile.modelId})
+            <div className="text-xs mt-0.5 flex items-center gap-2 flex-wrap">
+              <span className="text-[color:var(--brand-blue)]">
+                ↳ Zugeordnet zu SimplyOrg-
+                {isReihe ? "Reihe" : "Artikel"}:{" "}
+                {zeile.catalogTitle} (#{zeile.modelId})
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdate({
+                    modelId: null,
+                    catalogTitle: "",
+                    termine: [],
+                    selectedTerminIds: [],
+                    terminBekannt: false,
+                  })
+                }
+                className="text-xs text-[color:var(--brand-orange)] hover:underline"
+                title="Auswahl loeschen und neue Reihe / Artikel suchen"
+              >
+                × andere wählen
+              </button>
             </div>
           ) : null}
         </div>
@@ -1092,15 +1167,26 @@ function ZeileEditor({
       {/* Termin-Auswahl (nur bei Reihe mit Pick) */}
       {isReihe && isPicked ? (
         <div className="mb-2 p-2 border border-[color:var(--border)] rounded bg-[color:var(--surface)]">
-          <label className="inline-flex items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={zeile.terminBekannt}
-              onChange={(e) => onUpdate({ terminBekannt: e.target.checked })}
-              className="accent-[color:var(--brand-blue)]"
-            />
-            <span>Termine bekannt</span>
-          </label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="inline-flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={zeile.terminBekannt}
+                onChange={(e) => onUpdate({ terminBekannt: e.target.checked })}
+                className="accent-[color:var(--brand-blue)]"
+              />
+              <span>Termine bekannt</span>
+            </label>
+            <button
+              type="button"
+              onClick={onRefreshTermine}
+              disabled={zeile.ladeTermine || zeile.modelId == null}
+              className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] hover:bg-[color:var(--background)] disabled:opacity-50"
+              title="Aktuelle Termine aus SimplyOrg laden"
+            >
+              ↻ aktualisieren
+            </button>
+          </div>
           {zeile.ladeTermine ? (
             <div className="text-xs text-[color:var(--muted)] mt-1">
               Lade Termine aus SimplyOrg…
