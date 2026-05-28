@@ -43,14 +43,19 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const url = new URL(req.url);
+  // Suche nach Email (exakt) ODER nach Substring auf name + email (q).
   const email = (url.searchParams.get("email") || "").trim().toLowerCase();
+  const q = (url.searchParams.get("q") || "").trim();
   const limit = Math.min(
-    50,
-    Math.max(1, Number.parseInt(url.searchParams.get("limit") || "10", 10) || 10),
+    100,
+    Math.max(
+      1,
+      Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50,
+    ),
   );
 
   const sb = supabaseAdmin();
-  let q = sb
+  let query = sb
     .from("notiz_vorlagen")
     .select(
       "id, email, name, hauptprodukt, rechnungstitel, notiz_text, "
@@ -59,9 +64,14 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(limit);
   if (email) {
-    q = q.ilike("email", email);
+    query = query.ilike("email", email);
+  } else if (q) {
+    // PostgREST: .or() mit ilike auf mehrere Spalten -- name oder email
+    // muss den Suchstring enthalten. % als Wildcard.
+    const pattern = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+    query = query.or(`name.ilike.${pattern},email.ilike.${pattern}`);
   }
-  const { data, error } = await q;
+  const { data, error } = await query;
   if (error) {
     return NextResponse.json(
       { error: error.message, code: error.code },

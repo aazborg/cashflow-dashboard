@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { botUrl } from "@/lib/bot-client";
+import VorlagenBrowser from "./VorlagenBrowser";
 
 interface Article {
   id: number;
@@ -276,9 +277,11 @@ export default function NotizGenerator() {
   // gespeicherte Notiz wieder einspielen).
   const [kundenEmail, setKundenEmail] = useState("");
   const [kundenName, setKundenName] = useState("");
-  // Vorlagen-Liste fuer die aktuelle Email
+  // Vorlagen-Liste fuer die aktuelle Email (inline-Anzeige)
   const [vorlagen, setVorlagen] = useState<VorlageListEntry[]>([]);
   const [vorlagenLaden, setVorlagenLaden] = useState(false);
+  // Vorlagen-Browser-Modal (alle Vorlagen mit Suche)
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string>("");
 
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
@@ -666,12 +669,22 @@ export default function NotizGenerator() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Angebots-Notiz erstellen</h1>
-        <p className="text-sm text-[color:var(--muted)] mt-1">
-          Für die Angebots-Email (vor Vertragsannahme). Generiert
-          eine nummerierte Plain-Text-Notiz aus Hauptprodukt + Positionen.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Angebots-Notiz erstellen</h1>
+          <p className="text-sm text-[color:var(--muted)] mt-1">
+            Für die Angebots-Email (vor Vertragsannahme). Generiert
+            eine nummerierte Plain-Text-Notiz aus Hauptprodukt + Positionen.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setBrowserOpen(true)}
+          className="text-sm px-3 py-1.5 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 shrink-0"
+          title="Alle gespeicherten Notizen durchsuchen"
+        >
+          📚 Vorlagen durchsuchen
+        </button>
       </div>
 
       {/* --- Kunde + Vorlagen --- */}
@@ -938,6 +951,13 @@ export default function NotizGenerator() {
             : "Du kannst direkt im Feld editieren — die Änderungen werden nicht in die Positionen zurückgeschrieben."}
         </p>
       </section>
+
+      {/* --- Vorlagen-Browser-Modal --- */}
+      <VorlagenBrowser
+        open={browserOpen}
+        onClose={() => setBrowserOpen(false)}
+        onSelect={ladeVorlage}
+      />
     </div>
   );
 }
