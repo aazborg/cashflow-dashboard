@@ -117,6 +117,9 @@ const MONATE_DE = [
   "Januar", "Februar", "März", "April", "Mai", "Juni",
   "Juli", "August", "September", "Oktober", "November", "Dezember",
 ];
+// Kurz-Wochentage in der ueblichen DE-Schreibweise.
+// JS Date.getDay(): 0=Sonntag .. 6=Samstag
+const WOCHENTAG_KURZ = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 function parseISO(d: string): { day: number; month: number; year: number } | null {
   const m = (d || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -128,6 +131,14 @@ function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
 
+function wochentag(iso: string): string {
+  const p = parseISO(iso);
+  if (!p) return "";
+  // UTC-Date, damit DST-/Timezone-Drift nicht den Wochentag verschiebt
+  const d = new Date(Date.UTC(p.year, p.month - 1, p.day));
+  return WOCHENTAG_KURZ[d.getUTCDay()];
+}
+
 // Format TT.MM.JJJJ -- Mario's Standard-Notiz-Format (zero-padded)
 function fmtDateDE(iso: string): string {
   const p = parseISO(iso);
@@ -135,17 +146,44 @@ function fmtDateDE(iso: string): string {
   return `${pad(p.day)}.${pad(p.month)}.${p.year}`;
 }
 
-function fmtRangeDE(start: string, end: string): string {
-  if (!end || start === end) return fmtDateDE(start);
+// Kompakt mit Wochentag fuer Dropdowns:
+//   "Sa, 26.09. – So, 27.09.2026"  bei Range innerhalb gleichem Jahr
+//   "Sa, 26.09.2026"               bei Einzeltag
+function fmtRangeKompakt(start: string, end: string): string {
   const a = parseISO(start);
-  const b = parseISO(end);
-  if (!a || !b) return `${fmtDateDE(start)} - ${fmtDateDE(end)}`;
-  // gleicher Monat + Jahr: "26.-27. September 2026"
-  if (a.month === b.month && a.year === b.year) {
-    return `${a.day}.-${b.day}. ${MONATE_DE[a.month - 1]} ${a.year}`;
+  if (!end || end === start || !a) {
+    return a ? `${wochentag(start)}, ${fmtDateDE(start)}` : fmtDateDE(start);
   }
-  // sonst beide voll qualifiziert: "02.07.2026 - 17.09.2026"
-  return `${fmtDateDE(start)} - ${fmtDateDE(end)}`;
+  const b = parseISO(end);
+  if (!b) return `${fmtDateDE(start)} – ${fmtDateDE(end)}`;
+  if (a.year === b.year) {
+    return `${wochentag(start)}, ${pad(a.day)}.${pad(a.month)}. – `
+      + `${wochentag(end)}, ${pad(b.day)}.${pad(b.month)}.${b.year}`;
+  }
+  return `${wochentag(start)}, ${fmtDateDE(start)} – `
+    + `${wochentag(end)}, ${fmtDateDE(end)}`;
+}
+
+// Lesbar fuer die Kunden-Notiz: Wochentage + Monatsname ausgeschrieben.
+//   gleicher Monat:   "Sa–So, 26.–27. September 2026"
+//   verschieden:      "Sa, 02.07. – Mi, 17.09.2026"
+function fmtRangeDE(start: string, end: string): string {
+  const a = parseISO(start);
+  if (!end || end === start || !a) {
+    return a ? `${wochentag(start)}, ${fmtDateDE(start)}` : fmtDateDE(start);
+  }
+  const b = parseISO(end);
+  if (!b) return `${fmtDateDE(start)} – ${fmtDateDE(end)}`;
+  if (a.month === b.month && a.year === b.year) {
+    return `${wochentag(start)}–${wochentag(end)}, `
+      + `${a.day}.–${b.day}. ${MONATE_DE[a.month - 1]} ${a.year}`;
+  }
+  if (a.year === b.year) {
+    return `${wochentag(start)}, ${pad(a.day)}.${pad(a.month)}. – `
+      + `${wochentag(end)}, ${pad(b.day)}.${pad(b.month)}.${b.year}`;
+  }
+  return `${wochentag(start)}, ${fmtDateDE(start)} – `
+    + `${wochentag(end)}, ${fmtDateDE(end)}`;
 }
 
 // --- Notiz-Generator (Hauptarbeit) ---------------------------------
@@ -182,14 +220,16 @@ function buildNotiz(zeilen: Zeile[]): string {
       zeilenText = `${n}. ${head} ${verb} ${range}`;
       if (freitext) zeilenText += ` ${freitext}`;
     } else {
-      // Liste: jeder ausgewaehlte Termin als Sub-Zeile
+      // Liste: jeder ausgewaehlte Termin als Bullet-Sub-Zeile.
+      // Layout: leere Zeile vor + nach dem Block macht es im
+      // Email-Client optisch leichter zu scannen.
       const headLine = freitext
         ? `${n}. ${head}${prefix ? " " + prefix : ""} ${freitext}`
         : `${n}. ${head}${prefix ? " " + prefix : ""}`;
       lines.push(headLine.endsWith(":") ? headLine : headLine + ":");
       aktiveTermine.forEach((t, i) => {
         const r = fmtRangeDE(t.start_date, t.end_date || t.start_date);
-        lines.push(`   Modul ${i + 1}: ${r}`);
+        lines.push(`   • Modul ${i + 1}: ${r}`);
       });
       n++;
       continue;
@@ -760,8 +800,12 @@ function ZeileEditor({
                 Welche Termine sollen verbucht werden? (Auswahl
                 steuert Notiz-Text UND spätere Rechnungs-Einbuchung.)
               </div>
-              {zeile.termine.map((t) => {
+              {zeile.termine.map((t, idx) => {
                 const sel = zeile.selectedTerminIds.includes(t.event_id);
+                const label = fmtRangeKompakt(
+                  t.start_date,
+                  t.end_date || t.start_date,
+                );
                 return (
                   <label
                     key={t.event_id}
@@ -780,20 +824,18 @@ function ZeileEditor({
                       }}
                       className="accent-[color:var(--brand-blue)]"
                     />
-                    <span className="font-mono text-xs text-[color:var(--muted)]">
-                      #{t.event_id}
+                    <span className="text-xs text-[color:var(--muted)] w-14 shrink-0">
+                      Modul {idx + 1}
                     </span>
-                    <span>
-                      {t.start_date}
-                      {t.end_date && t.end_date !== t.start_date
-                        ? ` – ${t.end_date}`
-                        : ""}
-                    </span>
+                    <span className="flex-1">{label}</span>
                     {t.name ? (
-                      <span className="text-xs text-[color:var(--muted)]">
+                      <span className="text-xs text-[color:var(--muted)] truncate">
                         {t.name}
                       </span>
                     ) : null}
+                    <span className="font-mono text-[10px] text-[color:var(--muted)] shrink-0">
+                      #{t.event_id}
+                    </span>
                   </label>
                 );
               })}
