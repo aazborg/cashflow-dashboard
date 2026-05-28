@@ -480,11 +480,14 @@ export default function NotizGenerator() {
 
       // --- Live-Refresh der Termine ---
       // Eine Vorlage enthaelt einen Termin-Snapshot vom Zeitpunkt
-      // des Speicherns. Damit Mario aktuelle Termine sehen und ggf.
-      // gegen andere tauschen kann, ziehen wir frische Daten aus
-      // SimplyOrg fuer jede Reihe-Position mit modelId.
+      // des Speicherns. Refresh holt frische Daten aus SimplyOrg --
+      // aber NUR fuer echte Reihen (planned-qualifications). Bei
+      // Einzelseminaren (planned-event) ist das Event SELBST der
+      // einzige Termin -> Snapshot beibehalten, keine API-Anfrage.
       for (const z of restored) {
-        if (z.kind === "reihe" && z.modelId != null) {
+        if (z.kind === "reihe"
+            && z.modelId != null
+            && z.modelTyp !== "planned-event") {
           void refreshTermineFuerZeile(z.uid, z.modelId);
         }
       }
@@ -502,7 +505,33 @@ export default function NotizGenerator() {
     try {
       const r = await fetch(`${botUrl("seminare")}/${qid}/termine`);
       const j = await r.json();
-      const fresh: Termin[] = j.data ?? [];
+      let fresh: Termin[] = j.data ?? [];
+      // Recovery: wenn Reihen-Endpoint nichts liefert, koennte
+      // 'qid' in Wahrheit eine planned-event-ID sein (alte
+      // Vorlage ohne modelTyp, oder falsche Klassifikation). Wir
+      // checken den Einzelseminar-Pool als Fallback.
+      let autoFixModelTyp: "planned-event" | null = null;
+      if (fresh.length === 0) {
+        try {
+          const r2 = await fetch(botUrl("einzelseminare"));
+          const j2 = await r2.json();
+          const match = ((j2.data ?? []) as EinzelSeminar[]).find(
+            (e) => e.event_id === qid,
+          );
+          if (match) {
+            fresh = [{
+              event_id: match.event_id,
+              name: match.name,
+              start_date: match.start_date,
+              end_date: match.end_date,
+              location: match.kategorie ?? "",
+            }];
+            autoFixModelTyp = "planned-event";
+          }
+        } catch (e2) {
+          console.error("einzelseminar-fallback", e2);
+        }
+      }
       const freshIds = new Set(fresh.map((t) => t.event_id));
       setZeilen((prev) =>
         prev.map((x) => {
@@ -530,6 +559,9 @@ export default function NotizGenerator() {
             // Auto-Format: 1 Termin -> range, mehrere -> liste
             terminFormat:
               finalSelected.length <= 1 ? "range" : x.terminFormat,
+            // Auto-fix wenn Recovery erkannt dass es ein
+            // Einzelseminar ist.
+            modelTyp: autoFixModelTyp ?? x.modelTyp,
           };
         }),
       );
