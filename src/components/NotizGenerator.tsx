@@ -461,13 +461,14 @@ export default function NotizGenerator() {
 
   async function speichereVorlage() {
     if (!kundenEmail.trim().includes("@")) {
-      setSaveStatus("Kunden-Email oben eintragen, dann speichern.");
-      setTimeout(() => setSaveStatus(""), 4000);
+      setSaveStatus(
+        "❌ Bitte oben in der Kunden-Sektion eine E-Mail eintragen (das ist der Schlüssel für die Vorlage).",
+      );
+      // KEIN timeout -- Fehler bleibt sichtbar bis User reagiert
       return;
     }
     if (zeilen.length === 0) {
-      setSaveStatus("Mindestens eine Position erforderlich.");
-      setTimeout(() => setSaveStatus(""), 4000);
+      setSaveStatus("❌ Mindestens eine Position erforderlich.");
       return;
     }
     setSaveStatus("Speichere…");
@@ -494,10 +495,10 @@ export default function NotizGenerator() {
       });
       const j = await r.json();
       if (!r.ok) {
-        setSaveStatus(`Fehler: ${j.error || r.statusText}`);
+        setSaveStatus(`❌ Fehler: ${j.error || r.statusText}`);
         return;
       }
-      setSaveStatus("✓ Gespeichert");
+      setSaveStatus("✓ Vorlage gespeichert");
       // Liste nachladen damit neue Vorlage erscheint
       void ladeVorlagenFuerEmail(kundenEmail);
       setTimeout(() => setSaveStatus(""), 3000);
@@ -913,11 +914,6 @@ export default function NotizGenerator() {
                 {copyStatus}
               </span>
             ) : null}
-            {saveStatus ? (
-              <span className="text-xs text-[color:var(--brand-blue)]">
-                {saveStatus}
-              </span>
-            ) : null}
             {customNotiz !== null ? (
               <button
                 type="button"
@@ -931,8 +927,7 @@ export default function NotizGenerator() {
             <button
               type="button"
               onClick={speichereVorlage}
-              disabled={!kundenEmail.trim() || zeilen.length === 0}
-              className="text-xs px-3 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 disabled:opacity-50"
+              className="text-xs px-3 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10"
               title="Speichert die Notiz unter der Kunden-Email -- spaeter beim Rechnungs-Erstellen wieder einlesbar"
             >
               Als Vorlage speichern
@@ -947,6 +942,27 @@ export default function NotizGenerator() {
             </button>
           </div>
         </div>
+        {saveStatus ? (
+          <div
+            className={`text-sm px-3 py-2 rounded mb-2 flex items-center justify-between gap-2 ${
+              saveStatus.startsWith("❌")
+                ? "bg-red-50 text-red-800"
+                : saveStatus.startsWith("✓")
+                  ? "bg-green-50 text-green-800"
+                  : "bg-[color:var(--brand-blue)]/10 text-[color:var(--brand-blue)]"
+            }`}
+          >
+            <span>{saveStatus}</span>
+            <button
+              type="button"
+              onClick={() => setSaveStatus("")}
+              className="text-xs opacity-60 hover:opacity-100 shrink-0"
+              aria-label="Schließen"
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
         <textarea
           value={notizText}
           onChange={(e) => setCustomNotiz(e.target.value)}
