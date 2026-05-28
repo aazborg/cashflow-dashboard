@@ -108,6 +108,21 @@ export async function POST(req: NextRequest) {
   }
 
   const sb = supabaseAdmin();
+  // Mario's Semantik: pro Kunden-Email gibt es genau EINE
+  // Angebots-Notiz. Beim Speichern werden alle bestehenden
+  // Eintraege fuer diese Email geloescht und durch den neuen
+  // ersetzt -- damit der Rechnungs-Tab spaeter eindeutig die
+  // aktuelle Notiz wiederfindet.
+  const { error: delErr } = await sb
+    .from("notiz_vorlagen")
+    .delete()
+    .ilike("email", email);
+  if (delErr) {
+    return NextResponse.json(
+      { error: `cleanup failed: ${delErr.message}`, code: delErr.code },
+      { status: 500 },
+    );
+  }
   const { data, error } = await sb
     .from("notiz_vorlagen")
     .insert({

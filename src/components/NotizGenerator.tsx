@@ -584,19 +584,9 @@ export default function NotizGenerator() {
       setSaveStatus("❌ Mindestens eine Position erforderlich.");
       return false;
     }
-    // Vorlage-Schutz: wenn aus dem Vorlagen-Browser geladen UND die
-    // Email steht immer noch beim Original-Kunden, blockieren.
-    if (
-      vorlageGeladenAls
-      && kundenEmail.trim().toLowerCase() === vorlageGeladenAls
-    ) {
-      setSaveStatus(
-        `❌ Du hast die Vorlage von „${vorlageGeladenAls}“ geladen.`
-          + " Bitte trage oben die Email des NEUEN Kunden ein,"
-          + " für den du diese Notiz jetzt erstellst.",
-      );
-      return false;
-    }
+    // Pro Email gibt es genau EINE Notiz. Beim Speichern wird die
+    // bestehende Notiz fuer diese Email ueberschrieben (Backend
+    // macht delete-then-insert). Mario kann beliebig oft speichern.
     setSaveStatus("Speichere…");
     // searchResults/searching/ladeTermine NICHT mitschreiben -- nur Form-Data
     const positionenClean = zeilen.map((z) => {
@@ -624,9 +614,10 @@ export default function NotizGenerator() {
         setSaveStatus(`❌ Fehler: ${j.error || r.statusText}`);
         return false;
       }
-      setSaveStatus("✓ Vorlage gespeichert");
-      // Nach Speichern: Vorlage-Lock zuruecksetzen, weil das jetzt
-      // die "neue" gespeicherte Vorlage fuer diese Email ist.
+      setSaveStatus(
+        "✓ Notiz gespeichert — beim Rechnung-Erstellen wird sie automatisch geladen.",
+      );
+      // Aktuell geladene Email merken (fuer den Info-Banner oben)
       setVorlageGeladenAls(kundenEmail.trim().toLowerCase());
       // Saved-Hash speichern -> "ist gespeichert"-State stimmt
       setLastSavedHash(currentSaveHash);
@@ -908,10 +899,11 @@ export default function NotizGenerator() {
         </p>
         {vorlageGeladenAls
           && kundenEmail.trim().toLowerCase() === vorlageGeladenAls ? (
-          <div className="mt-2 px-2 py-1 rounded bg-[color:var(--brand-yellow)]/30 text-xs text-[color:var(--foreground)]">
-            ⚠️ Vorlage von „{vorlageGeladenAls}“ geladen.
-            Wenn du diese Notiz für einen <em>anderen</em> Kunden erstellst,
-            ändere die Email oben — sonst kannst du nicht speichern.
+          <div className="mt-2 px-2 py-1 rounded bg-[color:var(--brand-yellow)]/20 text-xs text-[color:var(--foreground)]">
+            ℹ️ Notiz von „{vorlageGeladenAls}“ geladen. Beim Speichern
+            wird sie aktualisiert. Wenn du sie für einen
+            <em> anderen</em> Kunden nutzen willst, einfach Email oben
+            ändern — dann wird unter der neuen Email angelegt.
           </div>
         ) : null}
 
@@ -1119,9 +1111,9 @@ export default function NotizGenerator() {
               type="button"
               onClick={speichereVorlage}
               className="text-xs px-3 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10"
-              title="Speichert die Notiz unter der Kunden-Email -- spaeter beim Rechnungs-Erstellen wieder einlesbar"
+              title="Speichert unter der Kunden-Email -- pro Email gibt es genau EINE Notiz, neue Speicherungen überschreiben"
             >
-              Als Vorlage speichern
+              Notiz speichern
             </button>
             <button
               type="button"
