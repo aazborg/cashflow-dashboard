@@ -261,15 +261,18 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         // Hauptprodukt-Vorschläge & Default-Preis auch ziehen
         void selectHauptprodukt(v.hauptprodukt);
       }
-      // Notiz-Zeilen -> Rechnungs-Zeilen mappen
+      // Notiz-Zeilen -> Rechnungs-Zeilen mappen.
+      // WICHTIG: kein Filter auf modelId -- Mario hat im
+      // Notiz-Generator auch Positionen ohne SimplyOrg-Pick angelegt
+      // (z.B. aus Hauptprodukt-Vorschlaegen). Diese kommen mit
+      // modelId=null, werden trotzdem geladen damit Mario sie im
+      // Rechnungs-Editor zuordnen kann (Combobox bleibt offen).
       const restored: Zeile[] = (Array.isArray(v.positionen) ? v.positionen : [])
-        .filter((p: { kind?: string; modelId?: number | null }) =>
-          p.kind && p.modelId != null,
-        )
+        .filter((p: { kind?: string }) => p.kind)
         .map((p: {
           kind: string;
           modelTyp?: string;
-          modelId: number;
+          modelId?: number | null;
           salesName?: string;
           catalogTitle?: string;
           selectedTerminIds?: number[];
@@ -293,7 +296,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
           return {
             uid: newUid(),
             kind: rechKind,
-            modelId: p.modelId,
+            modelId: p.modelId ?? null,
             modelTyp: (p.modelTyp as Zeile["modelTyp"]) ?? (
               rechKind === "seminar" ? "planned-event"
               : rechKind === "reihe" ? "planned-qualifications"
@@ -539,6 +542,10 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         // preis bleibt null -> Backend ergaenzt aus Vertrag
         tax_percent: 0,
       },
+      // Nur Positionen mit gesetztem SimplyOrg-Match werden gesendet.
+      // Positionen ohne modelId (= nur Sales-Name aus der Notiz-
+      // Vorlage uebernommen, noch kein Pick) werden uebersprungen --
+      // Mario muss sie im Modal manuell zuordnen.
       positionen: zeilen
         .filter((z) => z.modelId != null && z.kind)
         .map((z) => ({
@@ -898,7 +905,11 @@ function ZeileEditor({
   const isArtikel = zeile.kind === "artikel";
   const isPicked = zeile.modelId != null;
   return (
-    <div className="border border-[color:var(--border)] rounded p-3 bg-[color:var(--background)]">
+    <div className={`border rounded p-3 bg-[color:var(--background)] ${
+      isPicked
+        ? "border-[color:var(--border)]"
+        : "border-[color:var(--brand-orange)]/60 bg-[color:var(--brand-yellow)]/10"
+    }`}>
       <div className="flex items-start justify-between mb-2">
         <div className="text-xs uppercase tracking-wider text-[color:var(--muted)]">
           Pos {idx}
