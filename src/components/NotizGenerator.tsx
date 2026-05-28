@@ -310,6 +310,12 @@ export default function NotizGenerator() {
 
   const [hauptprodukte, setHauptprodukte] = useState<Hauptprodukt[]>([]);
   const [hauptprodukt, setHauptprodukt] = useState<string>("");
+  // Pre-cache: alle Artikel + Reihen + Einzelseminare einmal beim
+  // Mount laden, dann nur noch lokal filtern. Macht jede
+  // Such-Eingabe instant statt mit Tunnel-Lag.
+  const [allArticles, setAllArticles] = useState<Article[]>([]);
+  const [allReihen, setAllReihen] = useState<Reihe[]>([]);
+  const [allEinzel, setAllEinzel] = useState<EinzelSeminar[]>([]);
   const [vorschlaege, setVorschlaege] = useState<{
     pflicht: Vorschlag[];
     haeufig: Vorschlag[];
@@ -374,6 +380,37 @@ export default function NotizGenerator() {
   const notizText = customNotiz ?? computedNotiz;
   const [copyStatus, setCopyStatus] = useState<string>("");
   const [ladeFehler, setLadeFehler] = useState<string | null>(null);
+
+  // Pre-Cache: alle 3 Pools beim Mount EINMAL laden, dann filtert
+  // searchZeile nur noch lokal -> jede Tasteneingabe instant,
+  // kein Tunnel-Lag.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const fetchJson = async (path: string) => {
+          try {
+            const r = await fetch(path);
+            return await r.json();
+          } catch {
+            return { data: [] };
+          }
+        };
+        const [jA, jR, jE] = await Promise.all([
+          fetchJson(botUrl("articles")),
+          fetchJson(botUrl("seminare")),
+          fetchJson(botUrl("einzelseminare")),
+        ]);
+        if (cancelled) return;
+        setAllArticles((jA.data ?? []) as Article[]);
+        setAllReihen((jR.data ?? []) as Reihe[]);
+        setAllEinzel((jE.data ?? []) as EinzelSeminar[]);
+      } catch (e) {
+        console.error("preload", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Hauptprodukte beim Mount laden
   useEffect(() => {
@@ -703,46 +740,30 @@ export default function NotizGenerator() {
     );
   }
 
-  async function searchZeile(uid: string, q: string, kind: ZeileKind) {
+  function searchZeile(uid: string, q: string, kind: ZeileKind) {
     if (q.trim().length < 2) {
       updateZeile(uid, { searchResults: [], searching: false });
       return;
     }
-    updateZeile(uid, { searching: true });
-    try {
-      const lq = q.toLowerCase();
-      if (kind === "artikel") {
-        const r = await fetch(botUrl("articles"));
-        const j = await r.json();
-        const hits = ((j.data as Article[]) ?? [])
-          .filter((a) => (a.title || "").toLowerCase().includes(lq))
-          .slice(0, 20);
-        updateZeile(uid, { searchResults: hits, searching: false });
-        return;
-      }
-      // kind === "reihe" -> SOWOHL Reihen (mit Modulen) ALS AUCH
-      // Einzelseminare (z.B. "Zert. Mentalcoach" online) durchsuchen.
-      const [rRei, rEinz] = await Promise.all([
-        fetch(botUrl("seminare")),
-        fetch(botUrl("einzelseminare")),
-      ]);
-      const jRei = await rRei.json();
-      const jEinz = await rEinz.json();
-      const reihen: Reihe[] = (jRei.data as Reihe[]) ?? [];
-      const einzel: EinzelSeminar[] = (jEinz.data as EinzelSeminar[]) ?? [];
-      const hits = [
-        ...reihen.filter((r) =>
-          (r.name || "").toLowerCase().includes(lq),
-        ),
-        ...einzel.filter((e) =>
-          (e.name || "").toLowerCase().includes(lq),
-        ),
-      ].slice(0, 30);
+    const lq = q.toLowerCase();
+    if (kind === "artikel") {
+      const hits = allArticles
+        .filter((a) => (a.title || "").toLowerCase().includes(lq))
+        .slice(0, 20);
       updateZeile(uid, { searchResults: hits, searching: false });
-    } catch (e) {
-      console.error("search", e);
-      updateZeile(uid, { searching: false });
+      return;
     }
+    // kind === "reihe" -> SOWOHL Reihen (mit Modulen) ALS AUCH
+    // Einzelseminare (z.B. "Zert. Mentalcoach" online) durchsuchen.
+    const hits = [
+      ...allReihen.filter((r) =>
+        (r.name || "").toLowerCase().includes(lq),
+      ),
+      ...allEinzel.filter((e) =>
+        (e.name || "").toLowerCase().includes(lq),
+      ),
+    ].slice(0, 30);
+    updateZeile(uid, { searchResults: hits, searching: false });
   }
 
   function pickSearchHit(uid: string, hit: Article | Reihe | EinzelSeminar) {
