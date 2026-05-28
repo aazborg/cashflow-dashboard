@@ -66,14 +66,23 @@ interface Zeile {
   salesName: string;
   // SimplyOrg-Zielname (informativ, fuer spaetere Rechnung)
   catalogTitle: string;
+  // ALLE Termine der SimplyOrg-Reihe (von der API geladen)
   termine: Termin[];
   ladeTermine: boolean;
+  // event_ids der vom User AUSGEWAEHLTEN Termine. Nur diese erscheinen
+  // in der Notiz UND landen spaeter als planned_event_ids in der
+  // SimplyOrg-Rechnung (Auto-Einbuchung).
+  selectedTerminIds: number[];
+  // "Termine bekannt" -- wenn false, wird gar kein Datum gerendert
+  // (auch wenn termine geladen sind).
+  terminBekannt: boolean;
   // UI-State: Suche
   searchResults: (Article | Reihe)[];
   searching: boolean;
-  // Termin-Anzeige-Format: 'range' (eine Range) oder 'liste' (jede
-  // Termin-Sub-Zeile einzeln, mit "Modul N:"-Prefix)
-  terminFormat: "range" | "liste" | "keine";
+  // Format fuer die Darstellung der AUSGEWAEHLTEN Termine:
+  //   'range' -> "vom <erster.start> - <letzter.end>"
+  //   'liste' -> "Modul 1: <date>" pro Termin als Sub-Zeile
+  terminFormat: "range" | "liste";
   // Optionaler Praefix-Text vor Datums-Range
   praefixText: string;
   // Optionales Suffix nach dem Eintrag
@@ -93,6 +102,8 @@ function leereZeile(): Zeile {
     catalogTitle: "",
     termine: [],
     ladeTermine: false,
+    selectedTerminIds: [],
+    terminBekannt: false,
     searchResults: [],
     searching: false,
     terminFormat: "range",
@@ -146,29 +157,37 @@ function buildNotiz(zeilen: Zeile[]): string {
     const head = z.salesName.trim();
     const prefix = z.praefixText.trim();
     const freitext = z.freitext.trim();
-    const termine = z.termine || [];
+    // Nur ausgewaehlte Termine in der Reihenfolge der API
+    const aktiveTermine =
+      z.terminBekannt
+        ? (z.termine || []).filter((t) =>
+            z.selectedTerminIds.includes(t.event_id),
+          )
+        : [];
 
-    // Termin-Darstellung
     let zeilenText = "";
-    if (z.terminFormat === "keine" || termine.length === 0) {
-      // Artikel ohne Termin
+    if (aktiveTermine.length === 0) {
+      // Artikel ODER Reihe ohne Termin-Auswahl
       zeilenText = `${n}. ${head}`;
       if (freitext) zeilenText += ` ${freitext}`;
-    } else if (z.terminFormat === "range") {
-      // Eine Range: "Name vom <start> - <end>" oder ohne "vom" wenn prefix gesetzt
-      const first = termine[0];
-      const last = termine[termine.length - 1];
-      const range = fmtRangeDE(first.start_date, last.end_date || last.start_date);
+    } else if (z.terminFormat === "range" || aktiveTermine.length === 1) {
+      // Eine Range: "Name vom <start> - <end>"
+      const first = aktiveTermine[0];
+      const last = aktiveTermine[aktiveTermine.length - 1];
+      const range = fmtRangeDE(
+        first.start_date,
+        last.end_date || last.start_date,
+      );
       const verb = prefix || "vom";
       zeilenText = `${n}. ${head} ${verb} ${range}`;
       if (freitext) zeilenText += ` ${freitext}`;
     } else {
-      // Liste: jedes Termin-Event als Sub-Zeile mit Modul-Praefix
+      // Liste: jeder ausgewaehlte Termin als Sub-Zeile
       const headLine = freitext
         ? `${n}. ${head}${prefix ? " " + prefix : ""} ${freitext}`
         : `${n}. ${head}${prefix ? " " + prefix : ""}`;
       lines.push(headLine.endsWith(":") ? headLine : headLine + ":");
-      termine.forEach((t, i) => {
+      aktiveTermine.forEach((t, i) => {
         const r = fmtRangeDE(t.start_date, t.end_date || t.start_date);
         lines.push(`   Modul ${i + 1}: ${r}`);
       });
@@ -275,7 +294,7 @@ export default function NotizGenerator() {
     z.kind = v.typ === "seminar" ? "reihe" : "artikel";
     z.salesName = v.name;
     z.catalogTitle = v.name;
-    z.terminFormat = v.typ === "seminar" ? "range" : "keine";
+    // terminBekannt default = false (User muss bewusst aktivieren)
     return z;
   }
 
@@ -365,12 +384,20 @@ export default function NotizGenerator() {
       const r = await fetch(`${botUrl("seminare")}/${qid}/termine`);
       const j = await r.json();
       const termine: Termin[] = j.data ?? [];
-      // Format-Heuristik: 1 Termin -> 'range', 2-10 Termine -> 'liste'
-      // (Modul-Sub-Zeilen), 0 -> 'keine'
+      // Format-Heuristik: 1 Termin -> 'range', mehrere -> 'liste'
+      // (Modul-Sub-Zeilen). Default: alle Termine als ausgewaehlt
+      // markieren -- User kann einzelne abwaehlen.
       const fmt: Zeile["terminFormat"] =
-        termine.length === 0 ? "keine" :
-        termine.length === 1 ? "range" : "liste";
-      updateZeile(uid, { termine, ladeTermine: false, terminFormat: fmt });
+        termine.length <= 1 ? "range" : "liste";
+      updateZeile(uid, {
+        termine,
+        ladeTermine: false,
+        terminFormat: fmt,
+        // alle Termine pre-selected, terminBekannt automatisch an
+        // sobald >0 Termine geladen werden.
+        terminBekannt: termine.length > 0,
+        selectedTerminIds: termine.map((t) => t.event_id),
+      });
     } catch (e) {
       console.error("termine", e);
       updateZeile(uid, { ladeTermine: false });
@@ -627,7 +654,7 @@ function ZeileEditor({
         <div className="mb-2 flex gap-2">
           <button
             type="button"
-            onClick={() => onUpdate({ kind: "artikel", terminFormat: "keine" })}
+            onClick={() => onUpdate({ kind: "artikel" })}
             className="text-xs px-3 py-1 rounded border border-[color:var(--border)]"
           >
             Artikel (kein Termin)
@@ -705,51 +732,105 @@ function ZeileEditor({
         </div>
       ) : null}
 
-      {/* Termin-Format (nur bei Reihe) */}
+      {/* Termin-Auswahl (nur bei Reihe mit Pick) */}
       {isReihe && isPicked ? (
-        <div className="mb-2 flex items-center gap-3 text-xs">
-          <label className="text-[color:var(--muted)]">Termin-Darstellung:</label>
-          <label className="inline-flex items-center gap-1">
+        <div className="mb-2 p-2 border border-[color:var(--border)] rounded bg-[color:var(--surface)]">
+          <label className="inline-flex items-center gap-2 text-sm font-medium">
             <input
-              type="radio"
-              name={`tf-${zeile.uid}`}
-              checked={zeile.terminFormat === "range"}
-              onChange={() => onUpdate({ terminFormat: "range" })}
+              type="checkbox"
+              checked={zeile.terminBekannt}
+              onChange={(e) => onUpdate({ terminBekannt: e.target.checked })}
+              className="accent-[color:var(--brand-blue)]"
             />
-            Gesamt-Zeitraum
-          </label>
-          <label className="inline-flex items-center gap-1">
-            <input
-              type="radio"
-              name={`tf-${zeile.uid}`}
-              checked={zeile.terminFormat === "liste"}
-              onChange={() => onUpdate({ terminFormat: "liste" })}
-            />
-            Pro Modul auflisten
-          </label>
-          <label className="inline-flex items-center gap-1">
-            <input
-              type="radio"
-              name={`tf-${zeile.uid}`}
-              checked={zeile.terminFormat === "keine"}
-              onChange={() => onUpdate({ terminFormat: "keine" })}
-            />
-            Ohne Termin
+            <span>Termine bekannt</span>
           </label>
           {zeile.ladeTermine ? (
-            <span className="text-[color:var(--muted)]">
-              (Lade Termine…)
-            </span>
-          ) : (
-            <span className="text-[color:var(--muted)]">
-              ({zeile.termine.length} Termine geladen)
-            </span>
-          )}
+            <div className="text-xs text-[color:var(--muted)] mt-1">
+              Lade Termine aus SimplyOrg…
+            </div>
+          ) : null}
+          {!zeile.ladeTermine && zeile.termine.length === 0 ? (
+            <div className="text-xs text-[color:var(--brand-orange)] mt-1">
+              Keine Termine zur Reihe gefunden.
+            </div>
+          ) : null}
+          {zeile.terminBekannt && zeile.termine.length > 0 ? (
+            <div className="mt-2 space-y-1.5">
+              <div className="text-xs text-[color:var(--muted)]">
+                Welche Termine sollen verbucht werden? (Auswahl
+                steuert Notiz-Text UND spätere Rechnungs-Einbuchung.)
+              </div>
+              {zeile.termine.map((t) => {
+                const sel = zeile.selectedTerminIds.includes(t.event_id);
+                return (
+                  <label
+                    key={t.event_id}
+                    className="flex items-center gap-2 text-sm cursor-pointer hover:bg-[color:var(--brand-blue)]/5 px-1 rounded"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sel}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? [...zeile.selectedTerminIds, t.event_id]
+                          : zeile.selectedTerminIds.filter(
+                              (id) => id !== t.event_id,
+                            );
+                        onUpdate({ selectedTerminIds: next });
+                      }}
+                      className="accent-[color:var(--brand-blue)]"
+                    />
+                    <span className="font-mono text-xs text-[color:var(--muted)]">
+                      #{t.event_id}
+                    </span>
+                    <span>
+                      {t.start_date}
+                      {t.end_date && t.end_date !== t.start_date
+                        ? ` – ${t.end_date}`
+                        : ""}
+                    </span>
+                    {t.name ? (
+                      <span className="text-xs text-[color:var(--muted)]">
+                        {t.name}
+                      </span>
+                    ) : null}
+                  </label>
+                );
+              })}
+              {/* Format-Toggle nur wenn mehrere Termine ausgewaehlt */}
+              {zeile.selectedTerminIds.length > 1 ? (
+                <div className="flex items-center gap-3 text-xs mt-2 pt-2 border-t border-[color:var(--border)]">
+                  <span className="text-[color:var(--muted)]">
+                    Anzeige in der Notiz:
+                  </span>
+                  <label className="inline-flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name={`tf-${zeile.uid}`}
+                      checked={zeile.terminFormat === "range"}
+                      onChange={() => onUpdate({ terminFormat: "range" })}
+                    />
+                    Gesamt-Zeitraum
+                  </label>
+                  <label className="inline-flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name={`tf-${zeile.uid}`}
+                      checked={zeile.terminFormat === "liste"}
+                      onChange={() => onUpdate({ terminFormat: "liste" })}
+                    />
+                    Pro Modul auflisten
+                  </label>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {/* Praefix-Text */}
-      {isPicked && zeile.terminFormat !== "keine" ? (
+      {isPicked && isReihe && zeile.terminBekannt
+            && zeile.selectedTerminIds.length > 0 ? (
         <div className="mb-2 flex items-center gap-2 text-xs">
           <label className="text-[color:var(--muted)] min-w-[110px]">
             Praefix vor Datum
