@@ -35,6 +35,14 @@ export default function DealRow({
     rechnung_status: "draft" | "sent" | "cancelled" | null;
     zahlungsmodell?: "einmal" | "raten" | null;
     raten_info?: string | null;
+    gocardless_mandate_status?: string | null;
+    gocardless_paid_count?: number | null;
+    gocardless_paid_amount_cents?: number | null;
+    gocardless_next_payment_date?: string | null;
+    gocardless_next_payment_amount_cents?: number | null;
+    gocardless_last_failure_at?: string | null;
+    gocardless_last_failure_reason?: string | null;
+    gocardless_env?: string | null;
   } | null>(null);
   useEffect(() => {
     if (!canCreateRechnung) return;
@@ -59,6 +67,14 @@ export default function DealRow({
           rechnung_status?: "draft" | "sent" | "cancelled" | null;
           zahlungsmodell?: "einmal" | "raten" | null;
           raten_info?: string | null;
+          gocardless_mandate_status?: string | null;
+          gocardless_paid_count?: number | null;
+          gocardless_paid_amount_cents?: number | null;
+          gocardless_next_payment_date?: string | null;
+          gocardless_next_payment_amount_cents?: number | null;
+          gocardless_last_failure_at?: string | null;
+          gocardless_last_failure_reason?: string | null;
+          gocardless_env?: string | null;
         } | undefined;
         if (hasEmail) {
           const r = await fetch(
@@ -80,12 +96,22 @@ export default function DealRow({
           const j2 = await r2.json();
           v = (j2.data || [])[0];
         }
-        if (v?.rechnung_id || v?.zahlungsmodell) {
+        if (v?.rechnung_id || v?.zahlungsmodell || v?.gocardless_mandate_status) {
           setRechnungInfo({
             rechnung_id: v.rechnung_id ?? null,
             rechnung_status: v.rechnung_status ?? null,
             zahlungsmodell: v.zahlungsmodell ?? null,
             raten_info: v.raten_info ?? null,
+            gocardless_mandate_status: v.gocardless_mandate_status ?? null,
+            gocardless_paid_count: v.gocardless_paid_count ?? null,
+            gocardless_paid_amount_cents: v.gocardless_paid_amount_cents ?? null,
+            gocardless_next_payment_date: v.gocardless_next_payment_date ?? null,
+            gocardless_next_payment_amount_cents:
+              v.gocardless_next_payment_amount_cents ?? null,
+            gocardless_last_failure_at: v.gocardless_last_failure_at ?? null,
+            gocardless_last_failure_reason:
+              v.gocardless_last_failure_reason ?? null,
+            gocardless_env: v.gocardless_env ?? null,
           });
         } else {
           setRechnungInfo(null);
@@ -212,6 +238,53 @@ export default function DealRow({
               💰 Einmal
             </span>
           ) : null}
+          {(() => {
+            const ms = rechnungInfo?.gocardless_mandate_status;
+            if (!ms) return null;
+            const failed = !!rechnungInfo?.gocardless_last_failure_at;
+            // Status-Mapping
+            let color = "bg-gray-200 text-gray-800 border-gray-400";
+            let label = ms;
+            if (ms === "active") {
+              color = failed
+                ? "bg-red-100 text-red-900 border-red-400"
+                : "bg-green-100 text-green-900 border-green-400";
+              label = failed ? "GC ⚠" : "GC ✓";
+            } else if (ms === "pending_submission" || ms === "submitted"
+                        || ms === "pending_customer_approval") {
+              color = "bg-amber-100 text-amber-900 border-amber-400";
+              label = "GC ⏳";
+            } else if (ms === "failed" || ms === "cancelled"
+                        || ms === "expired" || ms === "blocked") {
+              color = "bg-red-100 text-red-900 border-red-400";
+              label = "GC ❌";
+            }
+            const paid = rechnungInfo?.gocardless_paid_count ?? 0;
+            const paidEUR =
+              (rechnungInfo?.gocardless_paid_amount_cents ?? 0) / 100;
+            const next = rechnungInfo?.gocardless_next_payment_date;
+            const nextEUR =
+              (rechnungInfo?.gocardless_next_payment_amount_cents ?? 0) / 100;
+            const isSandbox = rechnungInfo?.gocardless_env === "sandbox";
+            const tip = [
+              `Mandat: ${ms}${failed ? " (letzte Lastschrift fehlgeschlagen)" : ""}`,
+              paid ? `Bezahlt: ${paid}× (${paidEUR.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})` : "",
+              next ? `Nächste: ${next}${nextEUR ? ` (${nextEUR.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})` : ""}` : "",
+              rechnungInfo?.gocardless_last_failure_reason
+                ? `Fehler: ${rechnungInfo.gocardless_last_failure_reason}`
+                : "",
+              isSandbox ? "ℹ Sandbox-Daten" : "",
+            ].filter(Boolean).join("\n");
+            return (
+              <span
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${color}`}
+                title={tip}
+              >
+                {label}
+                {isSandbox ? " (SBX)" : ""}
+              </span>
+            );
+          })()}
         </div>
         {editing ? (
           <input

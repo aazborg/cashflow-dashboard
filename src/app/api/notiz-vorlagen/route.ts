@@ -61,6 +61,12 @@ export async function GET(req: NextRequest) {
       "id, email, name, hauptprodukt, rechnungstitel, notiz_text, "
         + "rechnung_id, rechnung_status, rechnung_created_at, "
         + "zahlungsmodell, raten_info, "
+        + "gocardless_mandate_status, gocardless_subscription_status, "
+        + "gocardless_paid_count, gocardless_paid_amount_cents, "
+        + "gocardless_next_payment_date, "
+        + "gocardless_next_payment_amount_cents, "
+        + "gocardless_last_failure_at, gocardless_last_failure_reason, "
+        + "gocardless_env, gocardless_synced_at, "
         + "created_at, updated_at",
     )
     .order("created_at", { ascending: false })
