@@ -35,16 +35,38 @@ export default function DealRow({
     rechnung_status: "draft" | "sent" | null;
   } | null>(null);
   useEffect(() => {
-    if (!canCreateRechnung || !deal.email) return;
+    if (!canCreateRechnung) return;
+    const hasEmail = !!deal.email;
+    const namen = `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim();
+    if (!hasEmail && !namen) return;
     let cancelled = false;
     void (async () => {
       try {
-        const r = await fetch(
-          `/cashflow/api/notiz-vorlagen?email=${encodeURIComponent(deal.email ?? "")}`,
-        );
-        const j = await r.json();
-        if (cancelled) return;
-        const v = (j.data || [])[0];
+        // 1) Lookup via Deal-Email (exakter Match). Greift wenn
+        //    HubSpot fuer den Deal eine Email gespeichert hat und
+        //    die mit der Vorlage uebereinstimmt.
+        let v: { rechnung_id?: number | null;
+                  rechnung_status?: "draft" | "sent" | null } | undefined;
+        if (hasEmail) {
+          const r = await fetch(
+            `/cashflow/api/notiz-vorlagen?email=${encodeURIComponent(deal.email ?? "")}`,
+          );
+          if (cancelled) return;
+          const j = await r.json();
+          v = (j.data || [])[0];
+        }
+        // 2) Fallback: Substring-Suche auf Name UND Email. Faengt
+        //    Faelle ab wo deal.email leer ist oder eine andere
+        //    Adresse als die Vorlage hat (z.B. HubSpot-Email vs.
+        //    SimplyOrg-Email). Wie im RechnungsEditor.
+        if (!v?.rechnung_id && namen) {
+          const r2 = await fetch(
+            `/cashflow/api/notiz-vorlagen?q=${encodeURIComponent(namen)}&limit=1`,
+          );
+          if (cancelled) return;
+          const j2 = await r2.json();
+          v = (j2.data || [])[0];
+        }
         if (v?.rechnung_id) {
           setRechnungInfo({
             rechnung_id: v.rechnung_id,
@@ -60,7 +82,13 @@ export default function DealRow({
     return () => {
       cancelled = true;
     };
-  }, [canCreateRechnung, deal.email, rechnungsModalOpen]);
+  }, [
+    canCreateRechnung,
+    deal.email,
+    deal.vorname,
+    deal.nachname,
+    rechnungsModalOpen,
+  ]);
   const showCheckbox = typeof selected === "boolean" && !!onToggleSelect;
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
