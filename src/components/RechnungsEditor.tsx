@@ -156,6 +156,36 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Rohdaten der Rechnung aus SimplyOrg fuer die Tabellen-Vorschau
+  // (anstelle des langsamen / oft weissen PDF-iframes).
+  const [details, setDetails] = useState<{
+    id: number;
+    number: string;
+    name: string;
+    status: string;
+    status_text: string;
+    invoice_recipient: string;
+    currency_symbol: string;
+    total_invoice_amount: number;
+    remaining_amount: number;
+    total_paid_amount: number;
+    created_at: string;
+    lines: Array<{
+      id: number;
+      title: string;
+      amount: number;
+      quantity: number;
+      discount: number;
+      tax_percent: number;
+      tax_name: string;
+      subtotal: number;
+      start_end_date: string;
+      model: string;
+      description?: string;
+    }>;
+  } | null>(null);
+  const [detailsLaden, setDetailsLaden] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
   // Notiz-Vorlage fuer diese Deal-Email gefunden? Wird beim Open
   // automatisch geladen und als Pre-Fill verwendet.
@@ -732,6 +762,43 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     }
   }
 
+  // Details aus SimplyOrg laden wenn createdInvoice gesetzt ist.
+  // Wir nutzen den Empfaenger-Nachnamen als Suchhint (greift fuer
+  // search_text die liste schnell ein).
+  useEffect(() => {
+    if (!createdInvoice) {
+      setDetails(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailsLaden(true);
+    setDetailsError(null);
+    const nachname = (deal.nachname || "").trim();
+    const url = `/cashflow/api/bot/rechnung/${createdInvoice.id}/details${
+      nachname ? `?hint=${encodeURIComponent(nachname)}` : ""
+    }`;
+    void (async () => {
+      try {
+        const r = await fetch(url);
+        const j = await r.json();
+        if (cancelled) return;
+        if (!r.ok) {
+          setDetailsError(j.error || `HTTP ${r.status}`);
+        } else {
+          setDetails(j);
+        }
+      } catch (e) {
+        if (!cancelled)
+          setDetailsError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDetailsLaden(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [createdInvoice, deal.nachname]);
+
   // Lösch-Action: Draft in SimplyOrg loeschen und Verknuepfung
   // in der Notiz-Vorlage entfernen, damit Mario eine neue Rechnung
   // anlegen kann.
@@ -1143,24 +1210,148 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                   in SimplyOrg ↗
                 </a>
               </div>
-              <iframe
-                key={`${createdInvoice.id}-${createdInvoice.status}`}
-                title={`Rechnung-${createdInvoice.id}.pdf`}
-                src={`/cashflow/api/bot/rechnung/${createdInvoice.id}/pdf?refresh=1`}
-                className="w-full h-[60vh] border border-[color:var(--border)] rounded bg-white"
-              />
+              {/* Original-Daten aus SimplyOrg als Tabelle (statt
+                  langsamen, oft weissen PDF-iframe). */}
+              <div className="border border-[color:var(--border)] rounded bg-white p-4 max-h-[60vh] overflow-y-auto">
+                {detailsLaden ? (
+                  <div className="text-sm text-[color:var(--muted)] text-center py-8">
+                    Lade Rechnungs-Details aus SimplyOrg…
+                  </div>
+                ) : detailsError ? (
+                  <div className="text-sm text-red-700 bg-red-50 p-2 rounded">
+                    ❌ {detailsError}
+                  </div>
+                ) : details ? (
+                  <div>
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-3 pb-3 border-b border-[color:var(--border)]">
+                      <div>
+                        <div className="text-xs uppercase tracking-wider text-[color:var(--muted)]">
+                          Rechnung Nr. {details.number || `#${details.id}`}
+                        </div>
+                        <div className="text-base font-semibold mt-1">
+                          {details.name || "(kein Titel)"}
+                        </div>
+                        <div className="text-sm text-[color:var(--muted)] mt-1">
+                          Empfänger: <strong>{details.invoice_recipient}</strong>
+                        </div>
+                        <div className="text-xs text-[color:var(--muted)] mt-0.5">
+                          Erstellt: {details.created_at}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs uppercase tracking-wider text-[color:var(--muted)]">
+                          Status
+                        </div>
+                        <div
+                          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide mt-1 ${
+                            details.status === "sent"
+                              ? "bg-green-600 text-white"
+                              : "bg-[color:var(--brand-orange)] text-white"
+                          }`}
+                        >
+                          {details.status_text || details.status}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Positionen */}
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs uppercase tracking-wider text-[color:var(--muted)] border-b border-[color:var(--border)]">
+                          <th className="text-left py-2 w-8">Pos</th>
+                          <th className="text-left py-2">Beschreibung</th>
+                          <th className="text-right py-2 w-16">Anzahl</th>
+                          <th className="text-right py-2 w-24">Einzelpreis</th>
+                          <th className="text-right py-2 w-16">MwSt</th>
+                          <th className="text-right py-2 w-28">Summe</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {details.lines.map((l, i) => (
+                          <tr
+                            key={l.id}
+                            className="border-b border-[color:var(--border)]/30"
+                          >
+                            <td className="py-2">{i + 1}</td>
+                            <td className="py-2">
+                              <div>{l.title}</div>
+                              {l.start_end_date ? (
+                                <div className="text-xs text-[color:var(--muted)]">
+                                  Termin: {l.start_end_date}
+                                </div>
+                              ) : null}
+                              {l.description ? (
+                                <div className="text-xs text-[color:var(--muted)]">
+                                  {l.description}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {l.quantity}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {l.amount.toLocaleString("de-AT", {
+                                style: "currency",
+                                currency: "EUR",
+                              })}
+                            </td>
+                            <td className="py-2 text-right">
+                              {l.tax_percent}%
+                            </td>
+                            <td className="py-2 text-right tabular-nums font-medium">
+                              {l.subtotal.toLocaleString("de-AT", {
+                                style: "currency",
+                                currency: "EUR",
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-[color:var(--border)]">
+                          <td colSpan={5} className="py-2 text-right font-semibold">
+                            Gesamtbetrag:
+                          </td>
+                          <td className="py-2 text-right tabular-nums font-bold text-base">
+                            {details.total_invoice_amount.toLocaleString(
+                              "de-AT",
+                              { style: "currency", currency: "EUR" },
+                            )}
+                          </td>
+                        </tr>
+                        {details.total_paid_amount > 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-1 text-right text-xs text-[color:var(--muted)]">
+                              bereits bezahlt:
+                            </td>
+                            <td className="py-1 text-right text-xs tabular-nums text-[color:var(--muted)]">
+                              {details.total_paid_amount.toLocaleString(
+                                "de-AT",
+                                { style: "currency", currency: "EUR" },
+                              )}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-sm text-[color:var(--muted)] text-center py-8">
+                    Keine Daten geladen.
+                  </div>
+                )}
+              </div>
               <div className="flex items-center gap-3 text-xs text-[color:var(--muted)]">
                 <a
                   href={`/cashflow/api/bot/rechnung/${createdInvoice.id}/pdf?download=1`}
                   download={`Rechnung-${createdInvoice.id}.pdf`}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
-                  title="PDF herunterladen"
+                  title="Original-PDF aus SimplyOrg herunterladen"
                 >
                   ⬇ Rechnung-{createdInvoice.id}.pdf herunterladen
                 </a>
                 <span className="opacity-70">
-                  PDF wird direkt aus SimplyOrg geholt — niemand muss
-                  sich einloggen.
+                  Daten direkt aus SimplyOrg — niemand muss sich einloggen.
                 </span>
               </div>
               {sendError ? (
