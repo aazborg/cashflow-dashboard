@@ -72,6 +72,14 @@ export async function updateDealAction(formData: FormData) {
   if (raten !== null) patch.anzahl_raten = Math.max(1, Math.round(raten));
   if (intervall) patch.intervall = intervall;
   if (betrag !== null) patch.betrag = betrag;
+  // Email-Adresse: editierbar fuer Mitarbeiter+Admins. Leerstring
+  // wird zu null (HubSpot-Sync ist hier irrelevant -- manueller
+  // Override zaehlt). Wird vom Rechnungs-Workflow als Lookup-Key
+  // gegen notiz_vorlagen.email verwendet.
+  if (formData.has("email")) {
+    const rawEmail = String(formData.get("email") ?? "").trim();
+    patch.email = rawEmail || null;
+  }
   // Original-Betrag dürfen nur Admins ändern. Members können das Feld
   // gar nicht aus dem Formular schicken (UI versteckt es), aber wir
   // filtern hier zusätzlich serverseitig.

@@ -103,6 +103,7 @@ export default function DealRow({
   const [betragOriginal, setBetragOriginal] = useState(
     deal.betrag_original != null ? String(deal.betrag_original) : "",
   );
+  const [email, setEmail] = useState(deal.email ?? "");
   const [start, setStart] = useState(deal.start_datum ?? "");
   const [raten, setRaten] = useState(
     deal.anzahl_raten != null ? String(deal.anzahl_raten) : "",
@@ -117,6 +118,7 @@ export default function DealRow({
     fd.set("start_datum", start);
     if (raten) fd.set("anzahl_raten", raten);
     if (intervall) fd.set("intervall", intervall);
+    fd.set("email", email.trim());
     startTransition(async () => {
       await updateDealAction(fd);
       setEditing(false);
@@ -181,9 +183,27 @@ export default function DealRow({
             </span>
           ) : null}
         </div>
-        {deal.email ? (
+        {editing ? (
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@beispiel.com"
+            className="mt-1 w-full border border-[color:var(--border)] rounded px-2 py-1 text-xs"
+            title="Email-Adresse — Schlüssel für den Rechnungs-Workflow (matcht gegen die Notiz-Vorlagen)"
+          />
+        ) : deal.email ? (
           <div className="text-xs text-[color:var(--muted)]">{deal.email}</div>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-[color:var(--brand-orange)] hover:underline"
+            title="Email ergänzen, damit der Rechnungs-Workflow die Vorlage findet"
+          >
+            ⚠ Email fehlt — klick zum Eintragen
+          </button>
+        )}
       </td>
       <td className="px-3 py-2 text-xs text-[color:var(--muted)]">
         {deal.mitarbeiter_name}
