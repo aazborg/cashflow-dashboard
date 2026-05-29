@@ -139,6 +139,10 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 
   const [zeilen, setZeilen] = useState<Zeile[]>([]);
   const [rechnungstitel, setRechnungstitel] = useState("");
+  // true = Titel wurde nie manuell editiert -> Auto-Fill aus Pos 1
+  // + Nachname darf weiter ueberschreiben. Sobald Mario tippt,
+  // bleibt sein Wert stehen.
+  const [titelTouched, setTitelTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitResult, setSubmitResult] = useState<unknown>(null);
@@ -184,6 +188,58 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     void ladeNotizVorlageFuerEmail(empfaenger.email);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empfaenger?.email]);
+
+  // Auto-Titel: 'Stammname von Pos 1' + Nachname des Empfaengers.
+  // Stammname = Position 1 (= Hauptprodukt, sonst erste Zeile) ohne
+  // 'Zert.'-Prefix und ohne Klammer-/Bindestrich-Postfix.
+  // Beispiel: 'Zert. NLP Practitioner (praesenz)' -> 'NLP Practitioner'.
+  // 'Lebens- und Sozialberatung' -> 'LSB'.
+  // Greift nur solange Mario das Feld nicht angefasst hat.
+  useEffect(() => {
+    if (!open) return;
+    if (titelTouched) return;
+    const pos1Name =
+      hauptprodukt
+      || zeilen.find((z) => (z.title || "").trim())?.title
+      || "";
+    const empfNachname = (() => {
+      const lbl = (empfaenger?.label
+                   || empfaenger?.name
+                   || empfaenger?.person_label
+                   || "").trim();
+      if (lbl) {
+        // 'Mustermann, Max' -> 'Mustermann', 'Max Mustermann' -> 'Mustermann'
+        const ohneTitel = lbl.replace(/,\s*(MA|MAS|MSc|BSc|PhD|Dr|Mag|Ing|MBA|LLM|MEd|BEd|BA).*$/i, "");
+        return ohneTitel.includes(",")
+          ? ohneTitel.split(",")[0].trim()
+          : (ohneTitel.split(/\s+/).pop() || "").trim();
+      }
+      return (deal.nachname || "").trim();
+    })();
+    if (!pos1Name && !empfNachname) {
+      return;
+    }
+    const stamm = (() => {
+      const n = pos1Name.trim();
+      if (!n) return "";
+      const low = n.toLowerCase();
+      if (low.includes("lebens") && low.includes("sozial")) return "LSB";
+      // Klammer und alles dahinter weg
+      let s = n.split("(")[0];
+      // Bindestrich-Suffixe weg ('NLP Practitioner - online' etc.)
+      s = s.split(/\s+[-–—]\s+/)[0];
+      // 'Zert.'-, 'Staatl.'-, 'Cert.'-Prefixe weg
+      s = s.replace(/^\s*(Staatl\.?\s*zert\.?|Zert\.?|Cert\.?)\s*/i, "");
+      // Trailing 'Online'/'Präsenz'/'Hybrid' (Modus-Suffix) weg
+      s = s.replace(/\s+(online|pr[aä]senz|hybrid)\s*$/i, "");
+      return s.trim();
+    })();
+    const auto = [stamm, empfNachname].filter(Boolean).join(" ").trim();
+    if (auto && auto !== rechnungstitel) {
+      setRechnungstitel(auto);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, hauptprodukt, zeilen, empfaenger, deal.nachname, titelTouched]);
 
   async function ladeNotizVorlagePerSuche(q: string) {
     try {
@@ -260,7 +316,12 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         name: v.name,
         hauptprodukt: v.hauptprodukt,
       });
-      if (v.rechnungstitel) setRechnungstitel(v.rechnungstitel);
+      if (v.rechnungstitel) {
+        setRechnungstitel(v.rechnungstitel);
+        // Explizit gespeicherter Titel zaehlt als "vom User gewollt"
+        // -> Auto-Effekt soll ihn nicht ueberschreiben.
+        setTitelTouched(true);
+      }
       if (v.hauptprodukt) {
         setHauptprodukt(v.hauptprodukt);
         // Hauptprodukt-Vorschläge & Default-Preis auch ziehen
@@ -746,18 +807,39 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
           ) : null}
         </section>
 
-        {/* --- Rechnungstitel (optional Override) --- */}
+        {/* --- Rechnungstitel (Auto-Fill: Pos-1-Stamm + Nachname) --- */}
         <section className="mb-5">
-          <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
-            Rechnungstitel (optional, sonst aus Hauptartikel)
-          </label>
+          <div className="flex items-baseline justify-between">
+            <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
+              Rechnungstitel
+            </label>
+            {titelTouched ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTitelTouched(false);
+                  setRechnungstitel("");
+                }}
+                className="text-xs text-[color:var(--brand-blue)] hover:underline"
+                title="Wieder automatisch aus Pos 1 + Nachname bilden"
+              >
+                ↻ Auto
+              </button>
+            ) : null}
+          </div>
           <input
             type="text"
             value={rechnungstitel}
-            onChange={(e) => setRechnungstitel(e.target.value)}
-            placeholder="z.B. „Zert. Life Coach Mustermann“"
+            onChange={(e) => {
+              setRechnungstitel(e.target.value);
+              setTitelTouched(true);
+            }}
+            placeholder="wird automatisch aus Pos 1 + Nachname gebildet"
             className="w-full border border-[color:var(--border)] rounded px-2 py-1 text-sm"
           />
+          <p className="text-xs text-[color:var(--muted)] mt-1">
+            Beispiel: „NLP Practitioner Müller". Du kannst überschreiben — „↻ Auto" stellt das Automatik-Verhalten wieder her.
+          </p>
         </section>
 
         {/* --- Hauptprodukt --- */}
