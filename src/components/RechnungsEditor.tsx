@@ -154,6 +154,8 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
   } | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Notiz-Vorlage fuer diese Deal-Email gefunden? Wird beim Open
   // automatisch geladen und als Pre-Fill verwendet.
@@ -720,6 +722,60 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     }
   }
 
+  // Lösch-Action: Draft in SimplyOrg loeschen und Verknuepfung
+  // in der Notiz-Vorlage entfernen, damit Mario eine neue Rechnung
+  // anlegen kann.
+  async function loescheRechnung() {
+    if (!createdInvoice || !vorlageInfo?.id) return;
+    if (createdInvoice.status !== "draft") return;
+    if (!window.confirm(
+      `Rechnung #${createdInvoice.id} in SimplyOrg löschen? `
+      + "Sie kann danach nicht wiederhergestellt werden."
+    )) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const r = await fetch(
+        botUrl(`rechnung/${createdInvoice.id}/delete`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok || j.ok === false) {
+        setDeleteError(
+          j.error || `Löschen fehlgeschlagen (HTTP ${r.status})`,
+        );
+        return;
+      }
+      // Vorlage-Verknuepfung entfernen
+      try {
+        await fetch(
+          `/cashflow/api/notiz-vorlagen/${vorlageInfo.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              rechnung_id: null,
+              rechnung_status: null,
+              rechnung_created_at: null,
+            }),
+          },
+        );
+      } catch (e) {
+        console.error("PATCH unlink", e);
+      }
+      setCreatedInvoice(null);
+      setSubmitResult(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Versende-Action: triggert den Send-Workflow im Bot
   // (Email + status -> 'sent') und aktualisiert die Vorlage.
   async function versendeRechnung() {
@@ -1080,9 +1136,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
               <iframe
                 key={`${createdInvoice.id}-${createdInvoice.status}`}
                 title={`Rechnung-${createdInvoice.id}.pdf`}
-                src={`/cashflow/api/bot/rechnung/${createdInvoice.id}/pdf${
-                  createdInvoice.status === "sent" ? "?refresh=1" : ""
-                }`}
+                src={`/cashflow/api/bot/rechnung/${createdInvoice.id}/pdf?refresh=1`}
                 className="w-full h-[60vh] border border-[color:var(--border)] rounded bg-white"
               />
               <div className="flex items-center gap-3 text-xs text-[color:var(--muted)]">
@@ -1104,11 +1158,27 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                   ❌ {sendError}
                 </div>
               ) : null}
+              {deleteError ? (
+                <div className="p-2 rounded bg-red-50 text-red-800 text-sm">
+                  ❌ {deleteError}
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="flex justify-end gap-2">
             {createdInvoice ? (
               <>
+                {createdInvoice.status === "draft" ? (
+                  <button
+                    type="button"
+                    onClick={loescheRechnung}
+                    disabled={deleting || sending}
+                    className="text-sm px-3 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 mr-auto"
+                    title="Diesen Draft in SimplyOrg löschen, damit eine neue Rechnung angelegt werden kann"
+                  >
+                    {deleting ? "Lösche…" : "🗑 Draft verwerfen"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={onClose}
@@ -1120,7 +1190,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                   <button
                     type="button"
                     onClick={versendeRechnung}
-                    disabled={sending}
+                    disabled={sending || deleting}
                     className="text-sm px-3 py-1 rounded bg-green-600 text-white disabled:opacity-50"
                     title="Versendet die Rechnung per Email an den Kunden und setzt den Status auf 'sent'"
                   >
