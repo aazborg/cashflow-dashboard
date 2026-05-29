@@ -1055,14 +1055,14 @@ export default function NotizGenerator() {
       {/* --- Hauptprodukt --- */}
       <section className="bg-[color:var(--surface)] border border-[color:var(--border)] rounded-lg p-4">
         <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-2">
-          Hauptprodukt
+          Hauptprodukt (optional)
         </label>
         <select
           value={hauptprodukt}
           onChange={(e) => selectHauptprodukt(e.target.value)}
           className="w-full border border-[color:var(--border)] rounded px-2 py-1.5 text-sm bg-white"
         >
-          <option value="">— wählen —</option>
+          <option value="">— kein Hauptprodukt (nur Einzelpositionen) —</option>
           {hauptprodukte.map((h) => (
             <option key={h.name} value={h.name}>
               {h.name}

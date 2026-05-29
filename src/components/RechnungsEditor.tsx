@@ -360,6 +360,14 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
 
   async function selectHauptprodukt(name: string) {
     setHauptprodukt(name);
+    // "kein Hauptprodukt" gewaehlt -> Vorschlaege ausblenden, aber
+    // vorhandene Positionen NICHT loeschen (Mario hat sie u.U. schon
+    // editiert).
+    if (!name) {
+      setVorschlaege(null);
+      setVorschlaegeLaden(false);
+      return;
+    }
     setVorschlaegeLaden(true);
     setVorschlaege(null);
     try {
@@ -513,20 +521,30 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
       setSubmitError("Empfänger auswählen.");
       return;
     }
-    if (!hauptprodukt) {
-      setSubmitError("Hauptprodukt auswählen.");
-      return;
+    // Hauptprodukt ist OPTIONAL: wenn nichts gewaehlt, schickt das
+    // Dashboard kein hauptartikel-Feld und das Backend uebersprigt
+    // die "vertrag-haupt"-Position. Nur die Positionen-Liste zaehlt.
+    let hauptArticle: { id: number; title: string } | null = null;
+    if (hauptprodukt) {
+      hauptArticle = await findArtikelByName(hauptprodukt);
+      if (!hauptArticle) {
+        setSubmitError(
+          `Hauptprodukt-Artikel "${hauptprodukt}" nicht im SimplyOrg-Katalog gefunden.`,
+        );
+        return;
+      }
     }
-    // Hauptartikel: bestehender Artikel mit dem Hauptprodukt-Namen finden
-    // (lazy load + match per Name). Wenn nicht eindeutig -> Fehler.
-    const hauptArticle = await findArtikelByName(hauptprodukt);
-    if (!hauptArticle) {
+    // Ohne Hauptprodukt UND ohne Positionen waere die Rechnung leer.
+    const positionenZuSenden = zeilen.filter(
+      (z) => z.modelId != null && z.kind,
+    );
+    if (!hauptArticle && positionenZuSenden.length === 0) {
       setSubmitError(
-        `Hauptprodukt-Artikel "${hauptprodukt}" nicht im SimplyOrg-Katalog gefunden.`,
+        "Mindestens eine Position oder ein Hauptprodukt nötig.",
       );
       return;
     }
-    const payload = {
+    const payload: Record<string, unknown> = {
       dry_run: dryRun,
       empfaenger: {
         person_id: empfaenger.person_id,
@@ -551,34 +569,34 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         || empfaenger.person_label
         || `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim()
       ),
-      hauptartikel: {
-        article_id: hauptArticle.id,
-        title: hauptArticle.title,
-        // preis bleibt null -> Backend ergaenzt aus Vertrag
-        tax_percent: 0,
-      },
       // Nur Positionen mit gesetztem SimplyOrg-Match werden gesendet.
       // Positionen ohne modelId (= nur Sales-Name aus der Notiz-
       // Vorlage uebernommen, noch kein Pick) werden uebersprungen --
       // Mario muss sie im Modal manuell zuordnen.
-      positionen: zeilen
-        .filter((z) => z.modelId != null && z.kind)
-        .map((z) => ({
-          kind: z.kind,
-          id: z.modelId,
-          model_typ: z.modelTyp,
-          title: z.title,
-          // preis/tax bleiben null -> Backend ergaenzt aus Vertrag
-          // (per Name-Match auf die Zusatz-Positionen)
-          termine_event_ids:
-            (z.kind === "reihe" || z.kind === "seminar")
-              ? z.terminEventIds
-              : undefined,
-          start_date: z.startDate,
-          end_date: z.endDate,
-          freitext_notiz: z.freitextNotiz || undefined,
-        })),
+      positionen: positionenZuSenden.map((z) => ({
+        kind: z.kind,
+        id: z.modelId,
+        model_typ: z.modelTyp,
+        title: z.title,
+        // preis/tax bleiben null -> Backend ergaenzt aus Vertrag
+        // (per Name-Match auf die Zusatz-Positionen)
+        termine_event_ids:
+          (z.kind === "reihe" || z.kind === "seminar")
+            ? z.terminEventIds
+            : undefined,
+        start_date: z.startDate,
+        end_date: z.endDate,
+        freitext_notiz: z.freitextNotiz || undefined,
+      })),
     };
+    if (hauptArticle) {
+      payload.hauptartikel = {
+        article_id: hauptArticle.id,
+        title: hauptArticle.title,
+        // preis bleibt null -> Backend ergaenzt aus Vertrag
+        tax_percent: 0,
+      };
+    }
     setSubmitting(true);
     try {
       const r = await fetch(botUrl("rechnung"), {
@@ -745,7 +763,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         {/* --- Hauptprodukt --- */}
         <section className="mb-5">
           <label className="block text-xs uppercase tracking-wider text-[color:var(--muted)] mb-1">
-            Hauptprodukt (Pos 1)
+            Hauptprodukt (Pos 1) — optional
           </label>
           <div className="flex gap-2">
             <select
@@ -753,7 +771,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
               onChange={(e) => selectHauptprodukt(e.target.value)}
               className="flex-1 border border-[color:var(--border)] rounded px-2 py-1 text-sm"
             >
-              <option value="">— wählen —</option>
+              <option value="">— kein Hauptprodukt (nur Einzelpositionen) —</option>
               {hauptprodukte.map((h) => (
                 <option key={h.name} value={h.name}>
                   {h.name}
@@ -766,7 +784,9 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
           </div>
           <p className="text-xs text-[color:var(--muted)] mt-1">
             Preise werden automatisch aus dem signierten Vertrag in
-            Drive geholt — du musst hier nichts eintragen.
+            Drive geholt — du musst hier nichts eintragen. Bei
+            Einzelprodukten (kein Vertrag mit Haupt + Zusatz) einfach
+            „kein Hauptprodukt" lassen und nur Positionen anlegen.
           </p>
           {vorschlaegeLaden ? (
             <p className="text-xs text-[color:var(--muted)] mt-1">
