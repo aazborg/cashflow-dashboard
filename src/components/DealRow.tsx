@@ -124,8 +124,27 @@ export default function DealRow({
         </td>
       ) : null}
       <td className="px-3 py-2">
-        <div className="font-medium">
-          {deal.vorname} {deal.nachname}
+        <div className="font-medium flex items-center gap-2 flex-wrap">
+          <span>
+            {deal.vorname} {deal.nachname}
+          </span>
+          {/* Status-Badge: 'auf einen Blick' sichtbar dass eine
+              Rechnung existiert und in welchem Zustand. */}
+          {rechnungInfo?.rechnung_status === "sent" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-green-600 text-white"
+              title={`Rechnung #${rechnungInfo.rechnung_id} versendet`}
+            >
+              ✓ Versendet
+            </span>
+          ) : rechnungInfo?.rechnung_status === "draft" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-[color:var(--brand-orange)] text-white"
+              title={`Rechnung #${rechnungInfo.rechnung_id} angelegt, noch nicht versendet`}
+            >
+              ● Draft
+            </span>
+          ) : null}
         </div>
         {deal.email ? (
           <div className="text-xs text-[color:var(--muted)]">{deal.email}</div>
