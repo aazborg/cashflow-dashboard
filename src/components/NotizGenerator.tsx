@@ -316,6 +316,22 @@ export default function NotizGenerator() {
   const [allArticles, setAllArticles] = useState<Article[]>([]);
   const [allReihen, setAllReihen] = useState<Reihe[]>([]);
   const [allEinzel, setAllEinzel] = useState<EinzelSeminar[]>([]);
+  // Pre-Cache-Status pro Pool: 'loading' | 'done' | 'error'.
+  // Sichtbar als Mini-Banner oben + Inline-Hinweis in den Such-Dropdowns,
+  // damit Mario sieht ob die Daten schon da sind oder noch geladen werden.
+  const [poolStatus, setPoolStatus] = useState<{
+    articles: PoolStatus;
+    reihen: PoolStatus;
+    einzel: PoolStatus;
+  }>({ articles: "loading", reihen: "loading", einzel: "loading" });
+  const allPoolsReady =
+    poolStatus.articles === "done"
+    && poolStatus.reihen === "done"
+    && poolStatus.einzel === "done";
+  const anyPoolLoading =
+    poolStatus.articles === "loading"
+    || poolStatus.reihen === "loading"
+    || poolStatus.einzel === "loading";
   const [vorschlaege, setVorschlaege] = useState<{
     pflicht: Vorschlag[];
     haeufig: Vorschlag[];
@@ -383,32 +399,35 @@ export default function NotizGenerator() {
 
   // Pre-Cache: alle 3 Pools beim Mount EINMAL laden, dann filtert
   // searchZeile nur noch lokal -> jede Tasteneingabe instant,
-  // kein Tunnel-Lag.
+  // kein Tunnel-Lag. Jeder Pool wird unabhaengig geladen und sein
+  // Status getrackt, damit Mario im UI sieht was bereit ist.
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
+    type Key = "articles" | "reihen" | "einzel";
+    type Setter =
+      | ((v: Article[]) => void)
+      | ((v: Reihe[]) => void)
+      | ((v: EinzelSeminar[]) => void);
+    const loadPool = async (
+      key: Key,
+      path: string,
+      setter: Setter,
+    ) => {
       try {
-        const fetchJson = async (path: string) => {
-          try {
-            const r = await fetch(path);
-            return await r.json();
-          } catch {
-            return { data: [] };
-          }
-        };
-        const [jA, jR, jE] = await Promise.all([
-          fetchJson(botUrl("articles")),
-          fetchJson(botUrl("seminare")),
-          fetchJson(botUrl("einzelseminare")),
-        ]);
+        const r = await fetch(path);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
         if (cancelled) return;
-        setAllArticles((jA.data ?? []) as Article[]);
-        setAllReihen((jR.data ?? []) as Reihe[]);
-        setAllEinzel((jE.data ?? []) as EinzelSeminar[]);
+        (setter as (v: unknown[]) => void)((j.data ?? []) as unknown[]);
+        setPoolStatus((s) => ({ ...s, [key]: "done" }));
       } catch (e) {
-        console.error("preload", e);
+        console.error("preload", key, e);
+        if (!cancelled) setPoolStatus((s) => ({ ...s, [key]: "error" }));
       }
-    })();
+    };
+    void loadPool("articles", botUrl("articles"), setAllArticles as Setter);
+    void loadPool("reihen", botUrl("seminare"), setAllReihen as Setter);
+    void loadPool("einzel", botUrl("einzelseminare"), setAllEinzel as Setter);
     return () => { cancelled = true; };
   }, []);
 
@@ -745,12 +764,22 @@ export default function NotizGenerator() {
       updateZeile(uid, { searchResults: [], searching: false });
       return;
     }
+    // Wenn der relevante Pool noch laedt, 'searching' anlassen --
+    // ZeileEditor zeigt dann den Lade-Hinweis im Dropdown an.
+    const relevantStillLoading =
+      kind === "artikel"
+        ? poolStatus.articles === "loading"
+        : (poolStatus.reihen === "loading"
+          || poolStatus.einzel === "loading");
     const lq = q.toLowerCase();
     if (kind === "artikel") {
       const hits = allArticles
         .filter((a) => (a.title || "").toLowerCase().includes(lq))
         .slice(0, 20);
-      updateZeile(uid, { searchResults: hits, searching: false });
+      updateZeile(uid, {
+        searchResults: hits,
+        searching: relevantStillLoading,
+      });
       return;
     }
     // kind === "reihe" -> SOWOHL Reihen (mit Modulen) ALS AUCH
@@ -763,8 +792,40 @@ export default function NotizGenerator() {
         (e.name || "").toLowerCase().includes(lq),
       ),
     ].slice(0, 30);
-    updateZeile(uid, { searchResults: hits, searching: false });
+    updateZeile(uid, {
+      searchResults: hits,
+      searching: relevantStillLoading,
+    });
   }
+
+  // Sobald ein Pool fertig wird waehrend Mario schon getippt hat:
+  // jede offene Zeile mit Such-Query nochmal lokal filtern, damit
+  // die Treffer auch ohne erneutes Tippen erscheinen.
+  useEffect(() => {
+    if (anyPoolLoading) return;
+    setZeilen((prev) =>
+      prev.map((z) => {
+        if (!z.kind || !z.salesName.trim() || z.modelId != null) return z;
+        const q = z.salesName.trim().toLowerCase();
+        if (q.length < 2) return z;
+        if (z.kind === "artikel") {
+          const hits = allArticles
+            .filter((a) => (a.title || "").toLowerCase().includes(q))
+            .slice(0, 20);
+          return { ...z, searchResults: hits, searching: false };
+        }
+        const hits = [
+          ...allReihen.filter((r) =>
+            (r.name || "").toLowerCase().includes(q),
+          ),
+          ...allEinzel.filter((e) =>
+            (e.name || "").toLowerCase().includes(q),
+          ),
+        ].slice(0, 30);
+        return { ...z, searchResults: hits, searching: false };
+      }),
+    );
+  }, [anyPoolLoading, allArticles, allReihen, allEinzel]);
 
   function pickSearchHit(uid: string, hit: Article | Reihe | EinzelSeminar) {
     const z = zeilen.find((x) => x.uid === uid);
@@ -890,6 +951,18 @@ export default function NotizGenerator() {
           📚 Vorlagen durchsuchen
         </button>
       </div>
+
+      {/* Pre-Cache-Status: zeigt welche Pools fertig sind. Solange
+          irgendwas laedt, wird die Bar als "wird geladen" markiert.
+          Nach Erfolg kurz gruen, dann ausblenden. */}
+      <PreloadStatusBanner
+        articles={poolStatus.articles}
+        reihen={poolStatus.reihen}
+        einzel={poolStatus.einzel}
+        articlesCount={allArticles.length}
+        reihenCount={allReihen.length}
+        einzelCount={allEinzel.length}
+      />
 
       {/* --- Kunde + Vorlagen --- */}
       <section className="bg-[color:var(--surface)] border border-[color:var(--border)] rounded-lg p-4">
@@ -1090,6 +1163,7 @@ export default function NotizGenerator() {
               zeile={z}
               first={idx === 0}
               last={idx === zeilen.length - 1}
+              poolsReady={allPoolsReady}
               onUpdate={(patch) => updateZeile(z.uid, patch)}
               onRemove={() => removeZeile(z.uid)}
               onMove={(dir) => moveZeile(z.uid, dir)}
@@ -1208,12 +1282,90 @@ export default function NotizGenerator() {
   );
 }
 
+// --- Sub-Komponente: Pre-Cache-Status-Banner -----------------------
+type PoolStatus = "loading" | "done" | "error";
+function PreloadStatusBanner({
+  articles,
+  reihen,
+  einzel,
+  articlesCount,
+  reihenCount,
+  einzelCount,
+}: {
+  articles: PoolStatus;
+  reihen: PoolStatus;
+  einzel: PoolStatus;
+  articlesCount: number;
+  reihenCount: number;
+  einzelCount: number;
+}) {
+  const allDone =
+    articles === "done" && reihen === "done" && einzel === "done";
+  const anyError =
+    articles === "error" || reihen === "error" || einzel === "error";
+  const anyLoading =
+    articles === "loading" || reihen === "loading" || einzel === "loading";
+  // Bar nach voll-Erfolg ausblenden (kurz angezeigt durch leicht
+  // verzoegerten Mount-Effekt). Wir setzen einfach die Klasse, kein
+  // Auto-Hide nach Timer noetig -- Mario sieht so dauerhaft im UI was
+  // im Cache liegt, falls er nochmal nachschaut.
+  const cls = anyError
+    ? "bg-red-50 border-red-300 text-red-800"
+    : anyLoading
+    ? "bg-[color:var(--brand-blue)]/10 border-[color:var(--brand-blue)]/40 text-[color:var(--brand-blue)]"
+    : "bg-green-50 border-green-300 text-green-800";
+
+  function poolBadge(label: string, st: PoolStatus, count: number) {
+    if (st === "loading") {
+      return (
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+          {label} laden…
+        </span>
+      );
+    }
+    if (st === "error") {
+      return <span>{label}: ❌</span>;
+    }
+    return (
+      <span>
+        {label}: ✓ {count.toLocaleString("de-AT")}
+      </span>
+    );
+  }
+
+  return (
+    <div
+      className={`flex items-center justify-between gap-4 px-3 py-2 text-xs rounded border ${cls}`}
+    >
+      <div className="flex items-center gap-4 flex-wrap">
+        {anyLoading ? (
+          <strong>Lade Such-Index aus SimplyOrg…</strong>
+        ) : anyError ? (
+          <strong>Such-Index unvollständig</strong>
+        ) : (
+          <strong>Such-Index bereit</strong>
+        )}
+        {poolBadge("Artikel", articles, articlesCount)}
+        {poolBadge("Reihen", reihen, reihenCount)}
+        {poolBadge("Einzelseminare", einzel, einzelCount)}
+      </div>
+      {anyLoading && !allDone ? (
+        <span className="opacity-70">
+          Suche wird verfügbar, sobald die Daten geladen sind.
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 // --- Sub-Komponente: eine Zeile ------------------------------------
 interface ZeileProps {
   idx: number;
   zeile: Zeile;
   first: boolean;
   last: boolean;
+  poolsReady: boolean;
   onUpdate: (patch: Partial<Zeile>) => void;
   onRemove: () => void;
   onMove: (dir: -1 | 1) => void;
@@ -1227,6 +1379,7 @@ function ZeileEditor({
   zeile,
   first,
   last,
+  poolsReady,
   onUpdate,
   onRemove,
   onMove,
@@ -1372,7 +1525,19 @@ function ZeileEditor({
               className="w-full border border-[color:var(--border)] rounded px-2 py-1 text-sm"
             />
             {zeile.searching ? (
-              <div className="absolute right-2 top-1 text-xs text-[color:var(--muted)]">…</div>
+              <div className="absolute right-2 top-1 text-xs text-[color:var(--brand-blue)] flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              </div>
+            ) : null}
+            {/* Pools noch nicht fertig + Mario tippt schon -> Hinweis */}
+            {!poolsReady
+              && !isPicked
+              && zeile.salesName.trim().length >= 2
+              && zeile.searchResults.length === 0 ? (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-[color:var(--surface)] border border-[color:var(--brand-blue)]/40 rounded shadow-lg px-3 py-2 text-xs text-[color:var(--brand-blue)] flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
+                Such-Index wird noch geladen — gleich verfügbar.
+              </div>
             ) : null}
             {zeile.searchResults.length > 0 && !isPicked ? (
               <div className="absolute z-10 left-0 right-0 mt-1 max-h-72 overflow-y-auto bg-[color:var(--surface)] border border-[color:var(--border)] rounded shadow-lg">
