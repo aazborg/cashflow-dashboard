@@ -7,6 +7,60 @@ const HUBSPOT_BASE = "https://api.hubapi.com";
 export const NEUKUNDEN_PIPELINE_ID = "1591488724";
 export const CLOSED_WON_STAGE_ID = "2174705850";
 
+/**
+ * Holt dynamisch alle Stage-IDs aus allen Deal-Pipelines, die
+ * 'Closed Won' sind (metadata.probability === '1.0' und
+ * metadata.isClosed === 'true'). Damit kann das Dashboard auch
+ * Deals aus anderen Pipelines (Bestandskunden, Re-Booking, ...)
+ * uebernehmen sobald sie auf 'gewonnen' gesetzt werden -- nicht
+ * nur die Neukunden-Pipeline.
+ *
+ * Result wird waehrend des Funktionsaufrufs gecached. Beim
+ * naechsten Aufruf neu geholt (HubSpot kann neue Pipelines/Stages
+ * einrichten).
+ */
+let _wonStageCache: { ids: Set<string>; ts: number } | null = null;
+const WON_STAGE_TTL_MS = 5 * 60 * 1000; // 5 Min
+
+export async function getWonStageIds(token: string): Promise<Set<string>> {
+  if (_wonStageCache && Date.now() - _wonStageCache.ts < WON_STAGE_TTL_MS) {
+    return _wonStageCache.ids;
+  }
+  const res = await fetch(`${HUBSPOT_BASE}/crm/v3/pipelines/deals`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    // Fallback: harter Neukunden-Wert, damit das System nicht ausfaellt
+    // wenn HubSpot kurzzeitig nicht erreichbar ist.
+    return new Set([CLOSED_WON_STAGE_ID]);
+  }
+  const j = (await res.json()) as {
+    results?: Array<{
+      id: string;
+      label: string;
+      stages?: Array<{
+        id: string;
+        label: string;
+        metadata?: { probability?: string; isClosed?: string | boolean };
+      }>;
+    }>;
+  };
+  const ids = new Set<string>();
+  for (const pl of j.results ?? []) {
+    for (const st of pl.stages ?? []) {
+      const prob = st.metadata?.probability;
+      const closed = st.metadata?.isClosed;
+      if (prob === "1.0" && (closed === "true" || closed === true)) {
+        ids.add(st.id);
+      }
+    }
+  }
+  // Sicherheitsnetz: alter hartcodierter Wert immer mit drin
+  ids.add(CLOSED_WON_STAGE_ID);
+  _wonStageCache = { ids, ts: Date.now() };
+  return ids;
+}
+
 interface HubspotDealResult {
   id: string;
   properties: {
@@ -213,21 +267,21 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
   let unmatched_owners = 0;
   const errors: SyncSummary["errors"] = [];
 
+  // Alle Won-Stages aller Pipelines holen (dynamisch, gecached 5 Min).
+  // Damit kommen Deals jeder Pipeline ins Dashboard, sobald sie auf
+  // "Closed Won" gesetzt werden.
+  const wonStageIds = Array.from(await getWonStageIds(token));
   do {
     const filters: Array<{
       propertyName: string;
       operator: string;
-      value: string;
+      value?: string;
+      values?: string[];
     }> = [
       {
-        propertyName: "pipeline",
-        operator: "EQ",
-        value: NEUKUNDEN_PIPELINE_ID,
-      },
-      {
         propertyName: "dealstage",
-        operator: "EQ",
-        value: CLOSED_WON_STAGE_ID,
+        operator: "IN",
+        values: wonStageIds,
       },
     ];
     if (cutoffMillis !== null && !Number.isNaN(cutoffMillis)) {

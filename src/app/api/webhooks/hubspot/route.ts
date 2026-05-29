@@ -6,10 +6,7 @@ import {
   listEmployees,
   upsertDealByHubspotId,
 } from "@/lib/store";
-import {
-  CLOSED_WON_STAGE_ID,
-  NEUKUNDEN_PIPELINE_ID,
-} from "@/lib/hubspot-sync";
+import { getWonStageIds } from "@/lib/hubspot-sync";
 import type { Employee } from "@/lib/types";
 
 const HUBSPOT_BASE = "https://api.hubapi.com";
@@ -218,6 +215,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Won-Stages aller Pipelines dynamisch holen (gecached 5 Min).
+    // Damit landen Deals aus jeder Pipeline im Dashboard sobald
+    // sie auf 'Closed Won' (probability=1, isClosed=true) gesetzt
+    // werden -- nicht nur die Neukunden-Pipeline.
+    const wonStageIds = await getWonStageIds(token);
     for (const dealId of dealIds) {
       try {
         const deal = await fetchDeal(token, dealId);
@@ -225,14 +227,12 @@ export async function POST(req: NextRequest) {
           results.push({ skipped: true, reason: "not_found", dealId });
           continue;
         }
-        // Filter: nur Won-Deals der Neukunden-Pipeline kommen ins Dashboard.
-        if (
-          deal.properties.pipeline !== NEUKUNDEN_PIPELINE_ID ||
-          deal.properties.dealstage !== CLOSED_WON_STAGE_ID
-        ) {
+        // Filter: dealstage muss eine Won-Stage irgendeiner
+        // Pipeline sein.
+        if (!wonStageIds.has(deal.properties.dealstage ?? "")) {
           results.push({
             skipped: true,
-            reason: "wrong_pipeline_or_stage",
+            reason: "not_won_stage",
             dealId,
             pipeline: deal.properties.pipeline,
             stage: deal.properties.dealstage,
