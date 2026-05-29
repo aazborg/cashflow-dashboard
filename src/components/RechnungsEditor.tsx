@@ -342,8 +342,11 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
       }
       if (v.hauptprodukt) {
         setHauptprodukt(v.hauptprodukt);
-        // Hauptprodukt-Vorschläge & Default-Preis auch ziehen
-        void selectHauptprodukt(v.hauptprodukt);
+        // Vorschlaege im Hintergrund laden (fuer die '+ XYZ'-
+        // Buttons), aber NICHT die geladenen Vorlage-Positionen
+        // ueberschreiben -- sonst sieht Mario am Ende nur die 2
+        // Pflicht-Defaults statt seiner 6 Vorlage-Zeilen.
+        void selectHauptprodukt(v.hauptprodukt, false);
       }
       // Notiz-Zeilen -> Rechnungs-Zeilen mappen.
       // WICHTIG: kein Filter auf modelId -- Mario hat im
@@ -437,7 +440,9 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     }
   }
 
-  async function selectHauptprodukt(name: string) {
+  async function selectHauptprodukt(
+    name: string, applyDefaults: boolean = true,
+  ) {
     setHauptprodukt(name);
     // "kein Hauptprodukt" gewaehlt -> Vorschlaege ausblenden, aber
     // vorhandene Positionen NICHT loeschen (Mario hat sie u.U. schon
@@ -463,10 +468,15 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         haeufig: j.haeufig ?? [],
         gelegentlich: j.gelegentlich ?? [],
       });
-      // Pflicht-Vorschläge direkt als Zeilen anlegen (vorausgefüllt)
-      const pflicht: Vorschlag[] = j.pflicht ?? [];
-      if (pflicht.length > 0) {
-        setZeilen(pflicht.map((v) => vorschlagZuZeile(v)));
+      // Pflicht-Vorschlaege direkt als Zeilen anlegen --
+      // NUR wenn applyDefaults=true (z.B. User waehlt im Dropdown).
+      // Beim Laden aus einer Vorlage NICHT, sonst werden die
+      // bereits geladenen Vorlage-Positionen ueberschrieben.
+      if (applyDefaults) {
+        const pflicht: Vorschlag[] = j.pflicht ?? [];
+        if (pflicht.length > 0) {
+          setZeilen(pflicht.map((v) => vorschlagZuZeile(v)));
+        }
       }
     } catch (e) {
       console.error("vorschlag", e);
