@@ -150,8 +150,10 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
   // ('Vorschau pruefen, dann Versenden').
   const [createdInvoice, setCreatedInvoice] = useState<{
     id: number;
-    status: "draft" | "sent";
+    status: "draft" | "sent" | "cancelled";
   } | null>(null);
+  const [stornieren, setStornieren] = useState(false);
+  const [stornoError, setStornoError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -799,6 +801,55 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
     };
   }, [createdInvoice, deal.nachname]);
 
+  // Storno-Action: versendete Rechnung als Gutschrift markieren
+  // (toCreditNote in SimplyOrg). Damit kann Mario fuer den Deal
+  // wieder eine neue Rechnung anlegen.
+  async function storniereRechnung() {
+    if (!createdInvoice || !vorlageInfo?.id) return;
+    if (createdInvoice.status !== "sent") return;
+    if (!window.confirm(
+      `Rechnung #${createdInvoice.id} stornieren? `
+      + "SimplyOrg legt eine Gutschrift über denselben Betrag an. "
+      + "Die Original-Rechnung bleibt im System."
+    )) return;
+    setStornieren(true);
+    setStornoError(null);
+    try {
+      const r = await fetch(
+        botUrl(`rechnung/${createdInvoice.id}/storno`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok || j.ok === false) {
+        setStornoError(
+          j.error || `Stornierung fehlgeschlagen (HTTP ${r.status})`,
+        );
+        return;
+      }
+      try {
+        await fetch(
+          `/cashflow/api/notiz-vorlagen/${vorlageInfo.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rechnung_status: "cancelled" }),
+          },
+        );
+      } catch (e) {
+        console.error("PATCH cancelled-status", e);
+      }
+      setCreatedInvoice({ ...createdInvoice, status: "cancelled" });
+    } catch (e) {
+      setStornoError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStornieren(false);
+    }
+  }
+
   // Lösch-Action: Draft in SimplyOrg loeschen und Verknuepfung
   // in der Notiz-Vorlage entfernen, damit Mario eine neue Rechnung
   // anlegen kann.
@@ -1180,6 +1231,8 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                 className={`p-3 rounded text-sm flex items-center justify-between gap-2 ${
                   createdInvoice.status === "sent"
                     ? "bg-green-50 text-green-800"
+                    : createdInvoice.status === "cancelled"
+                    ? "bg-red-50 text-red-800"
                     : "bg-[color:var(--brand-orange)]/10 text-[color:var(--brand-orange)]"
                 }`}
               >
@@ -1191,6 +1244,12 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                         {empfaenger?.email || deal.email}
                       </strong>{" "}
                       versendet.
+                    </span>
+                  ) : createdInvoice.status === "cancelled" ? (
+                    <span>
+                      ⛔ Rechnung #{createdInvoice.id} storniert — in
+                      SimplyOrg wurde eine Gutschrift angelegt. Du kannst
+                      jetzt eine neue Rechnung für diesen Deal erstellen.
                     </span>
                   ) : (
                     <span>
@@ -1364,6 +1423,11 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                   ❌ {deleteError}
                 </div>
               ) : null}
+              {stornoError ? (
+                <div className="p-2 rounded bg-red-50 text-red-800 text-sm">
+                  ❌ {stornoError}
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="flex justify-end gap-2">
@@ -1380,12 +1444,23 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                     {deleting ? "Lösche…" : "🗑 Draft verwerfen"}
                   </button>
                 ) : null}
+                {createdInvoice.status === "sent" ? (
+                  <button
+                    type="button"
+                    onClick={storniereRechnung}
+                    disabled={stornieren}
+                    className="text-sm px-3 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50 mr-auto"
+                    title="Versendete Rechnung stornieren (SimplyOrg legt eine Gutschrift an)"
+                  >
+                    {stornieren ? "Storniere…" : "⛔ Stornieren (Gutschrift)"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={onClose}
                   className="text-sm px-3 py-1 rounded border border-[color:var(--border)]"
                 >
-                  {createdInvoice.status === "sent" ? "Schließen" : "Später"}
+                  {createdInvoice.status === "draft" ? "Später" : "Schließen"}
                 </button>
                 {createdInvoice.status === "draft" ? (
                   <button

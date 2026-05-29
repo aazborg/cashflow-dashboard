@@ -75,9 +75,9 @@ export async function PATCH(req: NextRequest, ctx: Context) {
   }
   if ("rechnung_status" in body) {
     const v = body.rechnung_status as string | null;
-    if (v != null && !["draft", "sent"].includes(v)) {
+    if (v != null && !["draft", "sent", "cancelled"].includes(v)) {
       return NextResponse.json(
-        { error: "rechnung_status muss 'draft' oder 'sent' sein" },
+        { error: "rechnung_status muss 'draft', 'sent' oder 'cancelled' sein" },
         { status: 400 },
       );
     }

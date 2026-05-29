@@ -32,7 +32,7 @@ export default function DealRow({
   // in unserer DB? Status 'draft'|'sent'|null. Steuert Button-Farbe.
   const [rechnungInfo, setRechnungInfo] = useState<{
     rechnung_id: number | null;
-    rechnung_status: "draft" | "sent" | null;
+    rechnung_status: "draft" | "sent" | "cancelled" | null;
   } | null>(null);
   useEffect(() => {
     if (!canCreateRechnung) return;
@@ -52,8 +52,10 @@ export default function DealRow({
         // 1) Lookup via Deal-Email (exakter Match). Greift wenn
         //    HubSpot fuer den Deal eine Email gespeichert hat und
         //    die mit der Vorlage uebereinstimmt.
-        let v: { rechnung_id?: number | null;
-                  rechnung_status?: "draft" | "sent" | null } | undefined;
+        let v: {
+          rechnung_id?: number | null;
+          rechnung_status?: "draft" | "sent" | "cancelled" | null;
+        } | undefined;
         if (hasEmail) {
           const r = await fetch(
             `/cashflow/api/notiz-vorlagen?email=${encodeURIComponent(deal.email ?? "")}`,
@@ -180,6 +182,13 @@ export default function DealRow({
               title={`Rechnung #${rechnungInfo.rechnung_id} angelegt, noch nicht versendet`}
             >
               ● Draft
+            </span>
+          ) : rechnungInfo?.rechnung_status === "cancelled" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-600 text-white"
+              title={`Rechnung #${rechnungInfo.rechnung_id} storniert — Gutschrift in SimplyOrg`}
+            >
+              ⛔ Storniert
             </span>
           ) : null}
         </div>
@@ -352,15 +361,20 @@ export default function DealRow({
                       if (st === "draft") {
                         return base + "bg-[color:var(--brand-orange)] text-white hover:opacity-90";
                       }
+                      if (st === "cancelled") {
+                        return base + "bg-red-600 text-white hover:bg-red-700";
+                      }
                       return base + "border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10";
                     })()}
                     title={(() => {
                       const st = rechnungInfo?.rechnung_status;
                       const id = rechnungInfo?.rechnung_id;
                       if (st === "sent")
-                        return `Rechnung #${id} versendet — klicken zum Anzeigen`;
+                        return `Rechnung #${id} versendet — klicken zum Anzeigen oder Stornieren`;
                       if (st === "draft")
                         return `Rechnung #${id} als Draft angelegt — klicken zum Prüfen + Versenden`;
+                      if (st === "cancelled")
+                        return `Rechnung #${id} storniert (Gutschrift in SimplyOrg) — klicken zum Anzeigen`;
                       return "SimplyOrg-Rechnung für diesen Deal erstellen (Beta)";
                     })()}
                   >
@@ -368,6 +382,8 @@ export default function DealRow({
                       ? "Rechnung ✓"
                       : rechnungInfo?.rechnung_status === "draft"
                       ? "Rechnung (Draft)"
+                      : rechnungInfo?.rechnung_status === "cancelled"
+                      ? "Rechnung (storniert)"
                       : "Rechnung"}
                   </button>
                 ) : null}
