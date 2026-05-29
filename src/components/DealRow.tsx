@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import {
   requestDeleteAction,
   updateDealAction,
@@ -28,6 +28,39 @@ export default function DealRow({
   onToggleSelect,
 }: Props) {
   const [rechnungsModalOpen, setRechnungsModalOpen] = useState(false);
+  // Lookup: gibt es fuer diese Deal-Email schon eine Rechnung
+  // in unserer DB? Status 'draft'|'sent'|null. Steuert Button-Farbe.
+  const [rechnungInfo, setRechnungInfo] = useState<{
+    rechnung_id: number | null;
+    rechnung_status: "draft" | "sent" | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!canCreateRechnung || !deal.email) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/cashflow/api/notiz-vorlagen?email=${encodeURIComponent(deal.email ?? "")}`,
+        );
+        const j = await r.json();
+        if (cancelled) return;
+        const v = (j.data || [])[0];
+        if (v?.rechnung_id) {
+          setRechnungInfo({
+            rechnung_id: v.rechnung_id,
+            rechnung_status: v.rechnung_status ?? "draft",
+          });
+        } else {
+          setRechnungInfo(null);
+        }
+      } catch {
+        // ignore -- Button bleibt im Default-State
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canCreateRechnung, deal.email, rechnungsModalOpen]);
   const showCheckbox = typeof selected === "boolean" && !!onToggleSelect;
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
@@ -236,10 +269,32 @@ export default function DealRow({
                 {canCreateRechnung ? (
                   <button
                     onClick={() => setRechnungsModalOpen(true)}
-                    className="text-xs px-2 py-1 rounded border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 mr-1"
-                    title="SimplyOrg-Rechnung für diesen Deal erstellen (Beta)"
+                    className={(() => {
+                      const base = "text-xs px-2 py-1 rounded mr-1 ";
+                      const st = rechnungInfo?.rechnung_status;
+                      if (st === "sent") {
+                        return base + "bg-green-600 text-white hover:bg-green-700";
+                      }
+                      if (st === "draft") {
+                        return base + "bg-[color:var(--brand-orange)] text-white hover:opacity-90";
+                      }
+                      return base + "border border-[color:var(--brand-blue)] text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10";
+                    })()}
+                    title={(() => {
+                      const st = rechnungInfo?.rechnung_status;
+                      const id = rechnungInfo?.rechnung_id;
+                      if (st === "sent")
+                        return `Rechnung #${id} versendet — klicken zum Anzeigen`;
+                      if (st === "draft")
+                        return `Rechnung #${id} als Draft angelegt — klicken zum Prüfen + Versenden`;
+                      return "SimplyOrg-Rechnung für diesen Deal erstellen (Beta)";
+                    })()}
                   >
-                    Rechnung
+                    {rechnungInfo?.rechnung_status === "sent"
+                      ? "Rechnung ✓"
+                      : rechnungInfo?.rechnung_status === "draft"
+                      ? "Rechnung (Draft)"
+                      : "Rechnung"}
                   </button>
                 ) : null}
                 <button

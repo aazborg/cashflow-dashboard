@@ -59,7 +59,8 @@ export async function GET(req: NextRequest) {
     .from("notiz_vorlagen")
     .select(
       "id, email, name, hauptprodukt, rechnungstitel, notiz_text, "
-        + "rechnung_id, rechnung_created_at, created_at, updated_at",
+        + "rechnung_id, rechnung_status, rechnung_created_at, "
+        + "created_at, updated_at",
     )
     .order("created_at", { ascending: false })
     .limit(limit);

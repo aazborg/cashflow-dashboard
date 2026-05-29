@@ -146,6 +146,14 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitResult, setSubmitResult] = useState<unknown>(null);
+  // Nach erfolgreicher LIVE-Anlage: Invoice + 2-Stufen-Workflow
+  // ('Vorschau pruefen, dann Versenden').
+  const [createdInvoice, setCreatedInvoice] = useState<{
+    id: number;
+    status: "draft" | "sent";
+  } | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // Notiz-Vorlage fuer diese Deal-Email gefunden? Wird beim Open
   // automatisch geladen und als Pre-Fill verwendet.
@@ -316,6 +324,14 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         name: v.name,
         hauptprodukt: v.hauptprodukt,
       });
+      // Hat diese Vorlage bereits eine angelegte Rechnung? Dann
+      // direkt in den Preview-/Versende-Modus springen.
+      if (v.rechnung_id) {
+        setCreatedInvoice({
+          id: Number(v.rechnung_id),
+          status: (v.rechnung_status === "sent" ? "sent" : "draft"),
+        });
+      }
       if (v.rechnungstitel) {
         setRechnungstitel(v.rechnungstitel);
         // Explizit gespeicherter Titel zaehlt als "vom User gewollt"
@@ -671,11 +687,79 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         setSubmitResult(j);
       } else {
         setSubmitResult(j);
+        // Live-Anlage erfolgreich + invoice_id da -> Status der
+        // Vorlage auf 'draft' setzen und Preview anzeigen, damit Mario
+        // visuell pruefen kann bevor er versendet.
+        const invoiceId = (j as {
+          result?: { invoice_id?: number | null };
+        })?.result?.invoice_id;
+        if (!dryRun && invoiceId && vorlageInfo?.id) {
+          try {
+            await fetch(
+              `/cashflow/api/notiz-vorlagen/${vorlageInfo.id}`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  rechnung_id: invoiceId,
+                  rechnung_status: "draft",
+                  rechnung_created_at: new Date().toISOString(),
+                }),
+              },
+            );
+          } catch (e) {
+            console.error("PATCH rechnung_status", e);
+          }
+          setCreatedInvoice({ id: invoiceId, status: "draft" });
+        }
       }
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // Versende-Action: triggert den Send-Workflow im Bot
+  // (Email + status -> 'sent') und aktualisiert die Vorlage.
+  async function versendeRechnung() {
+    if (!createdInvoice || !vorlageInfo?.id) return;
+    setSending(true);
+    setSendError(null);
+    try {
+      const r = await fetch(
+        botUrl(`rechnung/${createdInvoice.id}/send`),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok || j.ok === false) {
+        setSendError(
+          j.error || j.warn || `Versand fehlgeschlagen (HTTP ${r.status})`,
+        );
+        return;
+      }
+      // Vorlage updaten
+      try {
+        await fetch(
+          `/cashflow/api/notiz-vorlagen/${vorlageInfo.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rechnung_status: "sent" }),
+          },
+        );
+      } catch (e) {
+        console.error("PATCH sent-status", e);
+      }
+      setCreatedInvoice({ ...createdInvoice, status: "sent" });
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
     }
   }
 
@@ -946,7 +1030,7 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
               ❌ {submitError}
             </div>
           ) : null}
-          {submitResult ? (
+          {submitResult && !createdInvoice ? (
             <details className="mb-3 p-2 rounded bg-[color:var(--brand-blue)]/10 text-sm">
               <summary className="cursor-pointer">
                 ✓ Bot-Antwort (JSON)
@@ -956,31 +1040,108 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
               </pre>
             </details>
           ) : null}
+          {/* Nach Live-Anlage: 2-Stufen-Workflow Preview + Versenden */}
+          {createdInvoice ? (
+            <div className="mb-3 space-y-3">
+              <div
+                className={`p-3 rounded text-sm flex items-center justify-between gap-2 ${
+                  createdInvoice.status === "sent"
+                    ? "bg-green-50 text-green-800"
+                    : "bg-[color:var(--brand-orange)]/10 text-[color:var(--brand-orange)]"
+                }`}
+              >
+                <div>
+                  {createdInvoice.status === "sent" ? (
+                    <span>
+                      ✓ Rechnung #{createdInvoice.id} angelegt und an{" "}
+                      <strong>
+                        {empfaenger?.email || deal.email}
+                      </strong>{" "}
+                      versendet.
+                    </span>
+                  ) : (
+                    <span>
+                      ● Rechnung #{createdInvoice.id} als{" "}
+                      <strong>Draft</strong> in SimplyOrg angelegt. Bitte
+                      prüfen — Versand startet erst nach Klick.
+                    </span>
+                  )}
+                </div>
+                <a
+                  href={`https://myaazb-admin.simplyorg-seminare.de/de/crud/order-invoice/edit/${createdInvoice.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs underline opacity-80 hover:opacity-100 shrink-0"
+                  title="In SimplyOrg öffnen"
+                >
+                  in SimplyOrg ↗
+                </a>
+              </div>
+              <iframe
+                key={`${createdInvoice.id}-${createdInvoice.status}`}
+                title={`Rechnung ${createdInvoice.id}`}
+                src={`/cashflow/api/bot/rechnung/${createdInvoice.id}/preview${
+                  createdInvoice.status === "sent" ? "?refresh=1" : ""
+                }`}
+                className="w-full h-[60vh] border border-[color:var(--border)] rounded bg-white"
+              />
+              {sendError ? (
+                <div className="p-2 rounded bg-red-50 text-red-800 text-sm">
+                  ❌ {sendError}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="text-sm px-3 py-1 rounded border border-[color:var(--border)]"
-            >
-              Abbrechen
-            </button>
-            <button
-              type="button"
-              onClick={() => submit(true)}
-              disabled={submitting}
-              className="text-sm px-3 py-1 rounded border border-[color:var(--border)] disabled:opacity-50"
-              title="Plan zurück, nichts in SimplyOrg anlegen"
-            >
-              {submitting ? "…" : "Plan prüfen (Dry-Run)"}
-            </button>
-            <button
-              type="button"
-              onClick={() => submit(false)}
-              disabled={submitting}
-              className="text-sm px-3 py-1 rounded bg-[color:var(--brand-blue)] text-white disabled:opacity-50"
-            >
-              {submitting ? "Erstelle…" : "Rechnung erstellen"}
-            </button>
+            {createdInvoice ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-sm px-3 py-1 rounded border border-[color:var(--border)]"
+                >
+                  {createdInvoice.status === "sent" ? "Schließen" : "Später"}
+                </button>
+                {createdInvoice.status === "draft" ? (
+                  <button
+                    type="button"
+                    onClick={versendeRechnung}
+                    disabled={sending}
+                    className="text-sm px-3 py-1 rounded bg-green-600 text-white disabled:opacity-50"
+                    title="Versendet die Rechnung per Email an den Kunden und setzt den Status auf 'sent'"
+                  >
+                    {sending ? "Versende…" : "✉ Per Email versenden"}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-sm px-3 py-1 rounded border border-[color:var(--border)]"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submit(true)}
+                  disabled={submitting}
+                  className="text-sm px-3 py-1 rounded border border-[color:var(--border)] disabled:opacity-50"
+                  title="Plan zurück, nichts in SimplyOrg anlegen"
+                >
+                  {submitting ? "…" : "Plan prüfen (Dry-Run)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => submit(false)}
+                  disabled={submitting}
+                  className="text-sm px-3 py-1 rounded bg-[color:var(--brand-blue)] text-white disabled:opacity-50"
+                >
+                  {submitting ? "Erstelle…" : "Rechnung anlegen (Draft)"}
+                </button>
+              </>
+            )}
           </div>
         </section>
       </div>
