@@ -56,7 +56,12 @@ interface Vorschlag {
 interface PersonHit {
   person_id: number;
   address_id?: number | null;
-  label: string;
+  // Bot liefert je nach Quelle 'label', 'name' und/oder 'person_label'.
+  // Alle drei sind optional, wir picken beim Submit den ersten
+  // nicht-leeren als slack_name (= Drive-Vertrags-Lookup-Key).
+  label?: string;
+  name?: string;
+  person_label?: string;
   email?: string;
 }
 
@@ -526,7 +531,12 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
       empfaenger: {
         person_id: empfaenger.person_id,
         address_id: empfaenger.address_id ?? undefined,
-        label: empfaenger.label,
+        label: (
+          empfaenger.label
+          || empfaenger.name
+          || empfaenger.person_label
+          || ""
+        ),
         email: empfaenger.email,
       },
       rechnungstitel: rechnungstitel || undefined,
@@ -535,7 +545,12 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
       // Vertrags-Positionsliste -- Mario will keine Preise mehr
       // im UI eintippen.
       verwende_vertrag: true,
-      slack_name: empfaenger.label || `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim(),
+      slack_name: (
+        empfaenger.label
+        || empfaenger.name
+        || empfaenger.person_label
+        || `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim()
+      ),
       hauptartikel: {
         article_id: hauptArticle.id,
         title: hauptArticle.title,
@@ -706,7 +721,8 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
           ) : null}
           {empfaenger ? (
             <div className="mt-1 text-xs text-[color:var(--brand-blue)]">
-              ✓ #{empfaenger.person_id} {empfaenger.label}
+              ✓ #{empfaenger.person_id}{" "}
+              {empfaenger.label || empfaenger.name || empfaenger.person_label || ""}
               {empfaenger.email ? ` (${empfaenger.email})` : ""}
             </div>
           ) : null}
