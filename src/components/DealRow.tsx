@@ -33,6 +33,8 @@ export default function DealRow({
   const [rechnungInfo, setRechnungInfo] = useState<{
     rechnung_id: number | null;
     rechnung_status: "draft" | "sent" | "cancelled" | null;
+    zahlungsmodell?: "einmal" | "raten" | null;
+    raten_info?: string | null;
   } | null>(null);
   useEffect(() => {
     if (!canCreateRechnung) return;
@@ -55,6 +57,8 @@ export default function DealRow({
         let v: {
           rechnung_id?: number | null;
           rechnung_status?: "draft" | "sent" | "cancelled" | null;
+          zahlungsmodell?: "einmal" | "raten" | null;
+          raten_info?: string | null;
         } | undefined;
         if (hasEmail) {
           const r = await fetch(
@@ -76,10 +80,12 @@ export default function DealRow({
           const j2 = await r2.json();
           v = (j2.data || [])[0];
         }
-        if (v?.rechnung_id) {
+        if (v?.rechnung_id || v?.zahlungsmodell) {
           setRechnungInfo({
-            rechnung_id: v.rechnung_id,
-            rechnung_status: v.rechnung_status ?? "draft",
+            rechnung_id: v.rechnung_id ?? null,
+            rechnung_status: v.rechnung_status ?? null,
+            zahlungsmodell: v.zahlungsmodell ?? null,
+            raten_info: v.raten_info ?? null,
           });
         } else {
           setRechnungInfo(null);
@@ -189,6 +195,21 @@ export default function DealRow({
               title={`Rechnung #${rechnungInfo.rechnung_id} storniert — Gutschrift in SimplyOrg`}
             >
               ⛔ Storniert
+            </span>
+          ) : null}
+          {rechnungInfo?.zahlungsmodell === "raten" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300"
+              title={rechnungInfo.raten_info || "Ratenzahlung laut Vertrag"}
+            >
+              💳 Raten
+            </span>
+          ) : rechnungInfo?.zahlungsmodell === "einmal" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 text-blue-900 border border-blue-300"
+              title="Einmalzahlung laut Vertrag"
+            >
+              💰 Einmal
             </span>
           ) : null}
         </div>

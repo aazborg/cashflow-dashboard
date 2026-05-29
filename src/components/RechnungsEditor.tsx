@@ -731,6 +731,33 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
         setSubmitResult(j);
       } else {
         setSubmitResult(j);
+        // Vertrag-Zahlungsmodell in die Vorlage persistieren, damit
+        // DealRow den Badge ohne Vertrag-Reload anzeigen kann.
+        const vmeta = (j as {
+          plan?: {
+            vertrag_meta?: {
+              zahlungsmodell?: string;
+              raten_info?: string;
+            };
+          };
+        })?.plan?.vertrag_meta;
+        if (vmeta?.zahlungsmodell && vorlageInfo?.id) {
+          try {
+            await fetch(
+              `/cashflow/api/notiz-vorlagen/${vorlageInfo.id}`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  zahlungsmodell: vmeta.zahlungsmodell,
+                  raten_info: vmeta.raten_info || null,
+                }),
+              },
+            );
+          } catch (e) {
+            console.error("PATCH zahlungsmodell", e);
+          }
+        }
         // Live-Anlage erfolgreich + invoice_id da -> Status der
         // Vorlage auf 'draft' setzen und Preview anzeigen, damit Mario
         // visuell pruefen kann bevor er versendet.

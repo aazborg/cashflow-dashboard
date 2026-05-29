@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
     .select(
       "id, email, name, hauptprodukt, rechnungstitel, notiz_text, "
         + "rechnung_id, rechnung_status, rechnung_created_at, "
+        + "zahlungsmodell, raten_info, "
         + "created_at, updated_at",
     )
     .order("created_at", { ascending: false })

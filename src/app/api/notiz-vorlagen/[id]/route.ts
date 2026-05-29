@@ -86,6 +86,19 @@ export async function PATCH(req: NextRequest, ctx: Context) {
   if ("rechnung_created_at" in body) {
     patch.rechnung_created_at = body.rechnung_created_at as string | null;
   }
+  if ("zahlungsmodell" in body) {
+    const v = body.zahlungsmodell as string | null;
+    if (v != null && !["einmal", "raten"].includes(v)) {
+      return NextResponse.json(
+        { error: "zahlungsmodell muss 'einmal' oder 'raten' sein" },
+        { status: 400 },
+      );
+    }
+    patch.zahlungsmodell = v;
+  }
+  if ("raten_info" in body) {
+    patch.raten_info = body.raten_info as string | null;
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json(
       { error: "keine erlaubten Felder im Body" },
