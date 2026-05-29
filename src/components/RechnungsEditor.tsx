@@ -1079,12 +1079,26 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
               </div>
               <iframe
                 key={`${createdInvoice.id}-${createdInvoice.status}`}
-                title={`Rechnung ${createdInvoice.id}`}
-                src={`/cashflow/api/bot/rechnung/${createdInvoice.id}/preview${
+                title={`Rechnung-${createdInvoice.id}.pdf`}
+                src={`/cashflow/api/bot/rechnung/${createdInvoice.id}/pdf${
                   createdInvoice.status === "sent" ? "?refresh=1" : ""
                 }`}
                 className="w-full h-[60vh] border border-[color:var(--border)] rounded bg-white"
               />
+              <div className="flex items-center gap-3 text-xs text-[color:var(--muted)]">
+                <a
+                  href={`/cashflow/api/bot/rechnung/${createdInvoice.id}/pdf?download=1`}
+                  download={`Rechnung-${createdInvoice.id}.pdf`}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
+                  title="PDF herunterladen"
+                >
+                  ⬇ Rechnung-{createdInvoice.id}.pdf herunterladen
+                </a>
+                <span className="opacity-70">
+                  PDF wird direkt aus SimplyOrg geholt — niemand muss
+                  sich einloggen.
+                </span>
+              </div>
               {sendError ? (
                 <div className="p-2 rounded bg-red-50 text-red-800 text-sm">
                   ❌ {sendError}
