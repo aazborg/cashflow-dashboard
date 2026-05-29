@@ -1269,6 +1269,41 @@ export default function RechnungsEditor({ deal, open, onClose }: Props) {
                   in SimplyOrg ↗
                 </a>
               </div>
+              {/* Vertrag-Zahlungsmodell-Badge (aus plan.vertrag_meta) */}
+              {(() => {
+                const meta = (submitResult as {
+                  plan?: {
+                    vertrag_meta?: {
+                      zahlungsmodell?: string;
+                      raten_info?: string;
+                      gesamtbetrag?: number | null;
+                    };
+                  };
+                })?.plan?.vertrag_meta;
+                if (!meta?.zahlungsmodell) return null;
+                const isRaten = meta.zahlungsmodell === "raten";
+                return (
+                  <div
+                    className={`p-2 rounded text-sm border ${
+                      isRaten
+                        ? "bg-amber-50 border-amber-300 text-amber-900"
+                        : "bg-blue-50 border-blue-300 text-blue-900"
+                    }`}
+                  >
+                    <div className="font-semibold">
+                      {isRaten ? "💳 Ratenzahlung" : "💰 Einmalzahlung"}
+                      {meta.gesamtbetrag
+                        ? ` · ${meta.gesamtbetrag.toLocaleString("de-AT", { style: "currency", currency: "EUR" })}`
+                        : null}
+                    </div>
+                    {isRaten && meta.raten_info ? (
+                      <div className="text-xs mt-1 opacity-90">
+                        {meta.raten_info}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })()}
               {/* Original-Daten aus SimplyOrg als Tabelle (statt
                   langsamen, oft weissen PDF-iframe). */}
               <div className="border border-[color:var(--border)] rounded bg-white p-4 max-h-[60vh] overflow-y-auto">
