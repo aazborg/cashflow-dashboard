@@ -37,8 +37,15 @@ export default function DealRow({
   useEffect(() => {
     if (!canCreateRechnung) return;
     const hasEmail = !!deal.email;
-    const namen = `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim();
-    if (!hasEmail && !namen) return;
+    // Fuer den Substring-Fallback nur den NACHNAMEN nehmen --
+    // 'Pilgerstorfer' matched in 'a_k.pilgerstorfer@gmx.at',
+    // 'Leutner' in 'eva.leutner@aon.at'. Voller Name 'Andrea
+    // Pilgerstorfer' wuerde mit ilike %Andrea Pilgerstorfer% NUR
+    // matchen wenn die name-Spalte gesetzt waere -- die meisten
+    // Vorlagen haben aber name=null (Mario tippt im NotizGenerator
+    // den Namen meist nicht ein).
+    const nachname = (deal.nachname ?? "").trim();
+    if (!hasEmail && !nachname) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -59,9 +66,9 @@ export default function DealRow({
         //    Faelle ab wo deal.email leer ist oder eine andere
         //    Adresse als die Vorlage hat (z.B. HubSpot-Email vs.
         //    SimplyOrg-Email). Wie im RechnungsEditor.
-        if (!v?.rechnung_id && namen) {
+        if (!v?.rechnung_id && nachname) {
           const r2 = await fetch(
-            `/cashflow/api/notiz-vorlagen?q=${encodeURIComponent(namen)}&limit=1`,
+            `/cashflow/api/notiz-vorlagen?q=${encodeURIComponent(nachname)}&limit=1`,
           );
           if (cancelled) return;
           const j2 = await r2.json();
