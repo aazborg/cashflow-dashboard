@@ -46,6 +46,80 @@ interface Props {
   onClose: () => void;
 }
 
+function CancelMandateBtn({
+  mandateId,
+  mandateStatus,
+}: {
+  mandateId: string;
+  mandateStatus: string | null | undefined;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [err, setErr] = useState<string>("");
+
+  const inactive =
+    mandateStatus === "cancelled" ||
+    mandateStatus === "expired" ||
+    mandateStatus === "blocked";
+  if (inactive) {
+    return (
+      <span className="text-xs text-[color:var(--muted)]">
+        Mandat ist bereits {mandateStatus}
+      </span>
+    );
+  }
+
+  async function cancel() {
+    const reason =
+      window.prompt(
+        "Mandat unwiderruflich stornieren?\n\nGrund (optional, max 50 Zeichen):",
+        "",
+      );
+    if (reason === null) return; // abgebrochen
+    setBusy(true);
+    setErr("");
+    try {
+      const res = await fetch("/cashflow/api/bot/gocardless/cancel-mandate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mandate_id: mandateId, reason }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErr(j.error || `HTTP ${res.status}`);
+        return;
+      }
+      setDone(j.status ?? "cancelled");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (done) {
+    return (
+      <span className="text-xs text-green-700">
+        ✓ Storniert (Status: {done}). Seite neu laden um zu aktualisieren.
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={cancel}
+        disabled={busy}
+        className="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+        title="Mandat unwiderruflich stornieren"
+      >
+        {busy ? "storniere…" : "Mandat stornieren"}
+      </button>
+      {err ? <span className="text-xs text-red-700">{err}</span> : null}
+    </div>
+  );
+}
+
 const eur = (cents: number | null | undefined) =>
   ((cents ?? 0) / 100).toLocaleString("de-AT", {
     style: "currency",
@@ -319,9 +393,13 @@ export default function PaymentDetailModal({ deal, onClose }: Props) {
                 </table>
               </div>
 
-              {/* Link zu GC */}
+              {/* Aktionen */}
               {deal.gocardless_mandate_id ? (
-                <div className="text-xs text-right">
+                <div className="flex items-center justify-between gap-2 text-xs pt-2 border-t border-[color:var(--border)]">
+                  <CancelMandateBtn
+                    mandateId={deal.gocardless_mandate_id}
+                    mandateStatus={deal.gocardless_mandate_status}
+                  />
                   <a
                     href={`https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/customers/${data.customer_id}`}
                     target="_blank"
