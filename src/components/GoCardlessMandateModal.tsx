@@ -38,6 +38,8 @@ interface VertragPreview {
     anzahl_raten: number;
     gesamt_eur: number;
     start_date?: string;
+    start_date_source?: "vertrag_ratenplan" | "leistungsbeginn" | "gc_default";
+    termine?: string[];
   };
   ratenplan_error?: string;
 }
@@ -297,11 +299,47 @@ export default function GoCardlessMandateModal({
                       <>
                         <div className="text-blue-900/70">Start</div>
                         <div className="font-medium text-blue-900">
-                          {preview.ratenplan.start_date}
+                          {new Date(preview.ratenplan.start_date)
+                            .toLocaleDateString("de-AT")}
+                          {preview.ratenplan.start_date_source && (
+                            <span className="ml-1.5 text-[10px] text-blue-900/60">
+                              ({{
+                                vertrag_ratenplan: "aus Vertrag-Ratenplan",
+                                leistungsbeginn: "aus Leistungsbeginn",
+                                gc_default: "GC-Default ~2 Tage",
+                              }[preview.ratenplan.start_date_source]})
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    {!preview.ratenplan.start_date && (
+                      <>
+                        <div className="text-blue-900/70">Start</div>
+                        <div className="font-medium text-amber-700">
+                          ⚠ kein Datum im Vertrag — GC waehlt ~2 Werktage
                         </div>
                       </>
                     )}
                   </div>
+                  {preview.ratenplan.termine
+                    && preview.ratenplan.termine.length > 0 ? (
+                    <div className="mt-2.5 pt-2 border-t border-blue-300/50">
+                      <div className="text-[11px] text-blue-900/70 mb-1">
+                        Faelligkeiten ({preview.ratenplan.termine.length}):
+                      </div>
+                      <div className="text-[11px] text-blue-900 leading-relaxed">
+                        {preview.ratenplan.termine.map((t, i) => (
+                          <span key={i} className="inline-block mr-2">
+                            <span className="text-blue-900/50 mr-0.5">
+                              {i + 1}.
+                            </span>
+                            {new Date(t).toLocaleDateString("de-AT")}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : preview.ratenplan_error ? (
                 <div className="rounded p-3 text-sm bg-amber-50 border border-amber-300 text-amber-900">

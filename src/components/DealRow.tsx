@@ -52,6 +52,7 @@ export default function DealRow({
     raten_info?: string | null;
     gocardless_mandate_id?: string | null;
     gocardless_mandate_status?: string | null;
+    gocardless_subscription_status?: string | null;
     gocardless_paid_count?: number | null;
     gocardless_paid_amount_cents?: number | null;
     gocardless_next_payment_date?: string | null;
@@ -86,6 +87,7 @@ export default function DealRow({
           raten_info?: string | null;
           gocardless_mandate_id?: string | null;
           gocardless_mandate_status?: string | null;
+          gocardless_subscription_status?: string | null;
           gocardless_paid_count?: number | null;
           gocardless_paid_amount_cents?: number | null;
           gocardless_next_payment_date?: string | null;
@@ -317,25 +319,33 @@ export default function DealRow({
             return null;
           })()}
           {(() => {
-            const ms = rechnungInfo?.gocardless_mandate_status;
+            // GC-Status: bevorzugt aus deals (Direct-Mandat-Anlage),
+            // fallback auf notiz_vorlagen (Legacy-Pfad).
+            const ms = deal.gocardless_mandate_status
+              ?? rechnungInfo?.gocardless_mandate_status;
             if (!ms) return null;
             const failed = !!rechnungInfo?.gocardless_last_failure_at;
-            // Status-Mapping
+            const env = deal.gocardless_env
+              ?? rechnungInfo?.gocardless_env;
+            const mandateId = deal.gocardless_mandate_id
+              ?? rechnungInfo?.gocardless_mandate_id;
+            const subStatus = deal.gocardless_subscription_status
+              ?? rechnungInfo?.gocardless_subscription_status;
             let color = "bg-gray-200 text-gray-800 border-gray-400";
             let label = ms;
             if (ms === "active") {
               color = failed
                 ? "bg-red-100 text-red-900 border-red-400"
                 : "bg-green-100 text-green-900 border-green-400";
-              label = failed ? "GC ⚠" : "GC ✓";
+              label = failed ? "GC ⚠ aktiv" : "GC ✓ aktiv";
             } else if (ms === "pending_submission" || ms === "submitted"
                         || ms === "pending_customer_approval") {
               color = "bg-amber-100 text-amber-900 border-amber-400";
-              label = "GC ⏳";
+              label = "GC ⏳ pending";
             } else if (ms === "failed" || ms === "cancelled"
                         || ms === "expired" || ms === "blocked") {
               color = "bg-red-100 text-red-900 border-red-400";
-              label = "GC ❌";
+              label = "GC ❌ " + ms;
             }
             const paid = rechnungInfo?.gocardless_paid_count ?? 0;
             const paidEUR =
@@ -343,23 +353,43 @@ export default function DealRow({
             const next = rechnungInfo?.gocardless_next_payment_date;
             const nextEUR =
               (rechnungInfo?.gocardless_next_payment_amount_cents ?? 0) / 100;
-            const isSandbox = rechnungInfo?.gocardless_env === "sandbox";
+            const isSandbox = env === "sandbox";
             const tip = [
               `Mandat: ${ms}${failed ? " (letzte Lastschrift fehlgeschlagen)" : ""}`,
+              subStatus ? `Subscription: ${subStatus}` : "",
               paid ? `Bezahlt: ${paid}× (${paidEUR.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})` : "",
               next ? `Nächste: ${next}${nextEUR ? ` (${nextEUR.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})` : ""}` : "",
               rechnungInfo?.gocardless_last_failure_reason
                 ? `Fehler: ${rechnungInfo.gocardless_last_failure_reason}`
                 : "",
               isSandbox ? "ℹ Sandbox-Daten" : "",
+              mandateId ? `\n(Klick → GoCardless öffnen)` : "",
             ].filter(Boolean).join("\n");
-            return (
+            const gcUrl = mandateId
+              ? `https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/mandates/${mandateId}`
+              : undefined;
+            const inner = (
+              <>
+                {label}
+                {isSandbox ? " (SBX)" : ""}
+              </>
+            );
+            return gcUrl ? (
+              <a
+                href={gcUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border hover:opacity-80 ${color}`}
+                title={tip}
+              >
+                {inner}
+              </a>
+            ) : (
               <span
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${color}`}
                 title={tip}
               >
-                {label}
-                {isSandbox ? " (SBX)" : ""}
+                {inner}
               </span>
             );
           })()}
