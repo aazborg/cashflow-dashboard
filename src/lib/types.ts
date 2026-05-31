@@ -65,6 +65,14 @@ export interface Deal {
   gocardless_subscription_status?: string | null;
   gocardless_synced_at?: string | null;
   gocardless_env?: string | null;
+  /** Payment-Aggregate vom 30-Min-Sync. */
+  gocardless_paid_count?: number | null;
+  gocardless_paid_amount_cents?: number | null;
+  gocardless_next_payment_date?: string | null;
+  gocardless_next_payment_amount_cents?: number | null;
+  gocardless_last_failure_at?: string | null;
+  gocardless_last_failure_reason?: string | null;
+  vertrag_gesamtbetrag?: number | null;
 }
 
 export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";

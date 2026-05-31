@@ -49,6 +49,7 @@ export function SiteHeader({
             <nav className="hidden md:flex gap-1 text-sm flex-1 ml-4">
               <NavLink href="/">Dashboard</NavLink>
               <NavLink href="/daten">Daten</NavLink>
+              <NavLink href="/zahlungen">Zahlungen</NavLink>
               <NavLink href="/rechner">Rechner</NavLink>
               {canUseRechnungsBot ? <NavLink href="/notiz">Angebots-Notiz</NavLink> : null}
               {isAdmin ? <NavLink href="/gesamt-cashflow">Gesamt</NavLink> : null}
@@ -108,6 +109,7 @@ export function SiteHeader({
           <nav className="max-w-[1400px] mx-auto px-4 py-3 flex flex-col gap-1 text-sm">
             <MobileNavLink href="/">Dashboard</MobileNavLink>
             <MobileNavLink href="/daten">Daten</MobileNavLink>
+            <MobileNavLink href="/zahlungen">Zahlungen</MobileNavLink>
             <MobileNavLink href="/rechner">Rechner</MobileNavLink>
             {canUseRechnungsBot ? <MobileNavLink href="/notiz">Angebots-Notiz</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/gesamt-cashflow">Gesamt</MobileNavLink> : null}

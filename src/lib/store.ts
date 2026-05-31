@@ -40,6 +40,13 @@ interface DealRow {
   gocardless_subscription_status?: string | null;
   gocardless_synced_at?: string | null;
   gocardless_env?: string | null;
+  gocardless_paid_count?: number | null;
+  gocardless_paid_amount_cents?: number | null;
+  gocardless_next_payment_date?: string | null;
+  gocardless_next_payment_amount_cents?: number | null;
+  gocardless_last_failure_at?: string | null;
+  gocardless_last_failure_reason?: string | null;
+  vertrag_gesamtbetrag?: number | string | null;
 }
 
 function rowToDeal(r: DealRow): Deal {
@@ -73,6 +80,14 @@ function rowToDeal(r: DealRow): Deal {
     gocardless_subscription_status: r.gocardless_subscription_status ?? null,
     gocardless_synced_at: r.gocardless_synced_at ?? null,
     gocardless_env: r.gocardless_env ?? null,
+    gocardless_paid_count: r.gocardless_paid_count ?? null,
+    gocardless_paid_amount_cents: r.gocardless_paid_amount_cents ?? null,
+    gocardless_next_payment_date: r.gocardless_next_payment_date ?? null,
+    gocardless_next_payment_amount_cents: r.gocardless_next_payment_amount_cents ?? null,
+    gocardless_last_failure_at: r.gocardless_last_failure_at ?? null,
+    gocardless_last_failure_reason: r.gocardless_last_failure_reason ?? null,
+    vertrag_gesamtbetrag: r.vertrag_gesamtbetrag == null
+      ? null : Number(r.vertrag_gesamtbetrag),
   };
 }
 
