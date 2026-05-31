@@ -13,7 +13,7 @@
 import { listDeals, listEmployees } from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
-import ZahlungenTable from "@/components/ZahlungenTable";
+import ZahlungenTabs from "@/components/ZahlungenTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +45,7 @@ export default async function ZahlungenPage() {
             Daten aus GoCardless (alle 30 Min synchronisiert).
           </p>
         </div>
-        <ZahlungenTable
+        <ZahlungenTabs
           deals={scoped}
           employees={employees}
           isAdmin={ctx.isAdmin}
