@@ -318,81 +318,9 @@ export default function DealRow({
             }
             return null;
           })()}
-          {(() => {
-            // GC-Status: bevorzugt aus deals (Direct-Mandat-Anlage),
-            // fallback auf notiz_vorlagen (Legacy-Pfad).
-            const ms = deal.gocardless_mandate_status
-              ?? rechnungInfo?.gocardless_mandate_status;
-            if (!ms) return null;
-            const failed = !!rechnungInfo?.gocardless_last_failure_at;
-            const env = deal.gocardless_env
-              ?? rechnungInfo?.gocardless_env;
-            const mandateId = deal.gocardless_mandate_id
-              ?? rechnungInfo?.gocardless_mandate_id;
-            const subStatus = deal.gocardless_subscription_status
-              ?? rechnungInfo?.gocardless_subscription_status;
-            let color = "bg-gray-200 text-gray-800 border-gray-400";
-            let label = ms;
-            if (ms === "active") {
-              color = failed
-                ? "bg-red-100 text-red-900 border-red-400"
-                : "bg-green-100 text-green-900 border-green-400";
-              label = failed ? "GC ⚠ aktiv" : "GC ✓ aktiv";
-            } else if (ms === "pending_submission" || ms === "submitted"
-                        || ms === "pending_customer_approval") {
-              color = "bg-amber-100 text-amber-900 border-amber-400";
-              label = "GC ⏳ pending";
-            } else if (ms === "failed" || ms === "cancelled"
-                        || ms === "expired" || ms === "blocked") {
-              color = "bg-red-100 text-red-900 border-red-400";
-              label = "GC ❌ " + ms;
-            }
-            const paid = rechnungInfo?.gocardless_paid_count ?? 0;
-            const paidEUR =
-              (rechnungInfo?.gocardless_paid_amount_cents ?? 0) / 100;
-            const next = rechnungInfo?.gocardless_next_payment_date;
-            const nextEUR =
-              (rechnungInfo?.gocardless_next_payment_amount_cents ?? 0) / 100;
-            const isSandbox = env === "sandbox";
-            const tip = [
-              `Mandat: ${ms}${failed ? " (letzte Lastschrift fehlgeschlagen)" : ""}`,
-              subStatus ? `Subscription: ${subStatus}` : "",
-              paid ? `Bezahlt: ${paid}× (${paidEUR.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})` : "",
-              next ? `Nächste: ${next}${nextEUR ? ` (${nextEUR.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})` : ""}` : "",
-              rechnungInfo?.gocardless_last_failure_reason
-                ? `Fehler: ${rechnungInfo.gocardless_last_failure_reason}`
-                : "",
-              isSandbox ? "ℹ Sandbox-Daten" : "",
-              mandateId ? `\n(Klick → GoCardless öffnen)` : "",
-            ].filter(Boolean).join("\n");
-            const gcUrl = mandateId
-              ? `https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/mandates/${mandateId}`
-              : undefined;
-            const inner = (
-              <>
-                {label}
-                {isSandbox ? " (SBX)" : ""}
-              </>
-            );
-            return gcUrl ? (
-              <a
-                href={gcUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border hover:opacity-80 ${color}`}
-                title={tip}
-              >
-                {inner}
-              </a>
-            ) : (
-              <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${color}`}
-                title={tip}
-              >
-                {inner}
-              </span>
-            );
-          })()}
+          {/* GC-Status-Badge wurde entfernt -- Status wird jetzt
+              direkt am 'GC-Mandat anlegen'-Button im Aktion-Bereich
+              durch Farbe + Label angezeigt. */}
         </div>
         {editing ? (
           <input
@@ -643,16 +571,80 @@ export default function DealRow({
                   && (vertragOverlay?.zahlungsmodell === "raten"
                       || deal.zahlungsmodell === "raten"
                       || rechnungInfo?.zahlungsmodell === "raten")
-                  && deal.email
-                  && !deal.gocardless_mandate_id
-                  && !rechnungInfo?.gocardless_mandate_id ? (
-                  <button
-                    onClick={() => setMandateModalOpen(true)}
-                    className="text-xs px-2 py-1 rounded mr-1 border border-purple-600 text-purple-600 hover:bg-purple-600/10"
-                    title="SEPA-Mandat + Subscription bei GoCardless anlegen (lädt Vertrag aus Drive)"
-                  >
-                    GC-Mandat anlegen
-                  </button>
+                  && deal.email ? (
+                  (() => {
+                    // 4 Button-Zustaende, alle 4 zeigen denselben
+                    // Button (Mario will keinen extra Status-Badge):
+                    //   - kein Mandat        -> lila Outline (anlegen)
+                    //   - pending/submitted  -> amber (wartet auf Bank)
+                    //   - active + ok        -> gruen (Mandat laeuft)
+                    //   - failed/cancelled   -> rot
+                    const ms = deal.gocardless_mandate_status
+                      ?? rechnungInfo?.gocardless_mandate_status;
+                    const mandateId = deal.gocardless_mandate_id
+                      ?? rechnungInfo?.gocardless_mandate_id;
+                    const env = deal.gocardless_env
+                      ?? rechnungInfo?.gocardless_env;
+                    const failed = !!rechnungInfo?.gocardless_last_failure_at;
+                    const isSandbox = env === "sandbox";
+                    const sbx = isSandbox ? " (SBX)" : "";
+                    const base = "text-xs px-2 py-1 rounded mr-1 ";
+                    let cls = "";
+                    let label = "";
+                    let tooltip = "";
+                    if (!ms) {
+                      cls = "border border-purple-600 text-purple-600 hover:bg-purple-600/10";
+                      label = "GC-Mandat anlegen";
+                      tooltip = "SEPA-Mandat + Ratenzahlung bei GoCardless anlegen (lädt Vertrag aus Drive)";
+                    } else if (ms === "active" && !failed) {
+                      cls = "bg-green-600 text-white hover:bg-green-700";
+                      label = "GC ✓ aktiv" + sbx;
+                      tooltip = "Mandat aktiv, läuft regulär. Klick → in GoCardless öffnen.";
+                    } else if (ms === "active" && failed) {
+                      cls = "bg-red-600 text-white hover:bg-red-700";
+                      label = "GC ⚠ Fehler" + sbx;
+                      tooltip = `Mandat aktiv, ABER letzte Lastschrift fehlgeschlagen: ${rechnungInfo?.gocardless_last_failure_reason ?? "—"}`;
+                    } else if (ms === "pending_submission" || ms === "submitted"
+                                || ms === "pending_customer_approval") {
+                      cls = "bg-amber-500 text-white hover:bg-amber-600";
+                      label = "GC ⏳ wird eingereicht" + sbx;
+                      tooltip = `Mandat angelegt, wartet auf Bank-Bestätigung (${ms}). Klick → in GoCardless öffnen.`;
+                    } else if (ms === "failed" || ms === "cancelled"
+                                || ms === "expired" || ms === "blocked") {
+                      cls = "bg-red-600 text-white hover:bg-red-700";
+                      label = `GC ❌ ${ms}` + sbx;
+                      tooltip = `Mandat ${ms}. Klick → in GoCardless öffnen.`;
+                    } else {
+                      cls = "bg-gray-400 text-white";
+                      label = `GC ${ms}` + sbx;
+                      tooltip = `Mandat-Status: ${ms}`;
+                    }
+                    const gcUrl = mandateId
+                      ? `https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/mandates/${mandateId}`
+                      : null;
+                    if (gcUrl) {
+                      return (
+                        <a
+                          href={gcUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={base + cls}
+                          title={tooltip}
+                        >
+                          {label}
+                        </a>
+                      );
+                    }
+                    return (
+                      <button
+                        onClick={() => setMandateModalOpen(true)}
+                        className={base + cls}
+                        title={tooltip}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })()
                 ) : null}
                 <button
                   onClick={requestDelete}
