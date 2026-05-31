@@ -16,7 +16,7 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(employee.name);
   const [ownerId, setOwnerId] = useState(employee.hubspot_owner_id ?? "");
-  const [role, setRole] = useState<"admin" | "member">(employee.role);
+  const [role, setRole] = useState<"admin" | "member" | "accounting">(employee.role);
   const [isSetter, setIsSetter] = useState(employee.is_setter);
   const [isCloser, setIsCloser] = useState(employee.is_closer);
   const [setterHours, setSetterHours] = useState<SetterHours | "">(
@@ -212,15 +212,15 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
         <td className="px-3 py-2">
           {editing ? (
             <div className="flex flex-col gap-1">
-              <label className="inline-flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={role === "admin"}
-                  onChange={(e) => setRole(e.target.checked ? "admin" : "member")}
-                  className="accent-[color:var(--brand-blue)]"
-                />
-                <span>Admin</span>
-              </label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as typeof role)}
+                className="text-xs border border-[color:var(--border)] rounded px-1 py-0.5"
+              >
+                <option value="member">Mitglied</option>
+                <option value="accounting">Accounting (Buchhaltung)</option>
+                <option value="admin">Admin</option>
+              </select>
               <label className="inline-flex items-center gap-1 text-xs">
                 <input
                   type="checkbox"

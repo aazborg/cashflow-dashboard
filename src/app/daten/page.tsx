@@ -43,8 +43,8 @@ export default async function DatenPage({
     listEmployees(),
   ]);
 
-  // Members only see their own deals; admins see everything.
-  const scoped = ctx.isAdmin
+  // Admin + Accounting sehen alle Deals; sonst nur eigene.
+  const scoped = ctx.isAdmin || ctx.isAccounting
     ? allDeals
     : allDeals.filter((d) => d.mitarbeiter_id === ctx.ownerId);
 

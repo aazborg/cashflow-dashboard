@@ -9,6 +9,7 @@ interface SiteHeaderProps {
   email: string | null;
   isAdmin: boolean;
   isSetter: boolean;
+  isAccounting: boolean;
   isAuthed: boolean;
   canUseRechnungsBot: boolean;
   signOutAction: () => Promise<void>;
@@ -18,10 +19,13 @@ export function SiteHeader({
   email,
   isAdmin,
   isSetter,
+  isAccounting,
   isAuthed,
   canUseRechnungsBot,
   signOutAction,
 }: SiteHeaderProps) {
+  // Accounting (ohne Admin) sieht NUR Daten + Zahlungen
+  const showRevenue = !isAccounting || isAdmin;
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -47,13 +51,13 @@ export function SiteHeader({
         {isAuthed ? (
           <>
             <nav className="hidden md:flex gap-1 text-sm flex-1 ml-4">
-              <NavLink href="/">Dashboard</NavLink>
+              {showRevenue ? <NavLink href="/">Dashboard</NavLink> : null}
               <NavLink href="/daten">Daten</NavLink>
               <NavLink href="/zahlungen">Zahlungen</NavLink>
-              <NavLink href="/rechner">Rechner</NavLink>
-              {canUseRechnungsBot ? <NavLink href="/notiz">Angebots-Notiz</NavLink> : null}
+              {showRevenue ? <NavLink href="/rechner">Rechner</NavLink> : null}
+              {showRevenue && canUseRechnungsBot ? <NavLink href="/notiz">Angebots-Notiz</NavLink> : null}
               {isAdmin ? <NavLink href="/gesamt-cashflow">Gesamt</NavLink> : null}
-              {isSetter || isAdmin ? <NavLink href="/setter">Setter</NavLink> : null}
+              {showRevenue && (isSetter || isAdmin) ? <NavLink href="/setter">Setter</NavLink> : null}
               {isAdmin ? <NavLink href="/ziele">Ziele</NavLink> : null}
               {isAdmin ? <NavLink href="/admin">Admin</NavLink> : null}
             </nav>
@@ -107,13 +111,13 @@ export function SiteHeader({
       {isAuthed && open ? (
         <div className="md:hidden border-t border-[color:var(--brand-orange)]/30 bg-[color:var(--brand-yellow)]">
           <nav className="max-w-[1400px] mx-auto px-4 py-3 flex flex-col gap-1 text-sm">
-            <MobileNavLink href="/">Dashboard</MobileNavLink>
+            {showRevenue ? <MobileNavLink href="/">Dashboard</MobileNavLink> : null}
             <MobileNavLink href="/daten">Daten</MobileNavLink>
             <MobileNavLink href="/zahlungen">Zahlungen</MobileNavLink>
-            <MobileNavLink href="/rechner">Rechner</MobileNavLink>
-            {canUseRechnungsBot ? <MobileNavLink href="/notiz">Angebots-Notiz</MobileNavLink> : null}
+            {showRevenue ? <MobileNavLink href="/rechner">Rechner</MobileNavLink> : null}
+            {showRevenue && canUseRechnungsBot ? <MobileNavLink href="/notiz">Angebots-Notiz</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/gesamt-cashflow">Gesamt</MobileNavLink> : null}
-            {isSetter || isAdmin ? <MobileNavLink href="/setter">Setter</MobileNavLink> : null}
+            {showRevenue && (isSetter || isAdmin) ? <MobileNavLink href="/setter">Setter</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/ziele">Ziele</MobileNavLink> : null}
             {isAdmin ? <MobileNavLink href="/admin">Admin</MobileNavLink> : null}
             <div className="mt-2 pt-3 border-t border-[color:var(--foreground)]/10 flex items-center justify-between gap-3 text-xs text-[color:var(--foreground)]/70">

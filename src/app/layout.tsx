@@ -21,6 +21,7 @@ export default async function RootLayout({
           isAuthed={!!ctx}
           email={ctx?.user.email ?? null}
           isAdmin={!!ctx?.isAdmin}
+          isAccounting={!!ctx?.isAccounting}
           isSetter={!!ctx?.isSetter}
           canUseRechnungsBot={canUseRechnungsBot(ctx)}
           signOutAction={signOut}

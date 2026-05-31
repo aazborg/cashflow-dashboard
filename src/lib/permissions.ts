@@ -39,27 +39,44 @@ export function canUseRechnungsBot(
 }
 
 /** Rechnung erstellen / Mandat anlegen / Vertrag-Parsen fuer
- *  einen Deal: Admin oder zustaendiger Mitarbeiter. */
+ *  einen Deal: Admin, Accounting oder zustaendiger Mitarbeiter. */
 export function canCreateRechnungForDeal(
-  ctx: Pick<SessionContext, "isAdmin" | "ownerId"> | null,
+  ctx: Pick<SessionContext, "isAdmin" | "isAccounting" | "ownerId"> | null,
   dealMitarbeiterId: string | null | undefined,
 ): boolean {
   if (!ctx) return false;
-  if (ctx.isAdmin) return true;
+  if (ctx.isAdmin || ctx.isAccounting) return true;
   return !!dealMitarbeiterId && dealMitarbeiterId === ctx.ownerId;
 }
 
-/** Mahnungen, Inkasso-Versand, Mandat-Storno: Admin only. */
+/** Mahnungen, Inkasso-Versand, Mandat-Storno: Admin + Accounting. */
 export function canManageDunning(
-  ctx: Pick<SessionContext, "isAdmin"> | null,
+  ctx: Pick<SessionContext, "isAdmin" | "isAccounting"> | null,
 ): boolean {
-  return !!ctx?.isAdmin;
+  return !!(ctx?.isAdmin || ctx?.isAccounting);
 }
 
 /** Manuelles Mandat anlegen (ohne Vertrag) + Inkasso-Stage-Setzung:
- *  Admin only (Buchhaltung). */
+ *  Admin + Accounting (Buchhaltung). */
 export function canManagePayments(
-  ctx: Pick<SessionContext, "isAdmin"> | null,
+  ctx: Pick<SessionContext, "isAdmin" | "isAccounting"> | null,
 ): boolean {
-  return !!ctx?.isAdmin;
+  return !!(ctx?.isAdmin || ctx?.isAccounting);
+}
+
+/** Sieht alle Deals (nicht nur eigene): Admin + Accounting. */
+export function canSeeAllDeals(
+  ctx: Pick<SessionContext, "isAdmin" | "isAccounting"> | null,
+): boolean {
+  return !!(ctx?.isAdmin || ctx?.isAccounting);
+}
+
+/** Darf Sales-Dashboards/Rechner/Statistik sehen: alle ausser
+ *  reine Accounting-Rolle. Admins sehen alles. */
+export function canSeeRevenueDashboards(
+  ctx: Pick<SessionContext, "isAdmin" | "isAccounting"> | null,
+): boolean {
+  if (!ctx) return false;
+  if (ctx.isAccounting && !ctx.isAdmin) return false;
+  return true;
 }

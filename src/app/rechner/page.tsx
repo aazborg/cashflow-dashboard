@@ -19,6 +19,7 @@ export const dynamic = "force-dynamic";
 export default async function RechnerPage() {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
+  if (ctx.isAccounting && !ctx.isAdmin) redirect("/daten");
   const [employees, deals, allSnapshots] = await Promise.all([
     listEmployees(),
     listDeals(),

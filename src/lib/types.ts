@@ -99,7 +99,7 @@ export interface Employee {
   email: string;
   name: string;
   hubspot_owner_id: string | null;
-  role: "admin" | "member";
+  role: "admin" | "member" | "accounting";
   is_setter: boolean;
   is_closer: boolean;
   setter_hours: SetterHours | null;

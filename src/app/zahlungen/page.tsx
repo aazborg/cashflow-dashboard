@@ -14,6 +14,7 @@ import { listDeals, listEmployees } from "@/lib/store";
 import { getSessionContext } from "@/lib/supabase-server";
 import { redirect } from "next/navigation";
 import ZahlungenTabs from "@/components/ZahlungenTabs";
+import { canManagePayments } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,8 @@ export default async function ZahlungenPage() {
     listEmployees(),
   ]);
 
-  // Member sehen nur eigene Deals, Admins alle
-  const scoped = ctx.isAdmin
+  // Admin + Accounting sehen alle Deals, Mitglieder nur eigene
+  const scoped = ctx.isAdmin || ctx.isAccounting
     ? allDeals
     : allDeals.filter((d) => d.mitarbeiter_id === ctx.ownerId);
 
@@ -49,6 +50,7 @@ export default async function ZahlungenPage() {
           deals={scoped}
           employees={employees}
           isAdmin={ctx.isAdmin}
+          canManagePayments={canManagePayments(ctx)}
         />
       </div>
     </main>

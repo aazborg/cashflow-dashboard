@@ -33,6 +33,7 @@ interface Props {
   deals: Deal[];
   employees: Employee[];
   isAdmin: boolean;
+  canManageDunning?: boolean;
 }
 
 const eur = (n: number) =>
@@ -124,8 +125,10 @@ export default function ZahlungenTable({
   deals,
   employees,
   isAdmin,
+  canManageDunning,
 }: Props) {
   void employees;
+  const canDunning = canManageDunning ?? isAdmin;
 
   const [search, setSearch] = useState("");
   const [modell, setModell] = useState<ModellFilter>("all");
@@ -459,7 +462,7 @@ export default function ZahlungenTable({
         <PaymentDetailModal
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
-          canManageDunning={isAdmin}
+          canManageDunning={canDunning}
         />
       ) : null}
     </div>

@@ -46,6 +46,8 @@ const STAGE_CLS: Record<string, string> = {
 interface Props {
   deals: Deal[];
   isAdmin?: boolean;
+  /** Stage-Select + Dunning-Buttons (admin/accounting). */
+  canManageDunning?: boolean;
 }
 
 const eur = (n: number) =>
@@ -99,7 +101,11 @@ function statusBadge(status: string | null | undefined): {
 export default function InkassoTable({
   deals: initialDeals,
   isAdmin = false,
+  canManageDunning = false,
 }: Props) {
+  // Fallback fuer alte Aufrufe ohne explizites canManageDunning:
+  // admin impliziert canManageDunning
+  const canEdit = canManageDunning || isAdmin;
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
@@ -357,7 +363,7 @@ export default function InkassoTable({
                     </td>
                     <td className="px-3 py-2"
                         onClick={(e) => e.stopPropagation()}>
-                      {isAdmin ? (
+                      {canEdit ? (
                         <select
                           value={d.inkasso_stage ?? ""}
                           disabled={savingId === d.id}
@@ -432,7 +438,7 @@ export default function InkassoTable({
         <PaymentDetailModal
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
-          canManageDunning={isAdmin}
+          canManageDunning={canEdit}
         />
       ) : null}
     </div>

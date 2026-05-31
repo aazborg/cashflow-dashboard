@@ -19,14 +19,18 @@ interface Props {
   deals: Deal[];
   employees: Employee[];
   isAdmin: boolean;
+  canManagePayments?: boolean;
 }
 
-export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
+export default function ZahlungenTabs({
+  deals, employees, isAdmin,
+  canManagePayments = false,
+}: Props) {
   const [tab, setTab] = useState<Tab>("kunden");
   const [manualOpen, setManualOpen] = useState(false);
   return (
     <div className="space-y-3">
-      {isAdmin ? (
+      {canManagePayments ? (
         <div className="flex justify-end -mb-1">
           <button
             type="button"
@@ -72,6 +76,7 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
           deals={deals}
           employees={employees}
           isAdmin={isAdmin}
+          canManageDunning={canManagePayments}
         />
       ) : tab === "zahlungen" ? (
         <AllPaymentsTable key="all" />
@@ -88,7 +93,11 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
           emptyMessage="Keine gelöschten/abgelaufenen/blockierten Mandate."
         />
       ) : (
-        <InkassoTable deals={deals} isAdmin={isAdmin} />
+        <InkassoTable
+          deals={deals}
+          isAdmin={isAdmin}
+          canManageDunning={canManagePayments}
+        />
       )}
 
       {manualOpen ? (

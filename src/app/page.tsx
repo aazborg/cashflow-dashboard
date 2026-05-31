@@ -22,6 +22,7 @@ export default async function DashboardPage({
 }) {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
+  if (ctx.isAccounting && !ctx.isAdmin) redirect("/daten");
   const { mitarbeiter: filterIdRaw, year: yearRaw } = await searchParams;
   // Members can only see their own cashflow; ignore any filter override.
   const filterId = ctx.isAdmin ? filterIdRaw : ctx.ownerId;
