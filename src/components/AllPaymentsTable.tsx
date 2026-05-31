@@ -132,7 +132,7 @@ export default function AllPaymentsTable({
     (async () => {
       try {
         const res = await fetch(
-          "/cashflow/api/bot/gocardless/all-payments?limit=1000",
+          "/cashflow/api/bot/gocardless/all-payments?limit=10000",
         );
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
