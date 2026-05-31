@@ -29,11 +29,21 @@ function allowedEmails(): string[] {
     .filter(Boolean);
 }
 
-/** Standalone /notiz-Seite und sonstige Beta-Tools. */
+/** Standalone /notiz-Seite (Angebots-Notiz-Generator).
+ *  Freigegeben fuer alle Sales-Mitarbeiter (Closer + Setter) +
+ *  Admins. Accounting hat kein Sales-Kundenkontakt -> kein Zugriff.
+ *  Beta-Allowlist (env RECHNUNG_BOT_ALLOWED_EMAILS) wirkt nur noch
+ *  als FORCE-OPEN: wer in der Liste steht, kommt rein -- alle
+ *  Sales-Rollen kommen ohnehin rein. */
 export function canUseRechnungsBot(
-  ctx: Pick<SessionContext, "isAdmin" | "user"> | null,
+  ctx: Pick<
+    SessionContext,
+    "isAdmin" | "isCloser" | "isSetter" | "user"
+  > | null,
 ): boolean {
-  if (!ctx?.isAdmin) return false;
+  if (!ctx) return false;
+  if (ctx.isAdmin) return true;
+  if (ctx.isCloser || ctx.isSetter) return true;
   const email = ctx.user.email.trim().toLowerCase();
   return allowedEmails().includes(email);
 }
