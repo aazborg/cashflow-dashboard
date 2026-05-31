@@ -47,6 +47,14 @@ interface DealRow {
   gocardless_last_failure_at?: string | null;
   gocardless_last_failure_reason?: string | null;
   vertrag_gesamtbetrag?: number | string | null;
+  dunning_status?: "mahnung_1" | "mahnung_2" | "inkasso" | "resolved" | null;
+  dunning_updated_at?: string | null;
+  dunning_mahnung_count?: number | null;
+  dunning_last_failure_amount_cents?: number | null;
+  dunning_total_fees_cents?: number | null;
+  dunning_inkasso_due_at?: string | null;
+  dunning_inkasso_sent_at?: string | null;
+  dunning_last_email_at?: string | null;
 }
 
 function rowToDeal(r: DealRow): Deal {
@@ -88,6 +96,15 @@ function rowToDeal(r: DealRow): Deal {
     gocardless_last_failure_reason: r.gocardless_last_failure_reason ?? null,
     vertrag_gesamtbetrag: r.vertrag_gesamtbetrag == null
       ? null : Number(r.vertrag_gesamtbetrag),
+    dunning_status: r.dunning_status ?? null,
+    dunning_updated_at: r.dunning_updated_at ?? null,
+    dunning_mahnung_count: r.dunning_mahnung_count ?? null,
+    dunning_last_failure_amount_cents:
+      r.dunning_last_failure_amount_cents ?? null,
+    dunning_total_fees_cents: r.dunning_total_fees_cents ?? null,
+    dunning_inkasso_due_at: r.dunning_inkasso_due_at ?? null,
+    dunning_inkasso_sent_at: r.dunning_inkasso_sent_at ?? null,
+    dunning_last_email_at: r.dunning_last_email_at ?? null,
   };
 }
 

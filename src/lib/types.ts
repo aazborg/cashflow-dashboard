@@ -73,6 +73,15 @@ export interface Deal {
   gocardless_last_failure_at?: string | null;
   gocardless_last_failure_reason?: string | null;
   vertrag_gesamtbetrag?: number | null;
+  /** Dunning-/Mahnungs-Workflow (migration 0017) */
+  dunning_status?: "mahnung_1" | "mahnung_2" | "inkasso" | "resolved" | null;
+  dunning_updated_at?: string | null;
+  dunning_mahnung_count?: number | null;
+  dunning_last_failure_amount_cents?: number | null;
+  dunning_total_fees_cents?: number | null;
+  dunning_inkasso_due_at?: string | null;
+  dunning_inkasso_sent_at?: string | null;
+  dunning_last_email_at?: string | null;
 }
 
 export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";

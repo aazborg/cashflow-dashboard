@@ -10,9 +10,10 @@ import ZahlungenTable from "@/components/ZahlungenTable";
 import AllPaymentsTable from "@/components/AllPaymentsTable";
 import MandatesTable from "@/components/MandatesTable";
 import ManualMandateModal from "@/components/ManualMandateModal";
+import InkassoTable from "@/components/InkassoTable";
 import type { Deal, Employee } from "@/lib/types";
 
-type Tab = "kunden" | "zahlungen" | "rueckbelastungen" | "geloeschte_mandate";
+type Tab = "kunden" | "zahlungen" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
 
 interface Props {
   deals: Deal[];
@@ -57,6 +58,12 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
         >
           Mandate gelöscht
         </TabBtn>
+        <TabBtn
+          active={tab === "inkasso"}
+          onClick={() => setTab("inkasso")}
+        >
+          Mahnungen / Inkasso
+        </TabBtn>
       </div>
       {tab === "kunden" ? (
         <ZahlungenTable
@@ -72,12 +79,14 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
           defaultStatus="chargeback"
           emptyMessage="Aktuell keine Rückbelastungen (charged_back). 🎉"
         />
-      ) : (
+      ) : tab === "geloeschte_mandate" ? (
         <MandatesTable
           key="cancelled-mandates"
           statusFilter="cancelled,expired,blocked"
           emptyMessage="Keine gelöschten/abgelaufenen/blockierten Mandate."
         />
+      ) : (
+        <InkassoTable deals={deals} />
       )}
 
       {manualOpen ? (
