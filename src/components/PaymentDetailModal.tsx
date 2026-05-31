@@ -59,7 +59,7 @@ function DunningBtns({ dealId }: { dealId: string }) {
       `  • eine 30,00 € Rückbuchungsgebühr via GoCardless eingezogen\n` +
       `  • eine ${label}-Email an den Kunden gesendet\n` +
       `  • der Status auf 'mahnung_${stufe}' gesetzt` +
-      (stufe === 2 ? `\n  • Inkasso-Frist auf +14 Tage gesetzt` : "")
+      (stufe === 2 ? `\n  • Inkasso-Frist auf +7 Tage gesetzt` : "")
     )) return;
     setBusy(String(stufe) as "1" | "2");
     setErr(""); setMsg("");
