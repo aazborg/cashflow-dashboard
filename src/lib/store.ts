@@ -26,6 +26,11 @@ interface DealRow {
   source: "hubspot" | "manual" | "legacy";
   pending_delete: boolean;
   created_at: string;
+  zahlungsmodell?: "einmal" | "raten" | null;
+  raten_info?: string | null;
+  vertrag_synced_at?: string | null;
+  vertrag_file_name?: string | null;
+  vertrag_not_found?: boolean | null;
 }
 
 function rowToDeal(r: DealRow): Deal {
@@ -45,6 +50,11 @@ function rowToDeal(r: DealRow): Deal {
     source: r.source,
     created_at: r.created_at,
     pending_delete: r.pending_delete,
+    zahlungsmodell: r.zahlungsmodell ?? null,
+    raten_info: r.raten_info ?? null,
+    vertrag_synced_at: r.vertrag_synced_at ?? null,
+    vertrag_file_name: r.vertrag_file_name ?? null,
+    vertrag_not_found: r.vertrag_not_found ?? null,
   };
 }
 

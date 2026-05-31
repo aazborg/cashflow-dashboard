@@ -48,6 +48,12 @@ export interface Deal {
   source: "hubspot" | "manual" | "legacy";
   created_at: string;
   pending_delete?: boolean;
+  /** Aus dem signierten Drive-Vertrag geparst (vertrags_modell_sync). */
+  zahlungsmodell?: "einmal" | "raten" | null;
+  raten_info?: string | null;
+  vertrag_synced_at?: string | null;
+  vertrag_file_name?: string | null;
+  vertrag_not_found?: boolean | null;
 }
 
 export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";

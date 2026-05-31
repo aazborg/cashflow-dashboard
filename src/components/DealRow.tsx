@@ -30,6 +30,15 @@ export default function DealRow({
 }: Props) {
   const [rechnungsModalOpen, setRechnungsModalOpen] = useState(false);
   const [mandateModalOpen, setMandateModalOpen] = useState(false);
+  const [vertragSyncing, setVertragSyncing] = useState(false);
+  // Lokaler Overlay nach manuellem "Vertrag-parsen"-Klick. Damit die
+  // frischen Werte sofort im UI auftauchen, ohne Page-Reload.
+  const [vertragOverlay, setVertragOverlay] = useState<{
+    zahlungsmodell?: "einmal" | "raten" | null;
+    raten_info?: string | null;
+    vertrag_not_found?: boolean;
+    vertrag_synced_at?: string | null;
+  } | null>(null);
   // Reload-Trigger: nach Mandate-Anlage wird incrementiert, damit der
   // notiz-vorlagen-Lookup neu ausgefuehrt wird und der GC-Badge updated.
   const [reloadKey, setReloadKey] = useState(0);
@@ -235,21 +244,56 @@ export default function DealRow({
               ⛔ Storniert
             </span>
           ) : null}
-          {rechnungInfo?.zahlungsmodell === "raten" ? (
-            <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300"
-              title={rechnungInfo.raten_info || "Ratenzahlung laut Vertrag"}
-            >
-              💳 Raten
-            </span>
-          ) : rechnungInfo?.zahlungsmodell === "einmal" ? (
-            <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 text-blue-900 border border-blue-300"
-              title="Einmalzahlung laut Vertrag"
-            >
-              💰 Einmal
-            </span>
-          ) : null}
+          {(() => {
+            // Vertrag-Zahlungsmodell: bevorzugt frisch geparst
+            // (Overlay nach Button-Klick), dann aus deal (Background-
+            // Sync), fallback auf Notiz-Vorlage.
+            const zm = vertragOverlay?.zahlungsmodell
+              ?? deal.zahlungsmodell
+              ?? rechnungInfo?.zahlungsmodell;
+            const info = vertragOverlay?.raten_info
+              ?? deal.raten_info
+              ?? rechnungInfo?.raten_info;
+            const notFound = vertragOverlay?.vertrag_not_found
+              ?? deal.vertrag_not_found;
+            const syncedAt = vertragOverlay?.vertrag_synced_at
+              ?? deal.vertrag_synced_at;
+            if (zm === "raten") {
+              return (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300"
+                  title={info || "Ratenzahlung laut Vertrag"}
+                >
+                  💳 Raten
+                </span>
+              );
+            }
+            if (zm === "einmal") {
+              return (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 text-blue-900 border border-blue-300"
+                  title="Einmalzahlung laut Vertrag"
+                >
+                  💰 Einmal
+                </span>
+              );
+            }
+            if (notFound) {
+              return (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-300"
+                  title={
+                    `Kein Vertrag in Drive gefunden (zuletzt geprüft: ${
+                      syncedAt?.slice(0, 10) ?? "—"
+                    })`
+                  }
+                >
+                  ⚠ Kein Vertrag
+                </span>
+              );
+            }
+            return null;
+          })()}
           {(() => {
             const ms = rechnungInfo?.gocardless_mandate_status;
             if (!ms) return null;
@@ -455,6 +499,56 @@ export default function DealRow({
                 >
                   Bearbeiten
                 </button>
+                {canCreateRechnung && deal.nachname ? (
+                  <button
+                    onClick={async () => {
+                      if (vertragSyncing) return;
+                      setVertragSyncing(true);
+                      try {
+                        const r = await fetch("/api/bot/vertrag/sync-deal", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            deal_id: deal.id,
+                            suchname: `${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim(),
+                          }),
+                        });
+                        const j = await r.json();
+                        if (!r.ok) {
+                          alert(`Fehler: ${j.error || r.status}`);
+                        } else if (!j.found) {
+                          setVertragOverlay({
+                            zahlungsmodell: null,
+                            raten_info: null,
+                            vertrag_not_found: true,
+                            vertrag_synced_at: new Date().toISOString(),
+                          });
+                        } else {
+                          setVertragOverlay({
+                            zahlungsmodell: j.zahlungsmodell,
+                            raten_info: j.raten_info,
+                            vertrag_not_found: false,
+                            vertrag_synced_at: new Date().toISOString(),
+                          });
+                        }
+                        setReloadKey((k) => k + 1);
+                      } catch (e) {
+                        alert(`Fehler: ${e instanceof Error ? e.message : e}`);
+                      } finally {
+                        setVertragSyncing(false);
+                      }
+                    }}
+                    disabled={vertragSyncing}
+                    className="text-xs px-1.5 py-1 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)] mr-1 disabled:opacity-40"
+                    title={
+                      deal.vertrag_synced_at
+                        ? `Vertrag neu aus Drive parsen (zuletzt ${deal.vertrag_synced_at.slice(0,10)})`
+                        : "Vertrag aus Drive parsen (zahlungsmodell, Raten-Info)"
+                    }
+                  >
+                    {vertragSyncing ? "…" : "↻ Vertrag"}
+                  </button>
+                ) : null}
                 {canCreateRechnung ? (
                   <button
                     onClick={() => setRechnungsModalOpen(true)}
@@ -494,7 +588,9 @@ export default function DealRow({
                   </button>
                 ) : null}
                 {canCreateRechnung
-                  && rechnungInfo?.zahlungsmodell === "raten"
+                  && (vertragOverlay?.zahlungsmodell === "raten"
+                      || deal.zahlungsmodell === "raten"
+                      || rechnungInfo?.zahlungsmodell === "raten")
                   && rechnungInfo?.vorlage_id
                   && !rechnungInfo?.gocardless_mandate_id ? (
                   <button
