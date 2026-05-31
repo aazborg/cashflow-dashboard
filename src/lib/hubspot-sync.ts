@@ -8,16 +8,26 @@ export const NEUKUNDEN_PIPELINE_ID = "1591488724";
 export const CLOSED_WON_STAGE_ID = "2174705850";
 
 /**
- * Holt dynamisch alle Stage-IDs aus allen Deal-Pipelines, die
- * 'Closed Won' sind (metadata.probability === '1.0' und
- * metadata.isClosed === 'true'). Damit kann das Dashboard auch
- * Deals aus anderen Pipelines (Bestandskunden, Re-Booking, ...)
- * uebernehmen sobald sie auf 'gewonnen' gesetzt werden -- nicht
- * nur die Neukunden-Pipeline.
+ * Whitelist der Pipelines, deren Closed-Won-Stage als Revenue zaehlt.
+ * Andere Pipelines (Recruiting/Webinar/Datenuebertrag) haben Stages
+ * mit probability=1.0 + isClosed=true, die in Wahrheit kein Revenue
+ * sind (Mitarbeiter-Anstellung, Lead-Stages, ...).
+ *
+ * Pipeline-Label-Match -- ueberlebt HubSpot-ID-Aenderungen.
+ */
+const PIPELINE_LABEL_ALLOWLIST = new Set([
+  "Neukunden",
+  "Bestandskunden",
+]);
+
+/**
+ * Holt dynamisch die 'Closed Won' Stage-IDs der in
+ * PIPELINE_LABEL_ALLOWLIST gefuehrten Pipelines. Filter:
+ * probability === '1.0' UND isClosed === 'true' UND Pipeline-Label
+ * in der Allowlist.
  *
  * Result wird waehrend des Funktionsaufrufs gecached. Beim
- * naechsten Aufruf neu geholt (HubSpot kann neue Pipelines/Stages
- * einrichten).
+ * naechsten Aufruf neu geholt (HubSpot kann neue Stages anlegen).
  */
 let _wonStageCache: { ids: Set<string>; ts: number } | null = null;
 const WON_STAGE_TTL_MS = 5 * 60 * 1000; // 5 Min
@@ -47,6 +57,7 @@ export async function getWonStageIds(token: string): Promise<Set<string>> {
   };
   const ids = new Set<string>();
   for (const pl of j.results ?? []) {
+    if (!PIPELINE_LABEL_ALLOWLIST.has(pl.label)) continue;
     for (const st of pl.stages ?? []) {
       const prob = st.metadata?.probability;
       const closed = st.metadata?.isClosed;
