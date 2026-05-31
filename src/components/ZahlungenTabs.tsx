@@ -13,7 +13,7 @@ import ManualMandateModal from "@/components/ManualMandateModal";
 import InkassoTable from "@/components/InkassoTable";
 import type { Deal, Employee } from "@/lib/types";
 
-type Tab = "kunden" | "zahlungen" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
+type Tab = "kunden" | "zahlungen" | "storniert" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
 
 interface Props {
   deals: Deal[];
@@ -51,6 +51,12 @@ export default function ZahlungenTabs({
           Alle Zahlungen
         </TabBtn>
         <TabBtn
+          active={tab === "storniert"}
+          onClick={() => setTab("storniert")}
+        >
+          Stornierte Zahlungen
+        </TabBtn>
+        <TabBtn
           active={tab === "rueckbelastungen"}
           onClick={() => setTab("rueckbelastungen")}
         >
@@ -78,6 +84,12 @@ export default function ZahlungenTabs({
         />
       ) : tab === "zahlungen" ? (
         <AllPaymentsTable key="all" />
+      ) : tab === "storniert" ? (
+        <AllPaymentsTable
+          key="cancelled"
+          defaultStatus="cancelled"
+          emptyMessage="Aktuell keine stornierten Zahlungen."
+        />
       ) : tab === "rueckbelastungen" ? (
         <AllPaymentsTable
           key="chargeback"

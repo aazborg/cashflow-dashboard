@@ -34,6 +34,7 @@ type StatusFilter =
   | "confirmed"
   | "pending"
   | "failed"
+  | "cancelled"
   | "chargeback"
   | "scheduled";
 
@@ -55,7 +56,7 @@ const eur = (cents: number | null | undefined) =>
 const formatDate = (s?: string | null) =>
   s ? new Date(s).toLocaleDateString("de-AT") : "—";
 
-function statusGroup(status: string | null): "confirmed" | "pending" | "failed" | "chargeback" | "scheduled" | "other" {
+function statusGroup(status: string | null): "confirmed" | "pending" | "failed" | "cancelled" | "chargeback" | "scheduled" | "other" {
   const s = status ?? "";
   if (s === "confirmed" || s === "paid_out") return "confirmed";
   if (
@@ -65,12 +66,8 @@ function statusGroup(status: string | null): "confirmed" | "pending" | "failed" 
   )
     return "pending";
   if (s === "charged_back") return "chargeback";
-  if (
-    s === "failed" ||
-    s === "cancelled" ||
-    s === "customer_approval_denied"
-  )
-    return "failed";
+  if (s === "cancelled" || s === "customer_approval_denied") return "cancelled";
+  if (s === "failed") return "failed";
   if (s === "scheduled") return "scheduled";
   return "other";
 }
@@ -93,6 +90,18 @@ function statusBadge(status: string | null): { cls: string; label: string } {
     return {
       cls: "bg-red-100 text-red-900 border-red-300",
       label: "✗ " + (status ?? ""),
+    };
+  }
+  if (g === "cancelled") {
+    return {
+      cls: "bg-slate-200 text-slate-700 border-slate-300",
+      label: "⊘ " + (status ?? ""),
+    };
+  }
+  if (g === "chargeback") {
+    return {
+      cls: "bg-orange-100 text-orange-900 border-orange-300",
+      label: "↩ " + (status ?? ""),
     };
   }
   return {
@@ -229,7 +238,8 @@ export default function AllPaymentsTable({
               <option value="all">Alle</option>
               <option value="confirmed">Bestätigt</option>
               <option value="pending">In Bearbeitung</option>
-              <option value="failed">Fehlgeschlagen/Storniert</option>
+              <option value="failed">Fehlgeschlagen</option>
+              <option value="cancelled">Storniert</option>
               <option value="chargeback">Rückbelastet</option>
               <option value="scheduled">Geplant</option>
             </select>
