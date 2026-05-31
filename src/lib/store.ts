@@ -55,6 +55,9 @@ interface DealRow {
   dunning_inkasso_due_at?: string | null;
   dunning_inkasso_sent_at?: string | null;
   dunning_last_email_at?: string | null;
+  inkasso_stage?: "ergo" | "anwalt" | "gericht" | "gewonnen" | "verloren" | null;
+  inkasso_stage_updated_at?: string | null;
+  inkasso_stage_note?: string | null;
 }
 
 function rowToDeal(r: DealRow): Deal {
@@ -105,6 +108,9 @@ function rowToDeal(r: DealRow): Deal {
     dunning_inkasso_due_at: r.dunning_inkasso_due_at ?? null,
     dunning_inkasso_sent_at: r.dunning_inkasso_sent_at ?? null,
     dunning_last_email_at: r.dunning_last_email_at ?? null,
+    inkasso_stage: r.inkasso_stage ?? null,
+    inkasso_stage_updated_at: r.inkasso_stage_updated_at ?? null,
+    inkasso_stage_note: r.inkasso_stage_note ?? null,
   };
 }
 

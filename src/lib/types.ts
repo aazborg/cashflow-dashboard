@@ -82,6 +82,10 @@ export interface Deal {
   dunning_inkasso_due_at?: string | null;
   dunning_inkasso_sent_at?: string | null;
   dunning_last_email_at?: string | null;
+  /** Sub-Status fuer das Inkasso-Verfahren (migration 0019). */
+  inkasso_stage?: "ergo" | "anwalt" | "gericht" | "gewonnen" | "verloren" | null;
+  inkasso_stage_updated_at?: string | null;
+  inkasso_stage_note?: string | null;
 }
 
 export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";

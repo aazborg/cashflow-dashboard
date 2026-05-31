@@ -18,6 +18,31 @@ type StatusFilter =
   | "inkasso"
   | "resolved";
 
+type StageFilter =
+  | "all"
+  | "none"
+  | "ergo"
+  | "anwalt"
+  | "gericht"
+  | "gewonnen"
+  | "verloren";
+
+const STAGE_LABELS: Record<string, string> = {
+  ergo: "Bei Ergo",
+  anwalt: "Bei Anwalt",
+  gericht: "Vor Gericht",
+  gewonnen: "Gewonnen",
+  verloren: "Verloren",
+};
+
+const STAGE_CLS: Record<string, string> = {
+  ergo: "bg-orange-100 text-orange-900 border-orange-400",
+  anwalt: "bg-purple-100 text-purple-900 border-purple-400",
+  gericht: "bg-red-200 text-red-900 border-red-500",
+  gewonnen: "bg-green-100 text-green-900 border-green-500",
+  verloren: "bg-gray-300 text-gray-900 border-gray-500",
+};
+
 interface Props {
   deals: Deal[];
 }
@@ -70,17 +95,66 @@ function statusBadge(status: string | null | undefined): {
   };
 }
 
-export default function InkassoTable({ deals }: Props) {
+export default function InkassoTable({ deals: initialDeals }: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
+
+  // Lokale Kopie damit Stage-Updates ohne Page-Reload sichtbar werden
+  const [deals, setDeals] = useState<Deal[]>(initialDeals);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  async function updateStage(deal: Deal, stage: string | null) {
+    setSavingId(deal.id);
+    try {
+      const res = await fetch(
+        "/cashflow/api/bot/dunning/inkasso-stage",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deal_id: deal.id, stage }),
+        },
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(`Fehler: ${j.error || res.status}`);
+        return;
+      }
+      setDeals((ds) =>
+        ds.map((d) =>
+          d.id === deal.id
+            ? {
+                ...d,
+                inkasso_stage:
+                  (stage as Deal["inkasso_stage"]) ?? null,
+                inkasso_stage_updated_at: new Date().toISOString(),
+                dunning_status: j.resolved
+                  ? ("resolved" as const)
+                  : d.dunning_status,
+              }
+            : d,
+        ),
+      );
+    } catch (e) {
+      alert(`Fehler: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = deals.filter((d) => {
-      if (!d.dunning_status) return false;
+      if (!d.dunning_status && !d.inkasso_stage) return false;
       if (statusFilter !== "all" && d.dunning_status !== statusFilter) {
         return false;
+      }
+      if (stageFilter !== "all") {
+        if (stageFilter === "none" && d.inkasso_stage) return false;
+        if (stageFilter !== "none" && d.inkasso_stage !== stageFilter) {
+          return false;
+        }
       }
       if (q) {
         const hay = `${d.vorname ?? ""} ${d.nachname ?? ""} ${d.email ?? ""}`.toLowerCase();
@@ -192,6 +266,24 @@ export default function InkassoTable({ deals }: Props) {
             <option value="resolved">Erledigt</option>
           </select>
         </div>
+        <div>
+          <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
+            Inkasso-Stage
+          </label>
+          <select
+            value={stageFilter}
+            onChange={(e) => setStageFilter(e.target.value as StageFilter)}
+            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+          >
+            <option value="all">Alle</option>
+            <option value="none">(ohne Zuordnung)</option>
+            <option value="ergo">Bei Ergo</option>
+            <option value="anwalt">Bei Anwalt</option>
+            <option value="gericht">Vor Gericht</option>
+            <option value="gewonnen">Gewonnen</option>
+            <option value="verloren">Verloren</option>
+          </select>
+        </div>
       </div>
 
       {/* Tabelle */}
@@ -201,6 +293,7 @@ export default function InkassoTable({ deals }: Props) {
             <tr className="text-left">
               <th className="px-3 py-2">Kunde</th>
               <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Inkasso-Stage</th>
               <th className="px-3 py-2 text-right">Mahnungen</th>
               <th className="px-3 py-2 text-right">Gebühren</th>
               <th className="px-3 py-2">Letzte Email</th>
@@ -212,7 +305,7 @@ export default function InkassoTable({ deals }: Props) {
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                 >
                   {deals.some((d) => d.dunning_status)
@@ -257,6 +350,31 @@ export default function InkassoTable({ deals }: Props) {
                       >
                         {stat.label}
                       </span>
+                    </td>
+                    <td className="px-3 py-2"
+                        onClick={(e) => e.stopPropagation()}>
+                      <select
+                        value={d.inkasso_stage ?? ""}
+                        disabled={savingId === d.id}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updateStage(d, v || null);
+                        }}
+                        className={
+                          "text-[11px] px-1.5 py-0.5 rounded border " +
+                          (d.inkasso_stage
+                            ? STAGE_CLS[d.inkasso_stage]
+                            : "bg-white border-gray-300 text-gray-700")
+                        }
+                        title={d.inkasso_stage_note ?? ""}
+                      >
+                        <option value="">— wählen —</option>
+                        <option value="ergo">Bei Ergo</option>
+                        <option value="anwalt">Bei Anwalt</option>
+                        <option value="gericht">Vor Gericht</option>
+                        <option value="gewonnen">Gewonnen</option>
+                        <option value="verloren">Verloren</option>
+                      </select>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {d.dunning_mahnung_count ?? 0}
