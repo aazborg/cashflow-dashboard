@@ -47,7 +47,7 @@ interface Props {
 }
 
 function DunningBtns({ dealId }: { dealId: string }) {
-  const [busy, setBusy] = useState<"1" | "2" | null>(null);
+  const [busy, setBusy] = useState<"1" | "2" | "ink" | null>(null);
   const [msg, setMsg] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
@@ -82,9 +82,41 @@ function DunningBtns({ dealId }: { dealId: string }) {
     }
   }
 
+  async function triggerInkasso(testMode: boolean) {
+    const confirmMsg = testMode
+      ? "Inkasso-Test versenden?\n\nEmail geht an deine Adresse (nicht an Ergo)."
+      : "Inkasso jetzt an Ergo Versicherung versenden?\n\n" +
+        "Dies leitet die offene Forderung an die Inkassostelle weiter.\n" +
+        "Email mit Vertrag + Rechnung als Anhang geht an:\n" +
+        "  rechtsservice-inkasso@ergo-versicherung.at";
+    if (!window.confirm(confirmMsg)) return;
+    setBusy("ink"); setErr(""); setMsg("");
+    try {
+      const body: Record<string, unknown> = { deal_id: dealId };
+      if (testMode) body.test_to_override = "mario.grabner@mynlp.at";
+      const res = await fetch("/cashflow/api/bot/dunning/inkasso", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErr(j.error || `HTTP ${res.status}`);
+      } else {
+        const att: string = (j.attachments ?? []).join(", ") || "(keine)";
+        const tag = testMode ? "TEST" : "INKASSO";
+        setMsg(`✓ ${tag} an ${j.to} versendet. Anhänge: ${att}`);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
-    <div className="rounded p-2 bg-amber-50 border border-amber-300">
-      <div className="text-[10px] font-semibold uppercase text-amber-900/80 mb-1">
+    <div className="rounded p-2 bg-amber-50 border border-amber-300 space-y-2">
+      <div className="text-[10px] font-semibold uppercase text-amber-900/80">
         Mahnungs-Workflow
       </div>
       <div className="flex flex-wrap gap-2 items-center text-xs">
@@ -104,9 +136,27 @@ function DunningBtns({ dealId }: { dealId: string }) {
         >
           {busy === "2" ? "…" : "2. Mahnung + 30 € Gebühr"}
         </button>
-        {msg ? <span className="text-green-700">{msg}</span> : null}
-        {err ? <span className="text-red-700">Fehler: {err}</span> : null}
+        <button
+          type="button"
+          onClick={() => triggerInkasso(true)}
+          disabled={busy !== null}
+          className="px-2 py-1 rounded border border-gray-500 text-gray-900 hover:bg-gray-200 disabled:opacity-40"
+          title="Inkasso-Test (Email an dich statt Ergo)"
+        >
+          {busy === "ink" ? "…" : "Inkasso-TEST"}
+        </button>
+        <button
+          type="button"
+          onClick={() => triggerInkasso(false)}
+          disabled={busy !== null}
+          className="px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+          title="Inkasso an Ergo Versicherung – IRREVERSIBEL"
+        >
+          {busy === "ink" ? "…" : "🚨 Inkasso an Ergo"}
+        </button>
       </div>
+      {msg ? <div className="text-xs text-green-700">{msg}</div> : null}
+      {err ? <div className="text-xs text-red-700">Fehler: {err}</div> : null}
     </div>
   );
 }
