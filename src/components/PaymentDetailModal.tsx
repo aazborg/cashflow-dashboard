@@ -46,6 +46,71 @@ interface Props {
   onClose: () => void;
 }
 
+function DunningBtns({ dealId }: { dealId: string }) {
+  const [busy, setBusy] = useState<"1" | "2" | null>(null);
+  const [msg, setMsg] = useState<string>("");
+  const [err, setErr] = useState<string>("");
+
+  async function trigger(stufe: 1 | 2) {
+    const label = stufe === 1 ? "1. Mahnung" : "2. Mahnung";
+    if (!window.confirm(
+      `${label} jetzt auslösen?\n\n` +
+      `Es wird:\n` +
+      `  • eine 30,00 € Rückbuchungsgebühr via GoCardless eingezogen\n` +
+      `  • eine ${label}-Email an den Kunden gesendet\n` +
+      `  • der Status auf 'mahnung_${stufe}' gesetzt` +
+      (stufe === 2 ? `\n  • Inkasso-Frist auf +14 Tage gesetzt` : "")
+    )) return;
+    setBusy(String(stufe) as "1" | "2");
+    setErr(""); setMsg("");
+    try {
+      const res = await fetch("/cashflow/api/bot/dunning/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deal_id: dealId, stufe }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setErr(j.error || `HTTP ${res.status}`);
+      } else {
+        setMsg(`✓ ${label} ausgelöst (Fee-Payment: ${j.fee_payment_id ?? "—"}, Email: ${j.email_message_id ? "OK" : "FAIL"})`);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="rounded p-2 bg-amber-50 border border-amber-300">
+      <div className="text-[10px] font-semibold uppercase text-amber-900/80 mb-1">
+        Mahnungs-Workflow
+      </div>
+      <div className="flex flex-wrap gap-2 items-center text-xs">
+        <button
+          type="button"
+          onClick={() => trigger(1)}
+          disabled={busy !== null}
+          className="px-2 py-1 rounded border border-amber-500 text-amber-900 hover:bg-amber-200 disabled:opacity-40"
+        >
+          {busy === "1" ? "…" : "1. Mahnung + 30 € Gebühr"}
+        </button>
+        <button
+          type="button"
+          onClick={() => trigger(2)}
+          disabled={busy !== null}
+          className="px-2 py-1 rounded border border-red-500 text-red-900 hover:bg-red-100 disabled:opacity-40"
+        >
+          {busy === "2" ? "…" : "2. Mahnung + 30 € Gebühr"}
+        </button>
+        {msg ? <span className="text-green-700">{msg}</span> : null}
+        {err ? <span className="text-red-700">Fehler: {err}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function CancelMandateBtn({
   mandateId,
   mandateStatus,
@@ -395,19 +460,22 @@ export default function PaymentDetailModal({ deal, onClose }: Props) {
 
               {/* Aktionen */}
               {deal.gocardless_mandate_id ? (
-                <div className="flex items-center justify-between gap-2 text-xs pt-2 border-t border-[color:var(--border)]">
-                  <CancelMandateBtn
-                    mandateId={deal.gocardless_mandate_id}
-                    mandateStatus={deal.gocardless_mandate_status}
-                  />
-                  <a
-                    href={`https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/customers/${data.customer_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[color:var(--brand-orange)] hover:underline"
-                  >
-                    In GoCardless öffnen ↗
-                  </a>
+                <div className="space-y-2 pt-2 border-t border-[color:var(--border)]">
+                  <DunningBtns dealId={deal.id} />
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <CancelMandateBtn
+                      mandateId={deal.gocardless_mandate_id}
+                      mandateStatus={deal.gocardless_mandate_status}
+                    />
+                    <a
+                      href={`https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/customers/${data.customer_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[color:var(--brand-orange)] hover:underline"
+                    >
+                      In GoCardless öffnen ↗
+                    </a>
+                  </div>
                 </div>
               ) : null}
             </>
