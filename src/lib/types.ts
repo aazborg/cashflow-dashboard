@@ -53,6 +53,7 @@ export interface Deal {
   raten_info?: string | null;
   vertrag_synced_at?: string | null;
   vertrag_file_name?: string | null;
+  vertrag_file_id?: string | null;
   vertrag_not_found?: boolean | null;
 }
 

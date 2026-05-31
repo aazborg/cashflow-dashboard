@@ -17,6 +17,11 @@ ALTER TABLE public.deals
 ALTER TABLE public.deals
     ADD COLUMN IF NOT EXISTS vertrag_file_name TEXT;
 
+-- Google-Drive-File-ID -- damit das Dashboard direkt zum
+-- signierten Vertrag verlinken kann (Drive-View-URL).
+ALTER TABLE public.deals
+    ADD COLUMN IF NOT EXISTS vertrag_file_id TEXT;
+
 -- Marker: kein Vertrag in Drive gefunden (vermeidet repeated lookups).
 ALTER TABLE public.deals
     ADD COLUMN IF NOT EXISTS vertrag_not_found BOOLEAN DEFAULT FALSE;

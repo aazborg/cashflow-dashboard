@@ -258,24 +258,46 @@ export default function DealRow({
               ?? deal.vertrag_not_found;
             const syncedAt = vertragOverlay?.vertrag_synced_at
               ?? deal.vertrag_synced_at;
-            if (zm === "raten") {
-              return (
-                <span
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300"
-                  title={info || "Ratenzahlung laut Vertrag"}
+            const fileId = deal.vertrag_file_id;
+            const fileName = deal.vertrag_file_name;
+            const driveUrl = fileId
+              ? `https://drive.google.com/file/d/${fileId}/view`
+              : undefined;
+            const wrap = (
+              body: React.ReactNode,
+              title: string,
+              colorCls: string,
+            ) =>
+              driveUrl ? (
+                <a
+                  href={driveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${colorCls} hover:opacity-80`}
+                  title={`${title}\n${fileName ?? ""}\n(Klick = Vertrag in Drive öffnen)`}
                 >
-                  💳 Raten
+                  {body}
+                </a>
+              ) : (
+                <span
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${colorCls}`}
+                  title={title}
+                >
+                  {body}
                 </span>
+              );
+            if (zm === "raten") {
+              return wrap(
+                <>💳 Raten</>,
+                info || "Ratenzahlung laut Vertrag",
+                "bg-amber-100 text-amber-900 border-amber-300",
               );
             }
             if (zm === "einmal") {
-              return (
-                <span
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 text-blue-900 border border-blue-300"
-                  title="Einmalzahlung laut Vertrag"
-                >
-                  💰 Einmal
-                </span>
+              return wrap(
+                <>💰 Einmal</>,
+                "Einmalzahlung laut Vertrag",
+                "bg-blue-100 text-blue-900 border-blue-300",
               );
             }
             if (notFound) {

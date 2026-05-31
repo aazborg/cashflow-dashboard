@@ -30,6 +30,7 @@ interface DealRow {
   raten_info?: string | null;
   vertrag_synced_at?: string | null;
   vertrag_file_name?: string | null;
+  vertrag_file_id?: string | null;
   vertrag_not_found?: boolean | null;
 }
 
@@ -54,6 +55,7 @@ function rowToDeal(r: DealRow): Deal {
     raten_info: r.raten_info ?? null,
     vertrag_synced_at: r.vertrag_synced_at ?? null,
     vertrag_file_name: r.vertrag_file_name ?? null,
+    vertrag_file_id: r.vertrag_file_id ?? null,
     vertrag_not_found: r.vertrag_not_found ?? null,
   };
 }
