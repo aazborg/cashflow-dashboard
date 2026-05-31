@@ -8,9 +8,10 @@
 import { useState } from "react";
 import ZahlungenTable from "@/components/ZahlungenTable";
 import AllPaymentsTable from "@/components/AllPaymentsTable";
+import MandatesTable from "@/components/MandatesTable";
 import type { Deal, Employee } from "@/lib/types";
 
-type Tab = "kunden" | "zahlungen";
+type Tab = "kunden" | "zahlungen" | "rueckbelastungen" | "geloeschte_mandate";
 
 interface Props {
   deals: Deal[];
@@ -22,7 +23,7 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
   const [tab, setTab] = useState<Tab>("kunden");
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 border-b border-[color:var(--border)]">
+      <div className="flex gap-1 border-b border-[color:var(--border)] overflow-x-auto">
         <TabBtn active={tab === "kunden"} onClick={() => setTab("kunden")}>
           Kunden
         </TabBtn>
@@ -32,6 +33,18 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
         >
           Alle Zahlungen
         </TabBtn>
+        <TabBtn
+          active={tab === "rueckbelastungen"}
+          onClick={() => setTab("rueckbelastungen")}
+        >
+          Rückbelastungen
+        </TabBtn>
+        <TabBtn
+          active={tab === "geloeschte_mandate"}
+          onClick={() => setTab("geloeschte_mandate")}
+        >
+          Mandate gelöscht
+        </TabBtn>
       </div>
       {tab === "kunden" ? (
         <ZahlungenTable
@@ -39,8 +52,18 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
           employees={employees}
           isAdmin={isAdmin}
         />
-      ) : (
+      ) : tab === "zahlungen" ? (
         <AllPaymentsTable />
+      ) : tab === "rueckbelastungen" ? (
+        <AllPaymentsTable
+          defaultStatus="chargeback"
+          emptyMessage="Aktuell keine Rückbelastungen (charged_back). 🎉"
+        />
+      ) : (
+        <MandatesTable
+          statusFilter="cancelled,expired,blocked"
+          emptyMessage="Keine gelöschten/abgelaufenen/blockierten Mandate."
+        />
       )}
     </div>
   );

@@ -34,9 +34,17 @@ type StatusFilter =
   | "confirmed"
   | "pending"
   | "failed"
+  | "chargeback"
   | "scheduled";
 
 type SortKey = "date_desc" | "date_asc" | "amount_desc" | "name_asc";
+
+interface Props {
+  /** Optionaler Vorfilter -- z.B. fuer den 'Rueckbelastungen'-Tab.
+   *  Wenn gesetzt, wird der Status-Dropdown ausgeblendet. */
+  defaultStatus?: StatusFilter;
+  emptyMessage?: string;
+}
 
 const eur = (cents: number | null | undefined) =>
   ((cents ?? 0) / 100).toLocaleString("de-AT", {
@@ -47,7 +55,7 @@ const eur = (cents: number | null | undefined) =>
 const formatDate = (s?: string | null) =>
   s ? new Date(s).toLocaleDateString("de-AT") : "—";
 
-function statusGroup(status: string | null): "confirmed" | "pending" | "failed" | "scheduled" | "other" {
+function statusGroup(status: string | null): "confirmed" | "pending" | "failed" | "chargeback" | "scheduled" | "other" {
   const s = status ?? "";
   if (s === "confirmed" || s === "paid_out") return "confirmed";
   if (
@@ -56,9 +64,9 @@ function statusGroup(status: string | null): "confirmed" | "pending" | "failed" 
     s === "pending_customer_approval"
   )
     return "pending";
+  if (s === "charged_back") return "chargeback";
   if (
     s === "failed" ||
-    s === "charged_back" ||
     s === "cancelled" ||
     s === "customer_approval_denied"
   )
@@ -93,17 +101,21 @@ function statusBadge(status: string | null): { cls: string; label: string } {
   };
 }
 
-export default function AllPaymentsTable() {
+export default function AllPaymentsTable({
+  defaultStatus = "all",
+  emptyMessage = "Keine Zahlungen passen zu den Filtern.",
+}: Props = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [payments, setPayments] = useState<ApiPayment[]>([]);
   const [env, setEnv] = useState<string>("");
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(defaultStatus);
   const [sort, setSort] = useState<SortKey>("date_desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const hideStatusFilter = defaultStatus !== "all";
 
   useEffect(() => {
     setLoading(true);
@@ -204,22 +216,25 @@ export default function AllPaymentsTable() {
             className="w-full border border-[color:var(--border)] rounded px-3 py-1.5 text-sm"
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
-            Status
-          </label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
-          >
-            <option value="all">Alle</option>
-            <option value="confirmed">Bestätigt</option>
-            <option value="pending">In Bearbeitung</option>
-            <option value="failed">Fehlgeschlagen</option>
-            <option value="scheduled">Geplant</option>
-          </select>
-        </div>
+        {hideStatusFilter ? null : (
+          <div>
+            <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+            >
+              <option value="all">Alle</option>
+              <option value="confirmed">Bestätigt</option>
+              <option value="pending">In Bearbeitung</option>
+              <option value="failed">Fehlgeschlagen/Storniert</option>
+              <option value="chargeback">Rückbelastet</option>
+              <option value="scheduled">Geplant</option>
+            </select>
+          </div>
+        )}
         <div>
           <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
             Von
@@ -326,7 +341,7 @@ export default function AllPaymentsTable() {
                     colSpan={6}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
-                    Keine Zahlungen passen zu den Filtern.
+                    {emptyMessage}
                   </td>
                 </tr>
               ) : (
