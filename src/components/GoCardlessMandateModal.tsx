@@ -62,7 +62,9 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  vorlageId: string;
+  /** Entweder vorlageId ODER dealId muss gesetzt sein. */
+  vorlageId?: string;
+  dealId?: string;
   suchname: string;
   email?: string | null;
   actedByEmail?: string | null;
@@ -84,6 +86,7 @@ export default function GoCardlessMandateModal({
   onClose,
   onSuccess,
   vorlageId,
+  dealId,
   suchname,
   email,
   actedByEmail,
@@ -108,7 +111,11 @@ export default function GoCardlessMandateModal({
         const res = await fetch("/cashflow/api/bot/gocardless/parse-vertrag", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ suchname, vorlage_id: vorlageId }),
+          body: JSON.stringify({
+            suchname,
+            vorlage_id: vorlageId,
+            deal_id: dealId,
+          }),
         });
         const data = await res.json();
         if (cancelled) return;
@@ -127,7 +134,7 @@ export default function GoCardlessMandateModal({
     })();
 
     return () => { cancelled = true; };
-  }, [open, suchname, vorlageId]);
+  }, [open, suchname, vorlageId, dealId]);
 
   async function submitMandate() {
     setPhase("submitting");
@@ -138,6 +145,7 @@ export default function GoCardlessMandateModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           vorlage_id: vorlageId,
+          deal_id: dealId,
           suchname,
           email: email ?? undefined,
           acted_by_email: actedByEmail ?? undefined,

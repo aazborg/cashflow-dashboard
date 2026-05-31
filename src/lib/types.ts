@@ -55,6 +55,16 @@ export interface Deal {
   vertrag_file_name?: string | null;
   vertrag_file_id?: string | null;
   vertrag_not_found?: boolean | null;
+  /** GoCardless-Status -- gespiegelt vom create-mandate Endpoint
+   *  und vom 30-Min-Sync-Job (gocardless_sync.py). */
+  gocardless_customer_id?: string | null;
+  gocardless_mandate_id?: string | null;
+  gocardless_mandate_status?: string | null;
+  gocardless_mandate_reference?: string | null;
+  gocardless_subscription_id?: string | null;
+  gocardless_subscription_status?: string | null;
+  gocardless_synced_at?: string | null;
+  gocardless_env?: string | null;
 }
 
 export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";

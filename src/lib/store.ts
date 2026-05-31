@@ -32,6 +32,14 @@ interface DealRow {
   vertrag_file_name?: string | null;
   vertrag_file_id?: string | null;
   vertrag_not_found?: boolean | null;
+  gocardless_customer_id?: string | null;
+  gocardless_mandate_id?: string | null;
+  gocardless_mandate_status?: string | null;
+  gocardless_mandate_reference?: string | null;
+  gocardless_subscription_id?: string | null;
+  gocardless_subscription_status?: string | null;
+  gocardless_synced_at?: string | null;
+  gocardless_env?: string | null;
 }
 
 function rowToDeal(r: DealRow): Deal {
@@ -57,6 +65,14 @@ function rowToDeal(r: DealRow): Deal {
     vertrag_file_name: r.vertrag_file_name ?? null,
     vertrag_file_id: r.vertrag_file_id ?? null,
     vertrag_not_found: r.vertrag_not_found ?? null,
+    gocardless_customer_id: r.gocardless_customer_id ?? null,
+    gocardless_mandate_id: r.gocardless_mandate_id ?? null,
+    gocardless_mandate_status: r.gocardless_mandate_status ?? null,
+    gocardless_mandate_reference: r.gocardless_mandate_reference ?? null,
+    gocardless_subscription_id: r.gocardless_subscription_id ?? null,
+    gocardless_subscription_status: r.gocardless_subscription_status ?? null,
+    gocardless_synced_at: r.gocardless_synced_at ?? null,
+    gocardless_env: r.gocardless_env ?? null,
   };
 }
 

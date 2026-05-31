@@ -613,7 +613,8 @@ export default function DealRow({
                   && (vertragOverlay?.zahlungsmodell === "raten"
                       || deal.zahlungsmodell === "raten"
                       || rechnungInfo?.zahlungsmodell === "raten")
-                  && rechnungInfo?.vorlage_id
+                  && deal.email
+                  && !deal.gocardless_mandate_id
                   && !rechnungInfo?.gocardless_mandate_id ? (
                   <button
                     onClick={() => setMandateModalOpen(true)}
@@ -646,13 +647,14 @@ export default function DealRow({
           onClose={() => setRechnungsModalOpen(false)}
         />
       ) : null}
-      {canCreateRechnung && mandateModalOpen && rechnungInfo?.vorlage_id ? (
+      {canCreateRechnung && mandateModalOpen ? (
         <GoCardlessMandateModal
           key={`mandate-${deal.id}-${mandateModalOpen}`}
           open={mandateModalOpen}
           onClose={() => setMandateModalOpen(false)}
           onSuccess={() => setReloadKey((k) => k + 1)}
-          vorlageId={rechnungInfo.vorlage_id}
+          vorlageId={rechnungInfo?.vorlage_id ?? undefined}
+          dealId={deal.id}
           suchname={`${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim()}
           email={deal.email}
         />
