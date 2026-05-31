@@ -45,6 +45,7 @@ const STAGE_CLS: Record<string, string> = {
 
 interface Props {
   deals: Deal[];
+  isAdmin?: boolean;
 }
 
 const eur = (n: number) =>
@@ -95,7 +96,10 @@ function statusBadge(status: string | null | undefined): {
   };
 }
 
-export default function InkassoTable({ deals: initialDeals }: Props) {
+export default function InkassoTable({
+  deals: initialDeals,
+  isAdmin = false,
+}: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
@@ -353,28 +357,41 @@ export default function InkassoTable({ deals: initialDeals }: Props) {
                     </td>
                     <td className="px-3 py-2"
                         onClick={(e) => e.stopPropagation()}>
-                      <select
-                        value={d.inkasso_stage ?? ""}
-                        disabled={savingId === d.id}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          updateStage(d, v || null);
-                        }}
-                        className={
-                          "text-[11px] px-1.5 py-0.5 rounded border " +
-                          (d.inkasso_stage
-                            ? STAGE_CLS[d.inkasso_stage]
-                            : "bg-white border-gray-300 text-gray-700")
-                        }
-                        title={d.inkasso_stage_note ?? ""}
-                      >
-                        <option value="">— wählen —</option>
-                        <option value="ergo">Bei Ergo</option>
-                        <option value="anwalt">Bei Anwalt</option>
-                        <option value="gericht">Vor Gericht</option>
-                        <option value="gewonnen">Gewonnen</option>
-                        <option value="verloren">Verloren</option>
-                      </select>
+                      {isAdmin ? (
+                        <select
+                          value={d.inkasso_stage ?? ""}
+                          disabled={savingId === d.id}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateStage(d, v || null);
+                          }}
+                          className={
+                            "text-[11px] px-1.5 py-0.5 rounded border " +
+                            (d.inkasso_stage
+                              ? STAGE_CLS[d.inkasso_stage]
+                              : "bg-white border-gray-300 text-gray-700")
+                          }
+                          title={d.inkasso_stage_note ?? ""}
+                        >
+                          <option value="">— wählen —</option>
+                          <option value="ergo">Bei Ergo</option>
+                          <option value="anwalt">Bei Anwalt</option>
+                          <option value="gericht">Vor Gericht</option>
+                          <option value="gewonnen">Gewonnen</option>
+                          <option value="verloren">Verloren</option>
+                        </select>
+                      ) : d.inkasso_stage ? (
+                        <span
+                          className={
+                            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border " +
+                            STAGE_CLS[d.inkasso_stage]
+                          }
+                        >
+                          {STAGE_LABELS[d.inkasso_stage]}
+                        </span>
+                      ) : (
+                        <span className="text-[color:var(--muted)] text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {d.dunning_mahnung_count ?? 0}
@@ -415,6 +432,7 @@ export default function InkassoTable({ deals: initialDeals }: Props) {
         <PaymentDetailModal
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
+          canManageDunning={isAdmin}
         />
       ) : null}
     </div>

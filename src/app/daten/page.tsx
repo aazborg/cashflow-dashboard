@@ -109,6 +109,7 @@ export default async function DatenPage({
           deals={visible}
           isAdmin={ctx.isAdmin}
           searchQuery={q}
+          currentOwnerId={ctx.ownerId}
           canCreateRechnung={canUseRechnungsBot(ctx)}
         />
         <DatenPagination

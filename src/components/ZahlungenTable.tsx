@@ -126,7 +126,6 @@ export default function ZahlungenTable({
   isAdmin,
 }: Props) {
   void employees;
-  void isAdmin;
 
   const [search, setSearch] = useState("");
   const [modell, setModell] = useState<ModellFilter>("all");
@@ -460,6 +459,7 @@ export default function ZahlungenTable({
         <PaymentDetailModal
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
+          canManageDunning={isAdmin}
         />
       ) : null}
     </div>

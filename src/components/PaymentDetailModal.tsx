@@ -44,6 +44,8 @@ interface Response {
 interface Props {
   deal: Deal;
   onClose: () => void;
+  /** Admin-only Buttons (Mahnungen/Inkasso/Cancel) zeigen. */
+  canManageDunning?: boolean;
 }
 
 function DunningBtns({ dealId }: { dealId: string }) {
@@ -290,7 +292,9 @@ function statusBadge(status: string | null): {
   };
 }
 
-export default function PaymentDetailModal({ deal, onClose }: Props) {
+export default function PaymentDetailModal({
+  deal, onClose, canManageDunning = false,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<Response | null>(null);
@@ -511,12 +515,18 @@ export default function PaymentDetailModal({ deal, onClose }: Props) {
               {/* Aktionen */}
               {deal.gocardless_mandate_id ? (
                 <div className="space-y-2 pt-2 border-t border-[color:var(--border)]">
-                  <DunningBtns dealId={deal.id} />
+                  {canManageDunning ? <DunningBtns dealId={deal.id} /> : null}
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <CancelMandateBtn
-                      mandateId={deal.gocardless_mandate_id}
-                      mandateStatus={deal.gocardless_mandate_status}
-                    />
+                    {canManageDunning ? (
+                      <CancelMandateBtn
+                        mandateId={deal.gocardless_mandate_id}
+                        mandateStatus={deal.gocardless_mandate_status}
+                      />
+                    ) : (
+                      <span className="text-[color:var(--muted)] text-[10px]">
+                        Mahnungen/Storno: nur Admin
+                      </span>
+                    )}
                     <a
                       href={`https://manage${isSandbox ? "-sandbox" : ""}.gocardless.com/customers/${data.customer_id}`}
                       target="_blank"

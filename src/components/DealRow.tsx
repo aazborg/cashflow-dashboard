@@ -16,6 +16,7 @@ interface Props {
   /** Rechnungs-Bot (Beta) freigeschaltet? Steuert "Rechnung erstellen"-
    *  Button. Wird in der page.tsx via canUseRechnungsBot ermittelt. */
   canCreateRechnung?: boolean;
+  currentOwnerId?: string;
   /** Wird nur gerendert, wenn definiert — schaltet die Checkbox-Spalte ein. */
   selected?: boolean;
   onToggleSelect?: () => void;

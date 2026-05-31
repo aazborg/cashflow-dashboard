@@ -10,7 +10,9 @@ interface Props {
   isAdmin: boolean;
   /** Suchstring, für die "keine Treffer"-Meldung. */
   searchQuery?: string;
-  /** Rechnungs-Bot freigeschaltet (Beta, nur Mario). */
+  /** Aktuelle User-Owner-ID (für per-deal Permissions). */
+  currentOwnerId?: string;
+  /** Voller Bot-Zugriff (Beta-Allowlist, nur fuer Mario / spezielle Tools). */
   canCreateRechnung?: boolean;
 }
 
@@ -18,6 +20,7 @@ export default function DealsTable({
   deals,
   isAdmin,
   searchQuery,
+  currentOwnerId,
   canCreateRechnung,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -180,7 +183,10 @@ export default function DealsTable({
                   key={d.id}
                   deal={d}
                   isAdmin={isAdmin}
-                  canCreateRechnung={canCreateRechnung}
+                  currentOwnerId={currentOwnerId}
+                  canCreateRechnung={canCreateRechnung
+                    || isAdmin
+                    || (!!currentOwnerId && d.mitarbeiter_id === currentOwnerId)}
                   selected={isAdmin ? selected.has(d.id) : undefined}
                   onToggleSelect={isAdmin ? () => toggle(d.id) : undefined}
                 />
