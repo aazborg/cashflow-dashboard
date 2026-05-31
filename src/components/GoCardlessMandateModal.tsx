@@ -105,7 +105,7 @@ export default function GoCardlessMandateModal({
 
     (async () => {
       try {
-        const res = await fetch("/api/bot/gocardless/parse-vertrag", {
+        const res = await fetch("/cashflow/api/bot/gocardless/parse-vertrag", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ suchname, vorlage_id: vorlageId }),
@@ -133,7 +133,7 @@ export default function GoCardlessMandateModal({
     setPhase("submitting");
     setError("");
     try {
-      const res = await fetch("/api/bot/gocardless/create-mandate", {
+      const res = await fetch("/cashflow/api/bot/gocardless/create-mandate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

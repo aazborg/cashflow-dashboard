@@ -527,7 +527,7 @@ export default function DealRow({
                       if (vertragSyncing) return;
                       setVertragSyncing(true);
                       try {
-                        const r = await fetch("/api/bot/vertrag/sync-deal", {
+                        const r = await fetch("/cashflow/api/bot/vertrag/sync-deal", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
