@@ -109,6 +109,11 @@ export default function GoCardlessMandateModal({
     kontoinhaber?: string;
   }>({});
   const [showSepaEdit, setShowSepaEdit] = useState(false);
+  // Individueller Plan: jede Rate hat eigenes Datum + Betrag.
+  const [individualMode, setIndividualMode] = useState(false);
+  const [individualRates, setIndividualRates] = useState<
+    { date: string; betragEur: string }[]
+  >([]);
 
   useEffect(() => {
     if (!open) return;
@@ -120,6 +125,8 @@ export default function GoCardlessMandateModal({
     setShowFullIban(false);
     setOverride({});
     setShowSepaEdit(false);
+    setIndividualMode(false);
+    setIndividualRates([]);
 
     (async () => {
       try {
@@ -164,10 +171,19 @@ export default function GoCardlessMandateModal({
       const ovAnz = override.anzahlRaten
         ? parseInt(override.anzahlRaten, 10) : 0;
       const ovPayload: Record<string, unknown> = {};
-      if (ovBetrag) ovPayload.betrag_cents = ovBetrag;
-      if (ovInt) ovPayload.intervall_monate = ovInt;
-      if (ovAnz) ovPayload.anzahl_raten = ovAnz;
-      if (override.startDate) ovPayload.start_date = override.startDate;
+      if (individualMode && individualRates.length > 0) {
+        // Individueller Plan: jede Rate als Einzel-Eintrag
+        ovPayload.custom_instalments = individualRates.map((r) => ({
+          amount_cents: Math.round(
+            parseFloat((r.betragEur || "").replace(",", ".")) * 100),
+          charge_date: r.date,
+        }));
+      } else {
+        if (ovBetrag) ovPayload.betrag_cents = ovBetrag;
+        if (ovInt) ovPayload.intervall_monate = ovInt;
+        if (ovAnz) ovPayload.anzahl_raten = ovAnz;
+        if (override.startDate) ovPayload.start_date = override.startDate;
+      }
       if (override.iban) ovPayload.iban = override.iban.replace(/\s+/g, "");
       if (override.bic) ovPayload.bic = override.bic.replace(/\s+/g, "");
       if (override.kontoinhaber) ovPayload.kontoinhaber = override.kontoinhaber;
@@ -215,12 +231,24 @@ export default function GoCardlessMandateModal({
   const ratenplanOk = !!preview?.ratenplan && !preview?.ratenplan_error;
   const ibanOk = !!(preview?.sepa.iban || override.iban);
   const kontoOk = !!(preview?.sepa.kontoinhaber || override.kontoinhaber);
+  // Individueller Plan: Summe der Einzel-Beträge muss dem Vertrag-
+  // Gesamtbetrag entsprechen (Toleranz 0,02 € für Rundungs-Cents).
+  const indSum = individualRates.reduce((acc, r) => {
+    const v = parseFloat((r.betragEur || "").replace(",", "."));
+    return acc + (isNaN(v) ? 0 : v);
+  }, 0);
+  const vertragGesamt = preview?.gesamtbetrag ?? 0;
+  const indDiff = Math.abs(indSum - vertragGesamt);
+  const indMatches = vertragGesamt > 0 && indDiff < 0.02;
+  const indAllRowsValid = individualRates.length > 0
+    && individualRates.every((r) => r.date && parseFloat((r.betragEur || "").replace(",", ".")) > 0);
+  const individuellOk = individualMode && indAllRowsValid && indMatches;
   const canSubmit = !!(
     preview &&
     preview.sepa.klausel_present &&
     ibanOk &&
     kontoOk &&
-    (ratenplanOk || allOverridesPresent)
+    (individuellOk || ratenplanOk || allOverridesPresent)
   );
 
   return (
@@ -351,8 +379,103 @@ export default function GoCardlessMandateModal({
                 ) : null}
               </div>
 
-              {/* Ratenplan */}
-              {preview.ratenplan ? (
+              {/* Toggle: Regulaer (Parser) vs Individuell (Custom) */}
+              <div className="flex items-center justify-end -mb-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!individualMode) {
+                      // Beim Wechsel auf Individuell: mit geparsten
+                      // Terminen vorbefuellen damit User Startpunkt hat.
+                      const seed = preview.ratenplan?.termine?.map((t) => ({
+                        date: t,
+                        betragEur: preview.ratenplan?.betrag_eur
+                          ? preview.ratenplan.betrag_eur.toFixed(2).replace(".", ",")
+                          : "",
+                      })) ?? [];
+                      setIndividualRates(seed.length ? seed : [{ date: "", betragEur: "" }]);
+                    }
+                    setIndividualMode((m) => !m);
+                  }}
+                  className="text-[10px] text-[color:var(--brand-orange)] hover:underline"
+                >
+                  {individualMode
+                    ? "✕ Zurück zum geparsten Plan"
+                    : "✏ Individueller Plan (Raten manuell eintragen)"}
+                </button>
+              </div>
+
+              {/* Individueller Plan */}
+              {individualMode ? (
+                <div className="rounded p-3 text-sm bg-purple-50 border border-purple-300">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="font-semibold text-purple-900">
+                      Individueller Ratenplan
+                    </div>
+                    <div className={`text-[11px] ${indMatches ? "text-green-700" : "text-red-700"}`}>
+                      Summe: {indSum.toLocaleString("de-AT", {
+                        style: "currency", currency: "EUR",
+                      })} {vertragGesamt > 0 && (
+                        <>
+                          / Vertrag: {vertragGesamt.toLocaleString("de-AT", {
+                            style: "currency", currency: "EUR",
+                          })}{" "}
+                          {indMatches ? "✓" : `(Differenz ${indDiff.toLocaleString("de-AT", { style: "currency", currency: "EUR" })})`}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {individualRates.map((r, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-xs">
+                        <span className="w-6 text-right text-purple-900/60">
+                          {i + 1}.
+                        </span>
+                        <input type="date"
+                          value={r.date}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setIndividualRates((rates) => rates.map(
+                              (x, j) => j === i ? { ...x, date: v } : x));
+                          }}
+                          className="border border-purple-400 rounded px-2 py-1 text-purple-900 bg-white"
+                        />
+                        <input type="text" inputMode="decimal"
+                          placeholder="Betrag"
+                          value={r.betragEur}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setIndividualRates((rates) => rates.map(
+                              (x, j) => j === i ? { ...x, betragEur: v } : x));
+                          }}
+                          className="border border-purple-400 rounded px-2 py-1 text-purple-900 bg-white w-24 text-right"
+                        />
+                        <span className="text-purple-900/60">€</span>
+                        <button type="button"
+                          onClick={() => setIndividualRates((rates) =>
+                            rates.filter((_, j) => j !== i))}
+                          className="text-red-700 hover:text-red-900 px-1"
+                          title="Diese Rate entfernen"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button"
+                    onClick={() => setIndividualRates((rates) =>
+                      [...rates, { date: "", betragEur: "" }])}
+                    className="mt-2 text-[11px] text-purple-700 hover:text-purple-900"
+                  >
+                    + Rate hinzufügen
+                  </button>
+                  {!indMatches && vertragGesamt > 0 ? (
+                    <div className="mt-2 text-[10px] text-amber-700">
+                      ⚠ Summe muss dem Vertrag-Gesamtbetrag entsprechen, sonst kann das Mandat nicht angelegt werden.
+                    </div>
+                  ) : null}
+                </div>
+              ) : preview.ratenplan ? (
                 <div className="rounded p-3 text-sm bg-blue-50 border border-blue-300">
                   <div className="font-semibold text-blue-900 mb-1.5">Ratenplan</div>
                   <div className="grid grid-cols-2 gap-y-1 text-xs">
