@@ -38,7 +38,7 @@ interface VertragPreview {
     anzahl_raten: number;
     gesamt_eur: number;
     start_date?: string;
-    start_date_source?: "vertrag_ratenplan" | "leistungsbeginn" | "gc_default";
+    start_date_source?: "vertrag_ratenplan" | "leistungsbeginn" | "gc_default" | "auto_7d";
     termine?: string[];
   };
   ratenplan_error?: string;
@@ -302,11 +302,17 @@ export default function GoCardlessMandateModal({
                           {new Date(preview.ratenplan.start_date)
                             .toLocaleDateString("de-AT")}
                           {preview.ratenplan.start_date_source && (
-                            <span className="ml-1.5 text-[10px] text-blue-900/60">
+                            <span className={
+                              "ml-1.5 text-[10px] " +
+                              (preview.ratenplan.start_date_source === "auto_7d"
+                                ? "text-amber-700 font-semibold"
+                                : "text-blue-900/60")
+                            }>
                               ({{
                                 vertrag_ratenplan: "aus Vertrag-Ratenplan",
                                 leistungsbeginn: "aus Leistungsbeginn",
                                 gc_default: "GC-Default ~2 Tage",
+                                auto_7d: "⚠ auto: heute + 7 Tage (kein Datum im Vertrag)",
                               }[preview.ratenplan.start_date_source]})
                             </span>
                           )}
