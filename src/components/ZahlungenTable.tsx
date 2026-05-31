@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from "react";
 import type { Deal, Employee } from "@/lib/types";
+import PaymentDetailModal from "@/components/PaymentDetailModal";
 
 type SortKey = "name" | "next_date" | "offen" | "gesamt" | "bezahlt";
 type ModellFilter = "all" | "einmal" | "raten" | "unbekannt";
@@ -131,6 +132,7 @@ export default function ZahlungenTable({
   const [modell, setModell] = useState<ModellFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [sort, setSort] = useState<SortKey>("name");
+  const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -334,7 +336,13 @@ export default function ZahlungenTable({
               return (
                 <tr
                   key={d.id}
-                  className="border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/30"
+                  onClick={(e) => {
+                    // Klick auf <a>-Status-Badge nicht zum Modal hochreichen
+                    if ((e.target as HTMLElement).closest("a")) return;
+                    setDetailDeal(d);
+                  }}
+                  className="border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/50 cursor-pointer"
+                  title="Klicken für Detail-Ansicht (alle Zahlungen)"
                 >
                   <td className="px-3 py-2">
                     <div className="font-medium">
@@ -447,6 +455,13 @@ export default function ZahlungenTable({
           </tbody>
         </table>
       </div>
+
+      {detailDeal ? (
+        <PaymentDetailModal
+          deal={detailDeal}
+          onClose={() => setDetailDeal(null)}
+        />
+      ) : null}
     </div>
   );
 }
