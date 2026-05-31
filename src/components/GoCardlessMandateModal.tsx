@@ -98,6 +98,17 @@ export default function GoCardlessMandateModal({
   const [preview, setPreview] = useState<VertragPreview | null>(null);
   const [result, setResult] = useState<MandateResult | null>(null);
   const [showFullIban, setShowFullIban] = useState(false);
+  // Manuelle Overrides wenn Parser was nicht gefunden hat / unklar.
+  const [override, setOverride] = useState<{
+    betragEur?: string;
+    intervallMonate?: string;
+    anzahlRaten?: string;
+    startDate?: string;
+    iban?: string;
+    bic?: string;
+    kontoinhaber?: string;
+  }>({});
+  const [showSepaEdit, setShowSepaEdit] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -107,6 +118,8 @@ export default function GoCardlessMandateModal({
     setPreview(null);
     setResult(null);
     setShowFullIban(false);
+    setOverride({});
+    setShowSepaEdit(false);
 
     (async () => {
       try {
@@ -142,6 +155,23 @@ export default function GoCardlessMandateModal({
     setPhase("submitting");
     setError("");
     try {
+      // Override-Payload nur senden wenn der User was eingegeben hat
+      const ovBetrag = override.betragEur
+        ? Math.round(parseFloat(override.betragEur.replace(",", ".")) * 100)
+        : 0;
+      const ovInt = override.intervallMonate
+        ? parseInt(override.intervallMonate, 10) : 0;
+      const ovAnz = override.anzahlRaten
+        ? parseInt(override.anzahlRaten, 10) : 0;
+      const ovPayload: Record<string, unknown> = {};
+      if (ovBetrag) ovPayload.betrag_cents = ovBetrag;
+      if (ovInt) ovPayload.intervall_monate = ovInt;
+      if (ovAnz) ovPayload.anzahl_raten = ovAnz;
+      if (override.startDate) ovPayload.start_date = override.startDate;
+      if (override.iban) ovPayload.iban = override.iban.replace(/\s+/g, "");
+      if (override.bic) ovPayload.bic = override.bic.replace(/\s+/g, "");
+      if (override.kontoinhaber) ovPayload.kontoinhaber = override.kontoinhaber;
+
       const res = await fetch("/cashflow/api/bot/gocardless/create-mandate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -151,6 +181,7 @@ export default function GoCardlessMandateModal({
           suchname,
           email: email ?? undefined,
           acted_by_email: actedByEmail ?? undefined,
+          override: Object.keys(ovPayload).length ? ovPayload : undefined,
         }),
       });
       const data = await res.json();
@@ -170,13 +201,26 @@ export default function GoCardlessMandateModal({
 
   if (!open) return null;
 
+  // canSubmit beruecksichtigt Overrides: wenn der Parser was nicht
+  // findet, kann der User es manuell ergaenzen und der Submit ist
+  // wieder erlaubt sobald die Override-Felder vollstaendig sind.
+  const ovBetragOk = override.betragEur
+    && parseFloat(override.betragEur.replace(",", ".")) > 0;
+  const ovIntOk = override.intervallMonate
+    && parseInt(override.intervallMonate, 10) > 0;
+  const ovAnzOk = override.anzahlRaten
+    && parseInt(override.anzahlRaten, 10) > 0;
+  const ovStartOk = !!override.startDate;
+  const allOverridesPresent = ovBetragOk && ovIntOk && ovAnzOk && ovStartOk;
+  const ratenplanOk = !!preview?.ratenplan && !preview?.ratenplan_error;
+  const ibanOk = !!(preview?.sepa.iban || override.iban);
+  const kontoOk = !!(preview?.sepa.kontoinhaber || override.kontoinhaber);
   const canSubmit = !!(
     preview &&
     preview.sepa.klausel_present &&
-    preview.sepa.iban &&
-    preview.sepa.kontoinhaber &&
-    preview.ratenplan &&
-    !preview.ratenplan_error
+    ibanOk &&
+    kontoOk &&
+    (ratenplanOk || allOverridesPresent)
   );
 
   return (
@@ -268,6 +312,43 @@ export default function GoCardlessMandateModal({
                 <div className="font-mono text-[11px]">
                   {preview.sepa.signature_ref || "(wird generiert)"}
                 </div>
+                <div className="col-span-2 mt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowSepaEdit((v) => !v)}
+                    className="text-[10px] text-[color:var(--brand-orange)] hover:underline"
+                  >
+                    {showSepaEdit ? "✕ Korrektur ausblenden" : "✏ Kontoinhaber/IBAN/BIC korrigieren"}
+                  </button>
+                </div>
+                {showSepaEdit ? (
+                  <div className="col-span-2 mt-1 grid grid-cols-1 gap-1.5 bg-white border border-amber-300 rounded p-2">
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[10px]">Kontoinhaber (Override)</span>
+                      <input type="text" placeholder={preview.sepa.kontoinhaber || "Vorname Nachname"}
+                        value={override.kontoinhaber ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, kontoinhaber: e.target.value }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 text-xs" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[10px]">IBAN (Override)</span>
+                      <input type="text" placeholder={preview.sepa.iban || "ATxx xxxx xxxx xxxx xxxx"}
+                        value={override.iban ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, iban: e.target.value.toUpperCase() }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 text-xs font-mono" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[10px]">BIC (optional)</span>
+                      <input type="text" placeholder={preview.sepa.bic || "BANKAT12XXX"}
+                        value={override.bic ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, bic: e.target.value.toUpperCase() }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 text-xs font-mono" />
+                    </label>
+                    <div className="text-[10px] text-amber-900/70">
+                      Leer lassen = Wert aus Vertrag verwenden. Befüllt = Override (wird vor Mandat-Anlage verwendet).
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* Ratenplan */}
@@ -348,10 +429,54 @@ export default function GoCardlessMandateModal({
                   ) : null}
                 </div>
               ) : preview.ratenplan_error ? (
-                <div className="rounded p-3 text-sm bg-amber-50 border border-amber-300 text-amber-900">
-                  ⚠ Ratenplan konnte nicht eindeutig geparst werden: {preview.ratenplan_error}
-                  <div className="mt-1 text-[11px] text-amber-900/70">
+                <div className="rounded p-3 text-sm bg-amber-50 border border-amber-300 text-amber-900 space-y-2">
+                  <div>
+                    ⚠ Ratenplan konnte nicht eindeutig geparst werden: {preview.ratenplan_error}
+                  </div>
+                  <div className="text-[11px] text-amber-900/70">
                     Original-Text: {preview.raten_info}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-amber-300 grid grid-cols-2 gap-2 text-xs">
+                    <div className="col-span-2 font-semibold text-amber-900">
+                      Manuell ergänzen:
+                    </div>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[11px]">Betrag pro Rate (EUR)</span>
+                      <input type="text" inputMode="decimal" placeholder="1875,44"
+                        value={override.betragEur ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, betragEur: e.target.value }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 bg-white" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[11px]">Intervall (Monate)</span>
+                      <input type="number" min="1" max="24" placeholder="4"
+                        value={override.intervallMonate ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, intervallMonate: e.target.value }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 bg-white" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[11px]">Anzahl Raten</span>
+                      <input type="number" min="1" max="60" placeholder="6"
+                        value={override.anzahlRaten ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, anzahlRaten: e.target.value }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 bg-white" />
+                    </label>
+                    <label className="flex flex-col gap-0.5">
+                      <span className="text-amber-900/80 text-[11px]">Startdatum 1. Rate</span>
+                      <input type="date"
+                        value={override.startDate ?? ""}
+                        onChange={(e) => setOverride((o) => ({ ...o, startDate: e.target.value }))}
+                        className="border border-amber-400 rounded px-2 py-1 text-amber-900 bg-white" />
+                    </label>
+                    {(ovBetragOk && ovIntOk && ovAnzOk && ovStartOk) ? (
+                      <div className="col-span-2 mt-1 text-[11px] text-green-800 bg-green-50 border border-green-300 rounded px-2 py-1">
+                        ✅ Alle Werte gesetzt – Mandat kann angelegt werden ({parseInt(override.anzahlRaten ?? "0", 10)}x {override.betragEur} € alle {override.intervallMonate} Monate ab {override.startDate})
+                      </div>
+                    ) : (
+                      <div className="col-span-2 text-[11px] text-amber-900/70">
+                        Alle 4 Felder ausfüllen, dann wird der Button aktiv.
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
