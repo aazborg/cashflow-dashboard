@@ -65,14 +65,16 @@ export default function ZahlungenTabs({ deals, employees, isAdmin }: Props) {
           isAdmin={isAdmin}
         />
       ) : tab === "zahlungen" ? (
-        <AllPaymentsTable />
+        <AllPaymentsTable key="all" />
       ) : tab === "rueckbelastungen" ? (
         <AllPaymentsTable
+          key="chargeback"
           defaultStatus="chargeback"
           emptyMessage="Aktuell keine Rückbelastungen (charged_back). 🎉"
         />
       ) : (
         <MandatesTable
+          key="cancelled-mandates"
           statusFilter="cancelled,expired,blocked"
           emptyMessage="Keine gelöschten/abgelaufenen/blockierten Mandate."
         />
