@@ -8,6 +8,7 @@ import {
 import { INTERVALL_OPTIONS, type Deal } from "@/lib/types";
 import { formatEURPrecise } from "@/lib/cashflow";
 import RechnungsEditor from "./RechnungsEditor";
+import GoCardlessMandateModal from "./GoCardlessMandateModal";
 
 interface Props {
   deal: Deal;
@@ -28,13 +29,19 @@ export default function DealRow({
   onToggleSelect,
 }: Props) {
   const [rechnungsModalOpen, setRechnungsModalOpen] = useState(false);
+  const [mandateModalOpen, setMandateModalOpen] = useState(false);
+  // Reload-Trigger: nach Mandate-Anlage wird incrementiert, damit der
+  // notiz-vorlagen-Lookup neu ausgefuehrt wird und der GC-Badge updated.
+  const [reloadKey, setReloadKey] = useState(0);
   // Lookup: gibt es fuer diese Deal-Email schon eine Rechnung
   // in unserer DB? Status 'draft'|'sent'|null. Steuert Button-Farbe.
   const [rechnungInfo, setRechnungInfo] = useState<{
+    vorlage_id?: string | null;
     rechnung_id: number | null;
     rechnung_status: "draft" | "sent" | "cancelled" | null;
     zahlungsmodell?: "einmal" | "raten" | null;
     raten_info?: string | null;
+    gocardless_mandate_id?: string | null;
     gocardless_mandate_status?: string | null;
     gocardless_paid_count?: number | null;
     gocardless_paid_amount_cents?: number | null;
@@ -63,10 +70,12 @@ export default function DealRow({
         //    HubSpot fuer den Deal eine Email gespeichert hat und
         //    die mit der Vorlage uebereinstimmt.
         let v: {
+          id?: string;
           rechnung_id?: number | null;
           rechnung_status?: "draft" | "sent" | "cancelled" | null;
           zahlungsmodell?: "einmal" | "raten" | null;
           raten_info?: string | null;
+          gocardless_mandate_id?: string | null;
           gocardless_mandate_status?: string | null;
           gocardless_paid_count?: number | null;
           gocardless_paid_amount_cents?: number | null;
@@ -98,10 +107,12 @@ export default function DealRow({
         }
         if (v?.rechnung_id || v?.zahlungsmodell || v?.gocardless_mandate_status) {
           setRechnungInfo({
+            vorlage_id: v.id ?? null,
             rechnung_id: v.rechnung_id ?? null,
             rechnung_status: v.rechnung_status ?? null,
             zahlungsmodell: v.zahlungsmodell ?? null,
             raten_info: v.raten_info ?? null,
+            gocardless_mandate_id: v.gocardless_mandate_id ?? null,
             gocardless_mandate_status: v.gocardless_mandate_status ?? null,
             gocardless_paid_count: v.gocardless_paid_count ?? null,
             gocardless_paid_amount_cents: v.gocardless_paid_amount_cents ?? null,
@@ -129,6 +140,7 @@ export default function DealRow({
     deal.vorname,
     deal.nachname,
     rechnungsModalOpen,
+    reloadKey,
   ]);
   const showCheckbox = typeof selected === "boolean" && !!onToggleSelect;
   const [pending, startTransition] = useTransition();
@@ -481,6 +493,18 @@ export default function DealRow({
                       : "Rechnung"}
                   </button>
                 ) : null}
+                {canCreateRechnung
+                  && rechnungInfo?.zahlungsmodell === "raten"
+                  && rechnungInfo?.vorlage_id
+                  && !rechnungInfo?.gocardless_mandate_id ? (
+                  <button
+                    onClick={() => setMandateModalOpen(true)}
+                    className="text-xs px-2 py-1 rounded mr-1 border border-purple-600 text-purple-600 hover:bg-purple-600/10"
+                    title="SEPA-Mandat + Subscription bei GoCardless anlegen (lädt Vertrag aus Drive)"
+                  >
+                    GC-Mandat anlegen
+                  </button>
+                ) : null}
                 <button
                   onClick={requestDelete}
                   disabled={pending}
@@ -502,6 +526,17 @@ export default function DealRow({
           deal={deal}
           open={rechnungsModalOpen}
           onClose={() => setRechnungsModalOpen(false)}
+        />
+      ) : null}
+      {canCreateRechnung && mandateModalOpen && rechnungInfo?.vorlage_id ? (
+        <GoCardlessMandateModal
+          key={`mandate-${deal.id}-${mandateModalOpen}`}
+          open={mandateModalOpen}
+          onClose={() => setMandateModalOpen(false)}
+          onSuccess={() => setReloadKey((k) => k + 1)}
+          vorlageId={rechnungInfo.vorlage_id}
+          suchname={`${deal.vorname ?? ""} ${deal.nachname ?? ""}`.trim()}
+          email={deal.email}
         />
       ) : null}
     </tr>
