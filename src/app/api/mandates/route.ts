@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const rows = (data ?? []) as CacheRow[];
+  const rows = (data ?? []) as unknown as CacheRow[];
   const synced = rows.length > 0 ? rows[0].synced_at : null;
   const env = rows.length > 0 ? rows[0].env : "live";
   const mandates = rows.map((r) => ({
