@@ -232,16 +232,29 @@ export default function AllPaymentsTable({
       arr.push(p);
       successByKey.set(key, arr);
     }
-    // (B) Failed-Cluster nach Kunde+Betrag+Beschreibung gruppieren
+    // (B) Failed-Cluster nach Kunde+Betrag+Beschreibungs-MUSTER gruppieren.
+    // Wir strippen Payment-IDs / IDs aus der Beschreibung, damit
+    // "Rueckbuchung zu PM01XHD7..." und "Rueckbuchung zu PM01XH5G9..."
+    // (gleiche Art Gebuehr, anderer urspruenglicher Posten) als
+    // EIN Cluster behandelt werden. Sonst sieht Mario fuer denselben
+    // Kunden 3x ausgleich-Gebuehr 30 EUR untereinander -- de-facto
+    // einer Inkasso-Bewegung mit 90 EUR Gesamtschuld.
+    const normalizeDesc = (s: string | null | undefined): string => {
+      const t = (s ?? "").trim();
+      // GoCardless IDs (PM/SB/MD...) durch Platzhalter ersetzen
+      return t.replace(/\b[A-Z]{2,3}\d{2,}[A-Z0-9]{6,}\b/g, "<id>");
+    };
     const failedByCluster = new Map<string, ApiPayment[]>();
     for (const p of payments) {
       if (statusGroup(p.status) !== "failed") continue;
-      const descKey = (p.description ?? "").trim();
+      const descKey = normalizeDesc(p.description);
       const clusterKey = `${p.customer_id ?? p.mandate_id ?? "?"}|${p.amount_cents ?? 0}|${descKey}`;
       const arr = failedByCluster.get(clusterKey) ?? [];
       arr.push(p);
       failedByCluster.set(clusterKey, arr);
     }
+    // Map: winner-id -> {count, totalCents} fuer "+ N weitere"-Badge
+    const winnerInfo = new Map<string, { count: number; totalCents: number }>();
     // Innerhalb jedes Failed-Clusters: nur der mit dem juengsten
     // charge_date bleibt, der Rest wird ausgeblendet
     for (const cluster of failedByCluster.values()) {
@@ -258,6 +271,15 @@ export default function AllPaymentsTable({
           newestT = t;
         }
       }
+      // Cluster-Info auf Winner setzen (fuer "+N weitere"-Badge)
+      const totalCents = cluster.reduce(
+        (s, p) => s + (p.amount_cents ?? 0),
+        0,
+      );
+      winnerInfo.set(newest.id, {
+        count: cluster.length,
+        totalCents,
+      });
       for (const p of cluster) {
         if (p.id !== newest.id) recovered.add(p.id);
       }
@@ -284,13 +306,14 @@ export default function AllPaymentsTable({
         }
       }
     }
-    return recovered;
+    return { recovered, winnerInfo };
   }, [payments]);
+  const failedClusterInfo = recoveredFailedIds.winnerInfo;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = payments.filter((p) => {
-      if (hideRecovered && recoveredFailedIds.has(p.id)) return false;
+      if (hideRecovered && recoveredFailedIds.recovered.has(p.id)) return false;
       if (q) {
         const hay = `${p.customer_name} ${p.customer_email ?? ""} ${p.description ?? ""} ${p.reference ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -449,9 +472,9 @@ export default function AllPaymentsTable({
               className="cursor-pointer"
             />
             <span>Duplikate/eingezogene ausblenden</span>
-            {recoveredFailedIds.size > 0 ? (
+            {recoveredFailedIds.recovered.size > 0 ? (
               <span className="text-[10px] text-[color:var(--brand-orange)] font-semibold">
-                ({recoveredFailedIds.size})
+                ({recoveredFailedIds.recovered.size})
               </span>
             ) : null}
           </label>
@@ -632,9 +655,24 @@ export default function AllPaymentsTable({
                           })()}
                         </td>
                       ) : null}
-                      <td className="px-3 py-2 text-xs text-[color:var(--muted)] max-w-[280px] truncate"
+                      <td className="px-3 py-2 text-xs text-[color:var(--muted)] max-w-[280px]"
                         title={p.description ?? ""}>
-                        {p.description || "—"}
+                        <div className="truncate">
+                          {p.description || "—"}
+                        </div>
+                        {(() => {
+                          const info = failedClusterInfo.get(p.id);
+                          if (!info || info.count < 2) return null;
+                          const extra = info.count - 1;
+                          return (
+                            <div
+                              className="mt-0.5 text-[10px] text-[color:var(--brand-orange)] font-semibold"
+                              title={`${info.count} fehlgeschlagene Versuche derselben Art bei diesem Kunden (gleicher Betrag, gleiches Schema). Die ${extra} aelteren werden ausgeblendet, der juengste Versuch ist sichtbar.`}
+                            >
+                              + {extra} aeltere Versuche
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-2 py-2 text-right text-[color:var(--brand-orange)] font-semibold">
                         {clickable ? "→" : ""}
