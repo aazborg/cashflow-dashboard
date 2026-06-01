@@ -29,6 +29,8 @@ interface ApiPayment {
   mandate_id: string | null;
   subscription_id: string | null;
   instalment_schedule_id: string | null;
+  done_at?: string | null;
+  done_by_email?: string | null;
 }
 
 type StatusFilter =
@@ -179,6 +181,58 @@ export default function AllPaymentsTable({
   );
   // Mahn-Status-Spalte nur im Failed-Tab anzeigen (sonst zu voll).
   const showDunningCol = defaultStatus === "failed";
+
+  // 'Erledigt'-Workflow: User kann pro Zeile abhaken.
+  // Default-Anzeige (in allen relevanten Tabs failed/cancelled/
+  // chargeback) blendet Erledigtes aus. Mit Checkbox einschaltbar.
+  const showDoneFeature =
+    defaultStatus === "failed" ||
+    defaultStatus === "cancelled" ||
+    defaultStatus === "chargeback";
+  const [hideDone, setHideDone] = useState(showDoneFeature);
+  // Lokale 'pending updates' fuer optimistic UI
+  const [localResolutions, setLocalResolutions] = useState<
+    Map<string, string | null>
+  >(new Map());
+  // Hilfsfunktion: wird ein Payment als erledigt betrachtet?
+  function isPaymentDone(p: ApiPayment): boolean {
+    const local = localResolutions.get(p.id);
+    if (local !== undefined) return local !== null;
+    return !!p.done_at;
+  }
+  async function toggleDone(p: ApiPayment) {
+    const currentlyDone = isPaymentDone(p);
+    const next = !currentlyDone;
+    // Optimistic
+    setLocalResolutions((prev) => {
+      const n = new Map(prev);
+      n.set(p.id, next ? new Date().toISOString() : null);
+      return n;
+    });
+    try {
+      const res = await fetch("/cashflow/api/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gc_id: p.id,
+          kind: "payment",
+          done: next,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      // Rollback
+      setLocalResolutions((prev) => {
+        const n = new Map(prev);
+        n.set(p.id, currentlyDone ? new Date().toISOString() : null);
+        return n;
+      });
+      alert(
+        "Konnte nicht speichern: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
   const [dunningFilter, setDunningFilter] = useState<
     "all" | "none" | "mahnung_1" | "mahnung_2" | "inkasso" | "resolved"
   >("all");
@@ -321,6 +375,7 @@ export default function AllPaymentsTable({
     const q = search.trim().toLowerCase();
     let rows = payments.filter((p) => {
       if (hideRecovered && recoveredFailedIds.recovered.has(p.id)) return false;
+      if (showDoneFeature && hideDone && isPaymentDone(p)) return false;
       if (q) {
         const hay = `${p.customer_name} ${p.customer_email ?? ""} ${p.description ?? ""} ${p.reference ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -365,7 +420,8 @@ export default function AllPaymentsTable({
     return rows;
   }, [payments, search, statusFilter, sort, dateFrom, dateTo,
        hideRecovered, recoveredFailedIds,
-       showDunningCol, dunningFilter, dealsById]);
+       showDunningCol, dunningFilter, dealsById,
+       showDoneFeature, hideDone, localResolutions]);
 
   const totals = useMemo(() => {
     let total = 0,
@@ -426,7 +482,7 @@ export default function AllPaymentsTable({
     const arr = Array.from(map.values());
     arr.sort((a, b) => b.totalCents - a.totalCents);
     return arr;
-  }, [filtered, groupByCustomer]);
+  }, [filtered, groupByCustomer, localResolutions]);
 
   const toggleGroup = (key: string) => {
     setExpandedGroups((prev) => {
@@ -519,6 +575,22 @@ export default function AllPaymentsTable({
             className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
           />
         </div>
+        {showDoneFeature ? (
+          <div className="flex items-end pb-1">
+            <label
+              className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
+              title="Versteckt alle Zeilen die du als 'erledigt' markiert hast. Toggle aus, um sie wieder zu sehen."
+            >
+              <input
+                type="checkbox"
+                checked={hideDone}
+                onChange={(e) => setHideDone(e.target.checked)}
+                className="cursor-pointer"
+              />
+              <span>Erledigte ausblenden</span>
+            </label>
+          </div>
+        ) : null}
         <div className="flex items-end pb-1">
           <label
             className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
@@ -665,12 +737,30 @@ export default function AllPaymentsTable({
                             )
                             .map((p) => {
                               const stat = statusBadge(p.status);
+                              const done = isPaymentDone(p);
                               return (
                                 <tr
                                   key={p.id}
-                                  className="border-t border-[color:var(--border)] bg-[color:var(--surface)]/20"
+                                  className={
+                                    "border-t border-[color:var(--border)] bg-[color:var(--surface)]/20 " +
+                                    (done ? "opacity-50 line-through" : "")
+                                  }
                                 >
-                                  <td></td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    {showDoneFeature ? (
+                                      <input
+                                        type="checkbox"
+                                        checked={done}
+                                        onChange={() => toggleDone(p)}
+                                        className="cursor-pointer"
+                                        title={
+                                          done
+                                            ? `Erledigt von ${p.done_by_email ?? "—"}`
+                                            : "Als erledigt markieren"
+                                        }
+                                      />
+                                    ) : null}
+                                  </td>
                                   <td className="px-3 py-1.5 text-xs">
                                     <span className="text-[color:var(--muted)]">
                                       {formatDate(p.charge_date)}
@@ -718,6 +808,11 @@ export default function AllPaymentsTable({
                   <th className="px-3 py-2">Mahn-Status</th>
                 ) : null}
                 <th className="px-3 py-2">Beschreibung</th>
+                {showDoneFeature ? (
+                  <th className="px-3 py-2 w-8 text-center" title="Erledigt-Marker">
+                    ✓
+                  </th>
+                ) : null}
                 <th className="px-3 py-2 w-8"></th>
               </tr>
             </thead>
@@ -725,7 +820,9 @@ export default function AllPaymentsTable({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={showDunningCol ? 8 : 7}
+                    colSpan={
+                      7 + (showDunningCol ? 1 : 0) + (showDoneFeature ? 1 : 0)
+                    }
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -741,6 +838,7 @@ export default function AllPaymentsTable({
                     ? dealsById.get(p.deal_id) ?? null
                     : null;
                   const clickable = !!linkedDeal;
+                  const done = isPaymentDone(p);
                   return (
                     <tr
                       key={p.id}
@@ -758,7 +856,8 @@ export default function AllPaymentsTable({
                       }
                       className={
                         "border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/30 " +
-                        (clickable ? "cursor-pointer" : "")
+                        (clickable ? "cursor-pointer " : "") +
+                        (done ? "opacity-50 line-through " : "")
                       }
                     >
                       <td className="px-3 py-2 whitespace-nowrap">
@@ -835,6 +934,24 @@ export default function AllPaymentsTable({
                           );
                         })()}
                       </td>
+                      {showDoneFeature ? (
+                        <td
+                          className="px-2 py-2 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={done}
+                            onChange={() => toggleDone(p)}
+                            className="cursor-pointer"
+                            title={
+                              done
+                                ? `Erledigt von ${p.done_by_email ?? "—"}. Haken entfernen um wieder offen zu setzen.`
+                                : "Als erledigt markieren (Default ausgeblendet)"
+                            }
+                          />
+                        </td>
+                      ) : null}
                       <td className="px-2 py-2 text-right text-[color:var(--brand-orange)] font-semibold">
                         {clickable ? "→" : ""}
                       </td>

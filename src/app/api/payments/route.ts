@@ -37,6 +37,13 @@ interface CacheRow {
   synced_at: string | null;
 }
 
+interface ResolutionRow {
+  gc_id: string;
+  done_at: string;
+  done_by_email: string;
+  note: string | null;
+}
+
 export async function GET() {
   const ctx = await getSessionContext();
   if (!ctx) {
@@ -99,28 +106,52 @@ export async function GET() {
   const data = results.flatMap((r) => r.data ?? []);
   const count = total;
 
+  // Resolutions (Erledigt-Marker) laden -- mit Paginierung, da sie
+  // moeglicherweise auch >1000 Eintraege werden koennen.
+  const resolutionsMap = new Map<string, ResolutionRow>();
+  {
+    let from = 0;
+    for (let i = 0; i < 50; i++) {
+      const r = await sb
+        .from("gocardless_resolutions")
+        .select("gc_id,done_at,done_by_email,note")
+        .eq("kind", "payment")
+        .range(from, from + 999);
+      if (r.error) break;
+      const rows = (r.data ?? []) as unknown as ResolutionRow[];
+      for (const row of rows) resolutionsMap.set(row.gc_id, row);
+      if (rows.length < 1000) break;
+      from += 1000;
+    }
+  }
+
   // Auf das Format mappen das das Frontend vom Bot-Endpoint kennt.
   const rows = data as unknown as CacheRow[];
   const synced = rows.length > 0 ? rows[0].synced_at : null;
   const env = rows.length > 0 ? rows[0].env : "live";
-  const payments = rows.map((r) => ({
-    id: r.gc_id,
-    amount_cents: r.amount_cents,
-    currency: r.currency,
-    status: r.status,
-    charge_date: r.charge_date,
-    description: r.description,
-    reference: r.reference,
-    created_at: r.created_at_gc,
-    customer_id: r.customer_id,
-    customer_name: r.customer_name ?? "—",
-    customer_email: r.customer_email,
-    mitarbeiter: r.mitarbeiter,
-    deal_id: r.deal_id,
-    mandate_id: r.mandate_id,
-    subscription_id: r.subscription_id,
-    instalment_schedule_id: r.instalment_schedule_id,
-  }));
+  const payments = rows.map((r) => {
+    const res = resolutionsMap.get(r.gc_id);
+    return {
+      id: r.gc_id,
+      amount_cents: r.amount_cents,
+      currency: r.currency,
+      status: r.status,
+      charge_date: r.charge_date,
+      description: r.description,
+      reference: r.reference,
+      created_at: r.created_at_gc,
+      customer_id: r.customer_id,
+      customer_name: r.customer_name ?? "—",
+      customer_email: r.customer_email,
+      mitarbeiter: r.mitarbeiter,
+      deal_id: r.deal_id,
+      mandate_id: r.mandate_id,
+      subscription_id: r.subscription_id,
+      instalment_schedule_id: r.instalment_schedule_id,
+      done_at: res?.done_at ?? null,
+      done_by_email: res?.done_by_email ?? null,
+    };
+  });
 
   return NextResponse.json({
     env,

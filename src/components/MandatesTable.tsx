@@ -20,6 +20,8 @@ interface ApiMandate {
   customer_email: string | null;
   mitarbeiter: string | null;
   deal_id: string | null;
+  done_at?: string | null;
+  done_by_email?: string | null;
 }
 
 interface Props {
@@ -92,6 +94,46 @@ export default function MandatesTable({
   const [env, setEnv] = useState<string>("");
 
   const [search, setSearch] = useState("");
+  const [hideDone, setHideDone] = useState(true);
+  const [localResolutions, setLocalResolutions] = useState<
+    Map<string, string | null>
+  >(new Map());
+  function isMandateDone(m: ApiMandate): boolean {
+    const local = localResolutions.get(m.id);
+    if (local !== undefined) return local !== null;
+    return !!m.done_at;
+  }
+  async function toggleDone(m: ApiMandate) {
+    const cur = isMandateDone(m);
+    const next = !cur;
+    setLocalResolutions((prev) => {
+      const n = new Map(prev);
+      n.set(m.id, next ? new Date().toISOString() : null);
+      return n;
+    });
+    try {
+      const res = await fetch("/cashflow/api/resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gc_id: m.id,
+          kind: "mandate",
+          done: next,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setLocalResolutions((prev) => {
+        const n = new Map(prev);
+        n.set(m.id, cur ? new Date().toISOString() : null);
+        return n;
+      });
+      alert(
+        "Konnte nicht speichern: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -126,6 +168,7 @@ export default function MandatesTable({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = mandates.filter((m) => {
+      if (hideDone && isMandateDone(m)) return false;
       if (!q) return true;
       const hay = `${m.customer_name} ${m.customer_email ?? ""} ${m.reference ?? ""} ${m.id}`.toLowerCase();
       return hay.includes(q);
@@ -136,7 +179,8 @@ export default function MandatesTable({
       return db.localeCompare(da);
     });
     return rows;
-  }, [mandates, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mandates, search, hideDone, localResolutions]);
 
   const isSandbox = env === "sandbox";
 
@@ -155,6 +199,20 @@ export default function MandatesTable({
             placeholder="Name, Email, Referenz, Mandat-ID…"
             className="w-full border border-[color:var(--border)] rounded px-3 py-1.5 text-sm"
           />
+        </div>
+        <div className="flex items-end pb-1">
+          <label
+            className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
+            title="Versteckt Mandate die du als 'erledigt' markiert hast."
+          >
+            <input
+              type="checkbox"
+              checked={hideDone}
+              onChange={(e) => setHideDone(e.target.checked)}
+              className="cursor-pointer"
+            />
+            <span>Erledigte ausblenden</span>
+          </label>
         </div>
         <div className="text-xs text-[color:var(--muted)]">
           {loading ? "Lade…" : `${filtered.length} Mandate`}
@@ -179,13 +237,16 @@ export default function MandatesTable({
                 <th className="px-3 py-2">Scheme</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Mandat-ID</th>
+                <th className="px-3 py-2 w-8 text-center" title="Erledigt">
+                  ✓
+                </th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -197,10 +258,14 @@ export default function MandatesTable({
                   const gcUrl = isSandbox
                     ? `https://manage-sandbox.gocardless.com/mandates/${m.id}`
                     : `https://manage.gocardless.com/mandates/${m.id}`;
+                  const done = isMandateDone(m);
                   return (
                     <tr
                       key={m.id}
-                      className="border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/30"
+                      className={
+                        "border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/30 " +
+                        (done ? "opacity-50 line-through" : "")
+                      }
                     >
                       <td className="px-3 py-2 whitespace-nowrap text-xs">
                         <div>{formatDate(m.created_at)}</div>
@@ -238,6 +303,19 @@ export default function MandatesTable({
                       </td>
                       <td className="px-3 py-2 text-[11px] font-mono text-[color:var(--muted)]">
                         {m.id}
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={done}
+                          onChange={() => toggleDone(m)}
+                          className="cursor-pointer"
+                          title={
+                            done
+                              ? `Erledigt von ${m.done_by_email ?? "—"}`
+                              : "Als erledigt markieren"
+                          }
+                        />
                       </td>
                     </tr>
                   );
