@@ -361,9 +361,23 @@ export default function AllPaymentsTable({
     Map<string, DunningVal>
   >(new Map());
   function effectivePaymentDunning(p: ApiPayment): DunningVal {
+    // Reihenfolge der Quellen:
+    //   1. Lokaler Override (User hat in dieser Session gewaehlt)
+    //   2. Per-Payment-Wert aus gocardless_resolutions
+    //   3. Fallback: Status auf dem verknuepften Deal -- damit
+    //      Markierungen die vor Einfuehrung des Per-Payment-Features
+    //      gesetzt wurden NICHT verschwinden. Sobald der User pro
+    //      Payment explizit waehlt, gewinnt der Per-Payment-Wert.
     const local = localPaymentDunning.get(p.id);
     if (local !== undefined) return local;
-    return p.dunning_status ?? null;
+    if (p.dunning_status !== null && p.dunning_status !== undefined) {
+      return p.dunning_status;
+    }
+    if (p.deal_id) {
+      const dealStatus = dealsById.get(p.deal_id)?.dunning_status;
+      if (dealStatus) return dealStatus as DunningVal;
+    }
+    return null;
   }
   async function setPaymentDunning(p: ApiPayment, status: DunningVal) {
     const prev = effectivePaymentDunning(p);
