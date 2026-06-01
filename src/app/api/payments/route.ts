@@ -215,6 +215,7 @@ export async function GET() {
       done_at: res?.done_at ?? null,
       done_by_email: res?.done_by_email ?? null,
       dunning_status: res?.dunning_status ?? null,
+      note: res?.note ?? null,
       // Echtes 'Geld kommt rein'-Signal: zukuenftige geplante
       // Zahlung existiert. Wenn alle scheduled Zahlungen gecancelled
       // sind, ist auch ein active mandate quasi tot fuer uns.

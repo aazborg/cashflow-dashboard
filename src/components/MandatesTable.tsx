@@ -7,6 +7,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import NoteCell from "@/components/NoteCell";
 
 interface ApiMandate {
   id: string;
@@ -22,6 +23,7 @@ interface ApiMandate {
   deal_id: string | null;
   done_at?: string | null;
   done_by_email?: string | null;
+  note?: string | null;
   customer_has_active_mandate?: boolean;
   customer_flag?: string | null;
   customer_flag_reason?: string | null;
@@ -107,6 +109,14 @@ export default function MandatesTable({
   const [localCustomerFlags, setLocalCustomerFlags] = useState<
     Map<string, CustomerFlagValue>
   >(new Map());
+  const [localNotes, setLocalNotes] = useState<Map<string, string | null>>(
+    new Map(),
+  );
+  function effectiveNote(m: ApiMandate): string | null {
+    const local = localNotes.get(m.id);
+    if (local !== undefined) return local;
+    return m.note ?? null;
+  }
   function effectiveCustomerFlag(m: ApiMandate): CustomerFlagValue {
     if (!m.customer_id) return null;
     const local = localCustomerFlags.get(m.customer_id);
@@ -301,6 +311,7 @@ export default function MandatesTable({
                   Einzug
                 </th>
                 <th className="px-3 py-2">Mandat-ID</th>
+                <th className="px-3 py-2">Notiz</th>
                 <th className="px-3 py-2 w-8 text-center" title="Erledigt">
                   ✓
                 </th>
@@ -310,7 +321,7 @@ export default function MandatesTable({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -374,6 +385,20 @@ export default function MandatesTable({
                       </td>
                       <td className="px-3 py-2 text-[11px] font-mono text-[color:var(--muted)]">
                         {m.id}
+                      </td>
+                      <td className="px-2 py-2">
+                        <NoteCell
+                          gcId={m.id}
+                          kind="mandate"
+                          initialNote={effectiveNote(m)}
+                          onChange={(n) =>
+                            setLocalNotes((map) => {
+                              const next = new Map(map);
+                              next.set(m.id, n);
+                              return next;
+                            })
+                          }
+                        />
                       </td>
                       <td className="px-2 py-2 text-center">
                         <input

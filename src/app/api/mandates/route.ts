@@ -33,8 +33,8 @@ interface CacheRow {
 
 interface ResolutionRow {
   gc_id: string;
-  done_at: string;
-  done_by_email: string;
+  done_at: string | null;
+  done_by_email: string | null;
   note: string | null;
 }
 
@@ -204,6 +204,7 @@ export async function GET(req: NextRequest) {
       deal_id: r.deal_id,
       done_at: res?.done_at ?? null,
       done_by_email: res?.done_by_email ?? null,
+      note: res?.note ?? null,
       customer_has_active_mandate: hasUpcoming,
       customer_flag: flag,
       customer_flag_reason: flagReason,

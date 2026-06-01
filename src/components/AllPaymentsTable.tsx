@@ -11,6 +11,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import PaymentDetailModal from "@/components/PaymentDetailModal";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
+import NoteCell from "@/components/NoteCell";
 import type { Deal } from "@/lib/types";
 
 interface ApiPayment {
@@ -32,6 +33,7 @@ interface ApiPayment {
   instalment_schedule_id: string | null;
   done_at?: string | null;
   done_by_email?: string | null;
+  note?: string | null;
   /** Per-Payment Mahn-Status. Wenn null und die zugehoerige
    *  Deal-Zeile dunning_status hat, faellt das UI auf den Deal-Wert
    *  zurueck (Default-Annahme). Set durch /api/resolutions. */
@@ -376,6 +378,15 @@ export default function AllPaymentsTable({
   const [localPaymentDunning, setLocalPaymentDunning] = useState<
     Map<string, DunningVal>
   >(new Map());
+  // Lokaler Notes-Override pro Payment-ID (Optimistic UI)
+  const [localNotes, setLocalNotes] = useState<Map<string, string | null>>(
+    new Map(),
+  );
+  function effectiveNote(p: ApiPayment): string | null {
+    const local = localNotes.get(p.id);
+    if (local !== undefined) return local;
+    return p.note ?? null;
+  }
   function effectivePaymentDunning(p: ApiPayment): DunningVal {
     // Reihenfolge der Quellen:
     //   1. Lokaler Override (User hat in dieser Session gewaehlt)
@@ -900,13 +911,14 @@ export default function AllPaymentsTable({
                 <th className="px-3 py-2">Einzug</th>
                 <th className="px-3 py-2 text-right">Anzahl</th>
                 <th className="px-3 py-2 text-right">Gesamt-Betrag</th>
+                <th className="px-3 py-2">Notiz</th>
               </tr>
             </thead>
             <tbody>
               {groupedRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -953,6 +965,7 @@ export default function AllPaymentsTable({
                         <td className="px-3 py-2 text-right tabular-nums font-semibold">
                           {eur(g.totalCents)}
                         </td>
+                        <td></td>
                       </tr>
                       {open
                         ? g.items
@@ -1012,6 +1025,23 @@ export default function AllPaymentsTable({
                                   >
                                     {p.description || "—"}
                                   </td>
+                                  <td
+                                    className="px-2 py-1.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <NoteCell
+                                      gcId={p.id}
+                                      kind="payment"
+                                      initialNote={effectiveNote(p)}
+                                      onChange={(n) =>
+                                        setLocalNotes((m) => {
+                                          const next = new Map(m);
+                                          next.set(p.id, n);
+                                          return next;
+                                        })
+                                      }
+                                    />
+                                  </td>
                                 </tr>
                               );
                             })
@@ -1045,6 +1075,9 @@ export default function AllPaymentsTable({
                     ✓
                   </th>
                 ) : null}
+                <th className="px-3 py-2" title="Freie Notiz zu dieser Zahlung">
+                  Notiz
+                </th>
                 <th className="px-3 py-2 w-8"></th>
               </tr>
             </thead>
@@ -1053,7 +1086,7 @@ export default function AllPaymentsTable({
                 <tr>
                   <td
                     colSpan={
-                      7 +
+                      8 +
                       (showDunningCol ? 1 : 0) +
                       (showDoneFeature ? 1 : 0) +
                       (showCustomerStatusCol ? 1 : 0)
@@ -1208,6 +1241,23 @@ export default function AllPaymentsTable({
                           />
                         </td>
                       ) : null}
+                      <td
+                        className="px-2 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <NoteCell
+                          gcId={p.id}
+                          kind="payment"
+                          initialNote={effectiveNote(p)}
+                          onChange={(n) =>
+                            setLocalNotes((m) => {
+                              const next = new Map(m);
+                              next.set(p.id, n);
+                              return next;
+                            })
+                          }
+                        />
+                      </td>
                       <td className="px-2 py-2 text-right text-[color:var(--brand-orange)] font-semibold">
                         {clickable ? "→" : ""}
                       </td>
