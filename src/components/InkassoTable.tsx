@@ -7,7 +7,7 @@
  */
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { Deal } from "@/lib/types";
 import PaymentDetailModal from "@/components/PaymentDetailModal";
 
@@ -111,6 +111,9 @@ export default function InkassoTable({
   const [search, setSearch] = useState("");
   const [hideResolved, setHideResolved] = useState(true);
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Lokale Kopie damit Stage-Updates ohne Page-Reload sichtbar werden
   const [deals, setDeals] = useState<Deal[]>(initialDeals);
@@ -196,6 +199,131 @@ export default function InkassoTable({
     });
     return rows;
   }, [deals, statusFilter, stageFilter, search, hideResolved]);
+
+  // Gruppierung nach Kunde (Email -> Fallback Name).
+  // Hintergrund: ein Kunde kann mehrere Deals haben (echter Deal
+  // + Schatten-Deal aus dem Cache + Bestandsdeal aus HubSpot).
+  // Im Inkasso-Tab will Mario EINEN Eintrag pro Kunde mit Summen.
+  type Group = {
+    key: string;
+    customer_name: string;
+    email: string | null;
+    mitarbeiter: string | null;
+    deals: Deal[];
+    offen: number;
+    fees: number;
+    mahnungen: number;
+    worstStatus:
+      | "mahnung_1"
+      | "mahnung_2"
+      | "inkasso"
+      | "resolved"
+      | null;
+    activeStage:
+      | "ergo"
+      | "anwalt"
+      | "gericht"
+      | "gewonnen"
+      | "verloren"
+      | null;
+    earliestDue: string | null;
+    latestEmail: string | null;
+    anyInkassoSent: boolean;
+  };
+  const groupedRows: Group[] = useMemo(() => {
+    const SEVERITY: Record<string, number> = {
+      resolved: 0,
+      mahnung_1: 1,
+      mahnung_2: 2,
+      inkasso: 3,
+    };
+    const STAGE_SEV: Record<string, number> = {
+      gewonnen: 1,
+      verloren: 1,
+      ergo: 2,
+      anwalt: 3,
+      gericht: 4,
+    };
+    const map = new Map<string, Group>();
+    for (const d of filtered) {
+      const key =
+        (d.email || "").trim().toLowerCase() ||
+        `name:${d.nachname}|${d.vorname}`;
+      const total = Number(
+        d.vertrag_gesamtbetrag ?? d.betrag_original ?? d.betrag ?? 0,
+      );
+      const paid = (d.gocardless_paid_amount_cents ?? 0) / 100;
+      const offen = Math.max(0, total - paid);
+      const fees = (d.dunning_total_fees_cents ?? 0) / 100;
+      const mahnungen = d.dunning_mahnung_count ?? 0;
+      const g = map.get(key);
+      if (g) {
+        g.deals.push(d);
+        g.offen += offen;
+        g.fees += fees;
+        g.mahnungen += mahnungen;
+        if (
+          d.dunning_status &&
+          (SEVERITY[d.dunning_status] ?? 0) >
+            (g.worstStatus ? SEVERITY[g.worstStatus] : -1)
+        ) {
+          g.worstStatus = d.dunning_status as Group["worstStatus"];
+        }
+        if (
+          d.inkasso_stage &&
+          (STAGE_SEV[d.inkasso_stage] ?? 0) >
+            (g.activeStage ? STAGE_SEV[g.activeStage] : -1)
+        ) {
+          g.activeStage = d.inkasso_stage as Group["activeStage"];
+        }
+        const due = d.dunning_inkasso_due_at;
+        if (due && (g.earliestDue === null || due < g.earliestDue)) {
+          g.earliestDue = due;
+        }
+        const em = d.dunning_last_email_at;
+        if (em && (g.latestEmail === null || em > g.latestEmail)) {
+          g.latestEmail = em;
+        }
+        if (d.dunning_inkasso_sent_at) g.anyInkassoSent = true;
+      } else {
+        map.set(key, {
+          key,
+          customer_name: `${d.nachname ?? ""}${d.vorname ? `, ${d.vorname}` : ""}`,
+          email: d.email,
+          mitarbeiter: d.mitarbeiter_name ?? null,
+          deals: [d],
+          offen,
+          fees,
+          mahnungen,
+          worstStatus:
+            (d.dunning_status as Group["worstStatus"]) ?? null,
+          activeStage:
+            (d.inkasso_stage as Group["activeStage"]) ?? null,
+          earliestDue: d.dunning_inkasso_due_at ?? null,
+          latestEmail: d.dunning_last_email_at ?? null,
+          anyInkassoSent: !!d.dunning_inkasso_sent_at,
+        });
+      }
+    }
+    const arr = Array.from(map.values());
+    // Ueberfaellige zuerst (kleines due_at), dann nach offen DESC
+    arr.sort((a, b) => {
+      const da = a.earliestDue ?? "9999-99-99";
+      const db = b.earliestDue ?? "9999-99-99";
+      if (da !== db) return da.localeCompare(db);
+      return b.offen - a.offen;
+    });
+    return arr;
+  }, [filtered]);
+
+  const toggleGroup = (k: string) => {
+    setExpandedGroups((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  };
 
   const counts = useMemo(() => {
     const c = { mahnung_1: 0, mahnung_2: 0, inkasso: 0, resolved: 0 };
@@ -327,11 +455,15 @@ export default function InkassoTable({
         <table className="w-full text-sm">
           <thead className="bg-[color:var(--surface)] text-xs uppercase">
             <tr className="text-left">
+              <th className="px-3 py-2 w-8"></th>
               <th className="px-3 py-2">Kunde</th>
               <th className="px-3 py-2">Mitarbeiter</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Inkasso-Stage</th>
-              <th className="px-3 py-2 text-right" title="Offener Betrag = Vertragssumme - bereits bezahlt (fuer Provisions-Rueckabwicklung)">
+              <th
+                className="px-3 py-2 text-right"
+                title="Offener Betrag = Vertragssumme - bereits bezahlt"
+              >
                 Offen
               </th>
               <th className="px-3 py-2 text-right">Mahnungen</th>
@@ -342,10 +474,10 @@ export default function InkassoTable({
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {groupedRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={10}
+                  colSpan={11}
                   className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                 >
                   {deals.some((d) => d.dunning_status)
@@ -354,7 +486,101 @@ export default function InkassoTable({
                 </td>
               </tr>
             ) : (
-              filtered.map((d) => {
+              groupedRows.flatMap((g) => {
+                const stat = statusBadge(g.worstStatus);
+                const due = g.earliestDue;
+                const overdue = due && due < now && !g.anyInkassoSent;
+                const open = expandedGroups.has(g.key);
+                const headerRow = (
+                  <tr
+                    key={`g:${g.key}`}
+                    onClick={() => toggleGroup(g.key)}
+                    className={
+                      "border-t border-[color:var(--border)] cursor-pointer hover:bg-[color:var(--surface)]/50 " +
+                      (overdue ? "bg-red-50" : "")
+                    }
+                    title="Klick: Sub-Deals einzeln zeigen"
+                  >
+                    <td className="px-3 py-2 text-[color:var(--brand-orange)] font-semibold">
+                      {open ? "▼" : "▶"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">
+                        {g.customer_name}
+                        {g.deals.length > 1 ? (
+                          <span className="ml-1 text-[10px] text-[color:var(--muted)] font-normal">
+                            ({g.deals.length} Deals)
+                          </span>
+                        ) : null}
+                      </div>
+                      {g.email ? (
+                        <div className="text-[11px] text-[color:var(--muted)]">
+                          {g.email}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-[color:var(--muted)]">
+                      {g.mitarbeiter || "—"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {g.worstStatus ? (
+                        <span
+                          className={
+                            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border " +
+                            stat.cls
+                          }
+                        >
+                          {stat.label}
+                        </span>
+                      ) : (
+                        <span className="text-[color:var(--muted)] text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {g.activeStage ? (
+                        <span
+                          className={
+                            "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border " +
+                            STAGE_CLS[g.activeStage]
+                          }
+                        >
+                          {STAGE_LABELS[g.activeStage]}
+                        </span>
+                      ) : (
+                        <span className="text-[color:var(--muted)] text-xs">—</span>
+                      )}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums font-semibold text-red-900"
+                      title="Summe offener Betrag aller Deals dieses Kunden"
+                    >
+                      {g.offen > 0 ? eur(g.offen) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {g.mahnungen}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {g.fees > 0 ? eur(g.fees) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {formatDateTime(g.latestEmail)}
+                    </td>
+                    <td
+                      className={
+                        "px-3 py-2 text-xs " +
+                        (overdue ? "text-red-900 font-semibold" : "")
+                      }
+                    >
+                      {formatDate(g.earliestDue)}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {g.anyInkassoSent ? "✓" : "—"}
+                    </td>
+                  </tr>
+                );
+                if (!open) return [headerRow];
+                // Sub-Rows: jede einzelne Deal-Zeile zeigen
+                const subRows = g.deals.map((d) => {
                 const stat = statusBadge(d.dunning_status);
                 const due = d.dunning_inkasso_due_at;
                 const overdue =
@@ -374,21 +600,19 @@ export default function InkassoTable({
                     key={d.id}
                     onClick={() => setDetailDeal(d)}
                     className={
-                      "border-t border-[color:var(--border)] cursor-pointer hover:bg-[color:var(--surface)]/50 " +
+                      "border-t border-[color:var(--border)] cursor-pointer bg-[color:var(--surface)]/20 hover:bg-[color:var(--surface)]/40 " +
                       (overdue ? "bg-red-50" : "")
                     }
                     title="Klicken für Detail-Ansicht und Aktionen"
                   >
-                    <td className="px-3 py-2">
-                      <div className="font-medium">
-                        {d.nachname}
-                        {d.vorname ? `, ${d.vorname}` : ""}
+                    <td></td>
+                    <td className="px-3 py-2 text-xs">
+                      <div className="text-[color:var(--muted)]">
+                        Deal #{d.hubspot_deal_id || d.id.slice(0, 8)}
                       </div>
-                      {d.email ? (
-                        <div className="text-[11px] text-[color:var(--muted)]">
-                          {d.email}
-                        </div>
-                      ) : null}
+                      <div className="text-[10px] text-[color:var(--muted)]">
+                        {Number(d.vertrag_gesamtbetrag ?? d.betrag_original ?? d.betrag ?? 0).toLocaleString("de-AT", {style:"currency", currency:"EUR"})} Vertrag
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-xs text-[color:var(--muted)]">
                       {d.mitarbeiter_name || "—"}
@@ -476,6 +700,13 @@ export default function InkassoTable({
                     </td>
                   </tr>
                 );
+                });
+                return [
+                  headerRow,
+                  ...subRows.map((row, i) => (
+                    <Fragment key={`s:${g.key}:${i}`}>{row}</Fragment>
+                  )),
+                ];
               })
             )}
           </tbody>
