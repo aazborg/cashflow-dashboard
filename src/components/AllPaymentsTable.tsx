@@ -79,6 +79,37 @@ function statusGroup(status: string | null): "confirmed" | "pending" | "failed" 
   return "other";
 }
 
+function dunningBadge(
+  s: "mahnung_1" | "mahnung_2" | "inkasso" | "resolved" | null | undefined,
+): { cls: string; label: string } | null {
+  if (!s) return null;
+  if (s === "mahnung_1") {
+    return {
+      cls: "bg-amber-100 text-amber-900 border-amber-300",
+      label: "1. Mahnung",
+    };
+  }
+  if (s === "mahnung_2") {
+    return {
+      cls: "bg-orange-100 text-orange-900 border-orange-300",
+      label: "2. Mahnung",
+    };
+  }
+  if (s === "inkasso") {
+    return {
+      cls: "bg-red-100 text-red-900 border-red-300",
+      label: "Inkasso",
+    };
+  }
+  if (s === "resolved") {
+    return {
+      cls: "bg-green-100 text-green-900 border-green-300",
+      label: "Erledigt",
+    };
+  }
+  return null;
+}
+
 function statusBadge(status: string | null): { cls: string; label: string } {
   const g = statusGroup(status);
   if (g === "confirmed") {
@@ -139,6 +170,8 @@ export default function AllPaymentsTable({
   const [hideRecovered, setHideRecovered] = useState(
     defaultStatus === "failed",
   );
+  // Mahn-Status-Spalte nur im Failed-Tab anzeigen (sonst zu voll).
+  const showDunningCol = defaultStatus === "failed";
 
   // Mahnungs-Modal: deal_id aus Payment -> Deal aus uebergebener Liste
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
@@ -205,9 +238,11 @@ export default function AllPaymentsTable({
         if (!c.charge_date) continue;
         const ok = new Date(c.charge_date).getTime();
         const days = (ok - fail) / DAYS;
-        // Erfolgreiche Zahlung im Zeitfenster -90..+90 Tage:
-        // GC-Retry oder manuelle Nachzahlung
-        if (days >= -90 && days <= 90) {
+        // 14-Tage-Fenster: bei monatlichen Raten ist der naechste
+        // Cycle erst nach ~30 Tagen, kann also nicht faelschlich
+        // gematcht werden. Bei GC-Retry oder manueller Nachzahlung
+        // passiert das innerhalb von Tagen, max. ~2 Wochen.
+        if (days >= -14 && days <= 14) {
           recovered.add(p.id);
           break;
         }
@@ -423,6 +458,9 @@ export default function AllPaymentsTable({
                 <th className="px-3 py-2">Mitarbeiter</th>
                 <th className="px-3 py-2 text-right">Betrag</th>
                 <th className="px-3 py-2">Status</th>
+                {showDunningCol ? (
+                  <th className="px-3 py-2">Mahn-Status</th>
+                ) : null}
                 <th className="px-3 py-2">Beschreibung</th>
                 <th className="px-3 py-2 w-8"></th>
               </tr>
@@ -431,7 +469,7 @@ export default function AllPaymentsTable({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={showDunningCol ? 8 : 7}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -499,6 +537,29 @@ export default function AllPaymentsTable({
                           {stat.label}
                         </a>
                       </td>
+                      {showDunningCol ? (
+                        <td className="px-3 py-2 text-xs">
+                          {(() => {
+                            const b = dunningBadge(
+                              linkedDeal?.dunning_status,
+                            );
+                            return b ? (
+                              <span
+                                className={
+                                  "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border " +
+                                  b.cls
+                                }
+                              >
+                                {b.label}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-[color:var(--muted)]">
+                                — kein Mahnschritt
+                              </span>
+                            );
+                          })()}
+                        </td>
+                      ) : null}
                       <td className="px-3 py-2 text-xs text-[color:var(--muted)] max-w-[280px] truncate"
                         title={p.description ?? ""}>
                         {p.description || "—"}
