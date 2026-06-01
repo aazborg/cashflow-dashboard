@@ -129,28 +129,36 @@ export async function GET() {
   const rows = data as unknown as CacheRow[];
   const synced = rows.length > 0 ? rows[0].synced_at : null;
   const env = rows.length > 0 ? rows[0].env : "live";
-  // Customer-Lage: hat der Customer noch ein aktives Mandat?
+  // Customer-Lage: hat der Customer eine ZUKUENFTIG GEPLANTE Zahlung?
+  // (Mandat-Status reicht nicht: ein 'active' Mandat ohne geplante
+  // Payments bedeutet ebenfalls 'kein Geld kommt rein'.)
   // Plus: customer_flag (storniert OK) aus customer-flags-Tabelle.
   const customerIds = Array.from(
     new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
   );
-  const activeCustomers = new Set<string>();
+  const upcomingCustomers = new Set<string>();
   const customerFlags = new Map<string, string>();
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   if (customerIds.length > 0) {
-    // Wir laden alle mandates der genannten Customers in Paketen,
-    // weil 'in' bei zu vielen IDs platzen kann
     const CHUNK = 200;
+    // Zukuenftige geplante Zahlungen pro Kunde
     for (let i = 0; i < customerIds.length; i += CHUNK) {
       const part = customerIds.slice(i, i + CHUNK);
       const r = await sb
-        .from("gocardless_mandates_cache")
-        .select("customer_id,status")
-        .eq("status", "active")
+        .from("gocardless_payments_cache")
+        .select("customer_id")
+        .in("status", [
+          "pending_submission",
+          "submitted",
+          "scheduled",
+          "pending_customer_approval",
+        ])
+        .gte("charge_date", today)
         .in("customer_id", part);
       for (const row of (r.data ?? []) as Array<{
         customer_id: string | null;
       }>) {
-        if (row.customer_id) activeCustomers.add(row.customer_id);
+        if (row.customer_id) upcomingCustomers.add(row.customer_id);
       }
     }
     // Flags
@@ -171,7 +179,9 @@ export async function GET() {
 
   const payments = rows.map((r) => {
     const res = resolutionsMap.get(r.gc_id);
-    const hasActive = r.customer_id ? activeCustomers.has(r.customer_id) : false;
+    const hasUpcoming = r.customer_id
+      ? upcomingCustomers.has(r.customer_id)
+      : false;
     const flag = r.customer_id ? customerFlags.get(r.customer_id) ?? null : null;
     return {
       id: r.gc_id,
@@ -192,7 +202,10 @@ export async function GET() {
       instalment_schedule_id: r.instalment_schedule_id,
       done_at: res?.done_at ?? null,
       done_by_email: res?.done_by_email ?? null,
-      customer_has_active_mandate: hasActive,
+      // Echtes 'Geld kommt rein'-Signal: zukuenftige geplante
+      // Zahlung existiert. Wenn alle scheduled Zahlungen gecancelled
+      // sind, ist auch ein active mandate quasi tot fuer uns.
+      customer_has_active_mandate: hasUpcoming,
       customer_flag: flag,
     };
   });

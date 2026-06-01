@@ -128,25 +128,34 @@ export async function GET(req: NextRequest) {
   const rows = data as unknown as CacheRow[];
   const synced = rows.length > 0 ? rows[0].synced_at : null;
   const env = rows.length > 0 ? rows[0].env : "live";
-  // Customer-Lage: Active-Mandate + Customer-Flag pro Kunde
+  // Customer-Lage: gibt es eine zukuenftig geplante Zahlung?
+  // (Mandat=active ist nicht ausreichend -- ein active Mandat ohne
+  // scheduled Payments bringt auch nix.)
   const customerIds = Array.from(
     new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
   );
-  const activeCustomers = new Set<string>();
+  const upcomingCustomers = new Set<string>();
   const customerFlags = new Map<string, string>();
+  const today = new Date().toISOString().slice(0, 10);
   if (customerIds.length > 0) {
     const CHUNK = 200;
     for (let i = 0; i < customerIds.length; i += CHUNK) {
       const part = customerIds.slice(i, i + CHUNK);
       const r = await sb
-        .from("gocardless_mandates_cache")
-        .select("customer_id,status")
-        .eq("status", "active")
+        .from("gocardless_payments_cache")
+        .select("customer_id")
+        .in("status", [
+          "pending_submission",
+          "submitted",
+          "scheduled",
+          "pending_customer_approval",
+        ])
+        .gte("charge_date", today)
         .in("customer_id", part);
       for (const row of (r.data ?? []) as Array<{
         customer_id: string | null;
       }>) {
-        if (row.customer_id) activeCustomers.add(row.customer_id);
+        if (row.customer_id) upcomingCustomers.add(row.customer_id);
       }
     }
     for (let i = 0; i < customerIds.length; i += CHUNK) {
@@ -166,7 +175,9 @@ export async function GET(req: NextRequest) {
 
   const mandates = rows.map((r) => {
     const res = resolutionsMap.get(r.gc_id);
-    const hasActive = r.customer_id ? activeCustomers.has(r.customer_id) : false;
+    const hasUpcoming = r.customer_id
+      ? upcomingCustomers.has(r.customer_id)
+      : false;
     const flag = r.customer_id ? customerFlags.get(r.customer_id) ?? null : null;
     return {
       id: r.gc_id,
@@ -182,7 +193,7 @@ export async function GET(req: NextRequest) {
       deal_id: r.deal_id,
       done_at: res?.done_at ?? null,
       done_by_email: res?.done_by_email ?? null,
-      customer_has_active_mandate: hasActive,
+      customer_has_active_mandate: hasUpcoming,
       customer_flag: flag,
     };
   });
