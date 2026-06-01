@@ -129,8 +129,50 @@ export async function GET() {
   const rows = data as unknown as CacheRow[];
   const synced = rows.length > 0 ? rows[0].synced_at : null;
   const env = rows.length > 0 ? rows[0].env : "live";
+  // Customer-Lage: hat der Customer noch ein aktives Mandat?
+  // Plus: customer_flag (storniert OK) aus customer-flags-Tabelle.
+  const customerIds = Array.from(
+    new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
+  );
+  const activeCustomers = new Set<string>();
+  const customerFlags = new Map<string, string>();
+  if (customerIds.length > 0) {
+    // Wir laden alle mandates der genannten Customers in Paketen,
+    // weil 'in' bei zu vielen IDs platzen kann
+    const CHUNK = 200;
+    for (let i = 0; i < customerIds.length; i += CHUNK) {
+      const part = customerIds.slice(i, i + CHUNK);
+      const r = await sb
+        .from("gocardless_mandates_cache")
+        .select("customer_id,status")
+        .eq("status", "active")
+        .in("customer_id", part);
+      for (const row of (r.data ?? []) as Array<{
+        customer_id: string | null;
+      }>) {
+        if (row.customer_id) activeCustomers.add(row.customer_id);
+      }
+    }
+    // Flags
+    for (let i = 0; i < customerIds.length; i += CHUNK) {
+      const part = customerIds.slice(i, i + CHUNK);
+      const r = await sb
+        .from("gocardless_customer_flags")
+        .select("gc_customer_id,status")
+        .in("gc_customer_id", part);
+      for (const row of (r.data ?? []) as Array<{
+        gc_customer_id: string;
+        status: string;
+      }>) {
+        customerFlags.set(row.gc_customer_id, row.status);
+      }
+    }
+  }
+
   const payments = rows.map((r) => {
     const res = resolutionsMap.get(r.gc_id);
+    const hasActive = r.customer_id ? activeCustomers.has(r.customer_id) : false;
+    const flag = r.customer_id ? customerFlags.get(r.customer_id) ?? null : null;
     return {
       id: r.gc_id,
       amount_cents: r.amount_cents,
@@ -150,6 +192,8 @@ export async function GET() {
       instalment_schedule_id: r.instalment_schedule_id,
       done_at: res?.done_at ?? null,
       done_by_email: res?.done_by_email ?? null,
+      customer_has_active_mandate: hasActive,
+      customer_flag: flag,
     };
   });
 

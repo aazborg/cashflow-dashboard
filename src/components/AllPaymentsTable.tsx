@@ -31,6 +31,8 @@ interface ApiPayment {
   instalment_schedule_id: string | null;
   done_at?: string | null;
   done_by_email?: string | null;
+  customer_has_active_mandate?: boolean;
+  customer_flag?: string | null;
 }
 
 type StatusFilter =
@@ -181,6 +183,55 @@ export default function AllPaymentsTable({
   );
   // Mahn-Status-Spalte nur im Failed-Tab anzeigen (sonst zu voll).
   const showDunningCol = defaultStatus === "failed";
+
+  // 'Mandat-Lage'-Spalte: zeigt Ampel pro Zeile, OB der Kunde aktuell
+  // ueberhaupt Geld abgebucht bekommt. Sichtbar in Tabs wo es
+  // typischerweise um inaktive Kunden geht: Storniert, Rueckbelastet.
+  // (Failed-Tab hat Mahn-Status, da macht Doppelung wenig Sinn.)
+  const showCustomerStatusCol =
+    defaultStatus === "cancelled" || defaultStatus === "chargeback";
+  // Lokaler Override pro customer_id fuer Optimistic UI
+  const [localCustomerFlags, setLocalCustomerFlags] = useState<
+    Map<string, "storniert" | null>
+  >(new Map());
+  function effectiveCustomerFlag(p: ApiPayment): string | null {
+    if (!p.customer_id) return null;
+    const local = localCustomerFlags.get(p.customer_id);
+    if (local !== undefined) return local;
+    return p.customer_flag ?? null;
+  }
+  async function toggleCustomerStorniert(p: ApiPayment) {
+    if (!p.customer_id) return;
+    const cur = effectiveCustomerFlag(p);
+    const next: "storniert" | null = cur === "storniert" ? null : "storniert";
+    const cid = p.customer_id;
+    setLocalCustomerFlags((m) => {
+      const n = new Map(m);
+      n.set(cid, next);
+      return n;
+    });
+    try {
+      const res = await fetch("/cashflow/api/customer-flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gc_customer_id: cid,
+          status: next,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setLocalCustomerFlags((m) => {
+        const n = new Map(m);
+        n.set(cid, (cur as "storniert" | null) ?? null);
+        return n;
+      });
+      alert(
+        "Konnte Kunden-Status nicht speichern: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
 
   // 'Erledigt'-Workflow: User kann pro Zeile abhaken.
   // Default-Anzeige (in allen relevanten Tabs failed/cancelled/
@@ -738,6 +789,7 @@ export default function AllPaymentsTable({
                 <th className="px-3 py-2 w-8"></th>
                 <th className="px-3 py-2">Kunde</th>
                 <th className="px-3 py-2">Mitarbeiter</th>
+                <th className="px-3 py-2">Einzug</th>
                 <th className="px-3 py-2 text-right">Anzahl</th>
                 <th className="px-3 py-2 text-right">Gesamt-Betrag</th>
               </tr>
@@ -746,7 +798,7 @@ export default function AllPaymentsTable({
               {groupedRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -774,6 +826,18 @@ export default function AllPaymentsTable({
                         </td>
                         <td className="px-3 py-2 text-xs text-[color:var(--muted)]">
                           {g.mitarbeiter || "—"}
+                        </td>
+                        <td
+                          className="px-3 py-2 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <CustomerStatusCell
+                            payment={g.items[0]}
+                            flag={effectiveCustomerFlag(g.items[0])}
+                            onToggle={() =>
+                              toggleCustomerStorniert(g.items[0])
+                            }
+                          />
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           {g.items.length}
@@ -862,6 +926,11 @@ export default function AllPaymentsTable({
                 {showDunningCol ? (
                   <th className="px-3 py-2">Mahn-Status</th>
                 ) : null}
+                {showCustomerStatusCol ? (
+                  <th className="px-3 py-2" title="Wird beim Kunden aktuell Geld abgebucht?">
+                    Einzug
+                  </th>
+                ) : null}
                 <th className="px-3 py-2">Beschreibung</th>
                 {showDoneFeature ? (
                   <th className="px-3 py-2 w-8 text-center" title="Erledigt-Marker">
@@ -876,7 +945,10 @@ export default function AllPaymentsTable({
                 <tr>
                   <td
                     colSpan={
-                      7 + (showDunningCol ? 1 : 0) + (showDoneFeature ? 1 : 0)
+                      7 +
+                      (showDunningCol ? 1 : 0) +
+                      (showDoneFeature ? 1 : 0) +
+                      (showCustomerStatusCol ? 1 : 0)
                     }
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
@@ -1004,6 +1076,18 @@ export default function AllPaymentsTable({
                           );
                         })()}
                       </td>
+                      {showCustomerStatusCol ? (
+                        <td
+                          className="px-3 py-2 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <CustomerStatusCell
+                            payment={p}
+                            flag={effectiveCustomerFlag(p)}
+                            onToggle={() => toggleCustomerStorniert(p)}
+                          />
+                        </td>
+                      ) : null}
                       {showDoneFeature ? (
                         <td
                           className="px-2 py-2 text-center"
@@ -1041,6 +1125,85 @@ export default function AllPaymentsTable({
           canManageDunning={canManageDunning}
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Zeigt die Mandat-Lage des Kunden + Schnell-Toggle 'storniert OK'.
+ *
+ *  hat aktives Mandat       -> grüner Haken 'Einzug laeuft'
+ *  KEIN aktives Mandat,
+ *    'storniert' markiert    -> grauer Haken 'Vertrag beendet (OK)'
+ *  KEIN aktives Mandat,
+ *    NICHT markiert          -> rote Warnung 'KEIN MANDAT'
+ *                                + Button um als storniert zu markieren
+ */
+function CustomerStatusCell({
+  payment,
+  flag,
+  onToggle,
+}: {
+  payment: ApiPayment;
+  flag: string | null;
+  onToggle: () => void;
+}) {
+  const hasActive = !!payment.customer_has_active_mandate;
+  const isStorniert = flag === "storniert";
+  if (!payment.customer_id) {
+    return (
+      <span className="text-[10px] text-[color:var(--muted)]">—</span>
+    );
+  }
+  if (hasActive) {
+    return (
+      <div className="flex items-center gap-1">
+        <span
+          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-green-100 text-green-900 border-green-300"
+          title="Kunde hat noch ein aktives SEPA-Mandat -- Einzug funktioniert."
+        >
+          ✓ aktiv
+        </span>
+      </div>
+    );
+  }
+  if (isStorniert) {
+    return (
+      <div className="flex items-center gap-1">
+        <span
+          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-slate-200 text-slate-700 border-slate-300"
+          title="Kunde wurde als 'Vertragsende OK' markiert -- kein Mandat noetig."
+        >
+          ⊘ Vertragsende
+        </span>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="text-[10px] text-[color:var(--brand-orange)] hover:underline"
+          title="Markierung entfernen"
+        >
+          rück
+        </button>
+      </div>
+    );
+  }
+  // No active mandate AND not marked -> WARNING
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border bg-red-100 text-red-900 border-red-300"
+        title="ACHTUNG: Kunde hat KEIN aktives Mandat -- aktuell kommt kein Geld rein. Wenn das gewollt ist (Vertragsende), markiere als 'storniert'."
+      >
+        ⚠ KEIN MANDAT
+      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-[10px] text-[color:var(--muted)] hover:text-[color:var(--brand-orange)] hover:underline"
+        title="Als 'Vertragsende OK' markieren (es ist gerechtfertigt, dass kein Mandat da ist)."
+      >
+        OK so?
+      </button>
     </div>
   );
 }

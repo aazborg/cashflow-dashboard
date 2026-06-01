@@ -22,6 +22,8 @@ interface ApiMandate {
   deal_id: string | null;
   done_at?: string | null;
   done_by_email?: string | null;
+  customer_has_active_mandate?: boolean;
+  customer_flag?: string | null;
 }
 
 interface Props {
@@ -98,6 +100,48 @@ export default function MandatesTable({
   const [localResolutions, setLocalResolutions] = useState<
     Map<string, string | null>
   >(new Map());
+  const [localCustomerFlags, setLocalCustomerFlags] = useState<
+    Map<string, "storniert" | null>
+  >(new Map());
+  function effectiveCustomerFlag(m: ApiMandate): string | null {
+    if (!m.customer_id) return null;
+    const local = localCustomerFlags.get(m.customer_id);
+    if (local !== undefined) return local;
+    return m.customer_flag ?? null;
+  }
+  async function toggleCustomerStorniert(m: ApiMandate) {
+    if (!m.customer_id) return;
+    const cur = effectiveCustomerFlag(m);
+    const next: "storniert" | null =
+      cur === "storniert" ? null : "storniert";
+    const cid = m.customer_id;
+    setLocalCustomerFlags((prev) => {
+      const n = new Map(prev);
+      n.set(cid, next);
+      return n;
+    });
+    try {
+      const res = await fetch("/cashflow/api/customer-flags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gc_customer_id: cid,
+          status: next,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setLocalCustomerFlags((prev) => {
+        const n = new Map(prev);
+        n.set(cid, (cur as "storniert" | null) ?? null);
+        return n;
+      });
+      alert(
+        "Konnte Kunden-Status nicht speichern: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
   function isMandateDone(m: ApiMandate): boolean {
     const local = localResolutions.get(m.id);
     if (local !== undefined) return local !== null;
@@ -236,6 +280,9 @@ export default function MandatesTable({
                 <th className="px-3 py-2">Mitarbeiter</th>
                 <th className="px-3 py-2">Scheme</th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2" title="Wird beim Kunden aktuell Geld abgebucht?">
+                  Einzug
+                </th>
                 <th className="px-3 py-2">Mandat-ID</th>
                 <th className="px-3 py-2 w-8 text-center" title="Erledigt">
                   ✓
@@ -246,7 +293,7 @@ export default function MandatesTable({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -301,6 +348,13 @@ export default function MandatesTable({
                           {stat.label}
                         </a>
                       </td>
+                      <td className="px-3 py-2 text-xs">
+                        <MandateCustomerStatusCell
+                          mandate={m}
+                          flag={effectiveCustomerFlag(m)}
+                          onToggle={() => toggleCustomerStorniert(m)}
+                        />
+                      </td>
                       <td className="px-3 py-2 text-[11px] font-mono text-[color:var(--muted)]">
                         {m.id}
                       </td>
@@ -325,6 +379,70 @@ export default function MandatesTable({
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+function MandateCustomerStatusCell({
+  mandate,
+  flag,
+  onToggle,
+}: {
+  mandate: ApiMandate;
+  flag: string | null;
+  onToggle: () => void;
+}) {
+  const hasActive = !!mandate.customer_has_active_mandate;
+  const isStorniert = flag === "storniert";
+  if (!mandate.customer_id) {
+    return <span className="text-[10px] text-[color:var(--muted)]">—</span>;
+  }
+  if (hasActive) {
+    return (
+      <span
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-green-100 text-green-900 border-green-300"
+        title="Kunde hat noch ein aktives SEPA-Mandat -- Einzug funktioniert."
+      >
+        ✓ aktiv
+      </span>
+    );
+  }
+  if (isStorniert) {
+    return (
+      <div className="flex items-center gap-1">
+        <span
+          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-slate-200 text-slate-700 border-slate-300"
+          title="Kunde wurde als 'Vertragsende OK' markiert -- kein Mandat noetig."
+        >
+          ⊘ Vertragsende
+        </span>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="text-[10px] text-[color:var(--brand-orange)] hover:underline"
+          title="Markierung entfernen"
+        >
+          rück
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <span
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border bg-red-100 text-red-900 border-red-300"
+        title="ACHTUNG: Kunde hat KEIN aktives Mandat -- aktuell kommt kein Geld rein. Wenn das gewollt ist (Vertragsende), markiere als 'storniert'."
+      >
+        ⚠ KEIN MANDAT
+      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-[10px] text-[color:var(--muted)] hover:text-[color:var(--brand-orange)] hover:underline"
+        title="Als 'Vertragsende OK' markieren (es ist gerechtfertigt, dass kein Mandat da ist)."
+      >
+        OK so?
+      </button>
     </div>
   );
 }
