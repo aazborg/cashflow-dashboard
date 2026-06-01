@@ -13,7 +13,7 @@ import ManualMandateModal from "@/components/ManualMandateModal";
 import InkassoTable from "@/components/InkassoTable";
 import type { Deal, Employee } from "@/lib/types";
 
-type Tab = "kunden" | "zahlungen" | "storniert" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
+type Tab = "kunden" | "zahlungen" | "fehlgeschlagen" | "storniert" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
 
 interface Props {
   deals: Deal[];
@@ -51,6 +51,12 @@ export default function ZahlungenTabs({
           Alle Zahlungen
         </TabBtn>
         <TabBtn
+          active={tab === "fehlgeschlagen"}
+          onClick={() => setTab("fehlgeschlagen")}
+        >
+          Fehlgeschlagene Zahlungen
+        </TabBtn>
+        <TabBtn
           active={tab === "storniert"}
           onClick={() => setTab("storniert")}
         >
@@ -84,6 +90,12 @@ export default function ZahlungenTabs({
         />
       ) : tab === "zahlungen" ? (
         <AllPaymentsTable key="all" />
+      ) : tab === "fehlgeschlagen" ? (
+        <AllPaymentsTable
+          key="failed"
+          defaultStatus="failed"
+          emptyMessage="Aktuell keine fehlgeschlagenen Zahlungen. 🎉"
+        />
       ) : tab === "storniert" ? (
         <AllPaymentsTable
           key="cancelled"
