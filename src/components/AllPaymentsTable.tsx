@@ -856,9 +856,19 @@ export default function AllPaymentsTable({
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-sm">
         <div className="bg-white rounded border border-[color:var(--border)] p-2">
           <div className="text-[10px] uppercase text-[color:var(--muted)]">
-            Einträge
+            {groupByCustomer ? "Kunden" : "Einträge"}
           </div>
-          <div className="font-semibold tabular-nums">{filtered.length}</div>
+          <div className="font-semibold tabular-nums">
+            {groupByCustomer ? groupedRows.length : filtered.length}
+            {groupByCustomer ? (
+              <span
+                className="ml-1 text-[10px] font-normal text-[color:var(--muted)]"
+                title={`${filtered.length} einzelne Zahlungen verteilt auf ${groupedRows.length} Kunden`}
+              >
+                ({filtered.length} Zahlungen)
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="bg-blue-50 rounded border border-blue-300 p-2">
           <div className="text-[10px] uppercase text-blue-900/70">Total</div>
