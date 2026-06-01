@@ -109,6 +109,7 @@ export default function InkassoTable({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
+  const [hideResolved, setHideResolved] = useState(true);
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
 
   // Lokale Kopie damit Stage-Updates ohne Page-Reload sichtbar werden
@@ -157,6 +158,17 @@ export default function InkassoTable({
     const q = search.trim().toLowerCase();
     let rows = deals.filter((d) => {
       if (!d.dunning_status && !d.inkasso_stage) return false;
+      // 'Erledigte' (resolved + inkasso-stage gewonnen/verloren)
+      // werden per Default ausgeblendet -- typischer Workflow ist
+      // 'was muss ich aktuell tun?'. Mit Checkbox aufdeckbar.
+      if (
+        hideResolved &&
+        (d.dunning_status === "resolved" ||
+          d.inkasso_stage === "gewonnen" ||
+          d.inkasso_stage === "verloren")
+      ) {
+        return false;
+      }
       if (statusFilter !== "all" && d.dunning_status !== statusFilter) {
         return false;
       }
@@ -167,7 +179,7 @@ export default function InkassoTable({
         }
       }
       if (q) {
-        const hay = `${d.vorname ?? ""} ${d.nachname ?? ""} ${d.email ?? ""}`.toLowerCase();
+        const hay = `${d.vorname ?? ""} ${d.nachname ?? ""} ${d.email ?? ""} ${d.mitarbeiter_name ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -183,7 +195,7 @@ export default function InkassoTable({
       return ub.localeCompare(ua);
     });
     return rows;
-  }, [deals, statusFilter, search]);
+  }, [deals, statusFilter, stageFilter, search, hideResolved]);
 
   const counts = useMemo(() => {
     const c = { mahnung_1: 0, mahnung_2: 0, inkasso: 0, resolved: 0 };
@@ -294,6 +306,20 @@ export default function InkassoTable({
             <option value="verloren">Verloren</option>
           </select>
         </div>
+        <div className="flex items-end pb-1">
+          <label
+            className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
+            title="Versteckt Faelle mit Mahn-Status 'resolved' oder Inkasso-Stage 'gewonnen'/'verloren'. Aufdecken um die Historie zu sehen."
+          >
+            <input
+              type="checkbox"
+              checked={hideResolved}
+              onChange={(e) => setHideResolved(e.target.checked)}
+              className="cursor-pointer"
+            />
+            <span>Erledigte ausblenden</span>
+          </label>
+        </div>
       </div>
 
       {/* Tabelle */}
@@ -302,8 +328,12 @@ export default function InkassoTable({
           <thead className="bg-[color:var(--surface)] text-xs uppercase">
             <tr className="text-left">
               <th className="px-3 py-2">Kunde</th>
+              <th className="px-3 py-2">Mitarbeiter</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Inkasso-Stage</th>
+              <th className="px-3 py-2 text-right" title="Offener Betrag = Vertragssumme - bereits bezahlt (fuer Provisions-Rueckabwicklung)">
+                Offen
+              </th>
               <th className="px-3 py-2 text-right">Mahnungen</th>
               <th className="px-3 py-2 text-right">Gebühren</th>
               <th className="px-3 py-2">Letzte Email</th>
@@ -315,7 +345,7 @@ export default function InkassoTable({
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={10}
                   className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                 >
                   {deals.some((d) => d.dunning_status)
@@ -330,6 +360,15 @@ export default function InkassoTable({
                 const overdue =
                   due && due < now && !d.dunning_inkasso_sent_at;
                 const fees = (d.dunning_total_fees_cents ?? 0) / 100;
+                const totalVertrag = Number(
+                  d.vertrag_gesamtbetrag ??
+                    d.betrag_original ??
+                    d.betrag ??
+                    0,
+                );
+                const paidEur =
+                  (d.gocardless_paid_amount_cents ?? 0) / 100;
+                const offen = Math.max(0, totalVertrag - paidEur);
                 return (
                   <tr
                     key={d.id}
@@ -350,6 +389,9 @@ export default function InkassoTable({
                           {d.email}
                         </div>
                       ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-[color:var(--muted)]">
+                      {d.mitarbeiter_name || "—"}
                     </td>
                     <td className="px-3 py-2">
                       <span
@@ -398,6 +440,12 @@ export default function InkassoTable({
                       ) : (
                         <span className="text-[color:var(--muted)] text-xs">—</span>
                       )}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right tabular-nums font-semibold text-red-900"
+                      title={`Vertragssumme: ${eur(totalVertrag)} -- bezahlt: ${eur(paidEur)} = offen ${eur(offen)}. Fuer Provisions-Rueckabwicklung relevant.`}
+                    >
+                      {offen > 0 ? eur(offen) : "—"}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {d.dunning_mahnung_count ?? 0}
