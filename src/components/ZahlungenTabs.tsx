@@ -89,23 +89,33 @@ export default function ZahlungenTabs({
           canManageDunning={canManagePayments}
         />
       ) : tab === "zahlungen" ? (
-        <AllPaymentsTable key="all" />
+        <AllPaymentsTable
+          key="all"
+          deals={deals}
+          canManageDunning={canManagePayments}
+        />
       ) : tab === "fehlgeschlagen" ? (
         <AllPaymentsTable
           key="failed"
           defaultStatus="failed"
+          deals={deals}
+          canManageDunning={canManagePayments}
           emptyMessage="Aktuell keine fehlgeschlagenen Zahlungen. 🎉"
         />
       ) : tab === "storniert" ? (
         <AllPaymentsTable
           key="cancelled"
           defaultStatus="cancelled"
+          deals={deals}
+          canManageDunning={canManagePayments}
           emptyMessage="Aktuell keine stornierten Zahlungen."
         />
       ) : tab === "rueckbelastungen" ? (
         <AllPaymentsTable
           key="chargeback"
           defaultStatus="chargeback"
+          deals={deals}
+          canManageDunning={canManagePayments}
           emptyMessage="Aktuell keine Rückbelastungen (charged_back). 🎉"
         />
       ) : tab === "geloeschte_mandate" ? (

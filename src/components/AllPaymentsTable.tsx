@@ -9,6 +9,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PaymentDetailModal from "@/components/PaymentDetailModal";
+import type { Deal } from "@/lib/types";
 
 interface ApiPayment {
   id: string;
@@ -45,6 +47,11 @@ interface Props {
    *  Wenn gesetzt, wird der Status-Dropdown ausgeblendet. */
   defaultStatus?: StatusFilter;
   emptyMessage?: string;
+  /** Deals fuer Row-Click -> Mahnungs-Modal. Optional: wenn nicht
+   *  uebergeben, sind Zeilen nicht klickbar. */
+  deals?: Deal[];
+  /** Wer darf das Mahnungs-Modal aktiv nutzen (Buttons sichtbar)? */
+  canManageDunning?: boolean;
 }
 
 const eur = (cents: number | null | undefined) =>
@@ -113,6 +120,8 @@ function statusBadge(status: string | null): { cls: string; label: string } {
 export default function AllPaymentsTable({
   defaultStatus = "all",
   emptyMessage = "Keine Zahlungen passen zu den Filtern.",
+  deals,
+  canManageDunning = false,
 }: Props = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -125,6 +134,14 @@ export default function AllPaymentsTable({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const hideStatusFilter = defaultStatus !== "all";
+
+  // Mahnungs-Modal: deal_id aus Payment -> Deal aus uebergebener Liste
+  const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
+  const dealsById = useMemo(() => {
+    const m = new Map<string, Deal>();
+    for (const d of deals ?? []) m.set(d.id, d);
+    return m;
+  }, [deals]);
 
   useEffect(() => {
     setLoading(true);
@@ -360,10 +377,29 @@ export default function AllPaymentsTable({
                   const gcUrl = isSandbox
                     ? `https://manage-sandbox.gocardless.com/payments/${p.id}`
                     : `https://manage.gocardless.com/payments/${p.id}`;
+                  const linkedDeal = p.deal_id
+                    ? dealsById.get(p.deal_id) ?? null
+                    : null;
+                  const clickable = !!linkedDeal;
                   return (
                     <tr
                       key={p.id}
-                      className="border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/30"
+                      onClick={
+                        clickable
+                          ? () => setDetailDeal(linkedDeal)
+                          : undefined
+                      }
+                      title={
+                        clickable
+                          ? "Klick fuer Mahnung / Mandat-Storno"
+                          : p.deal_id
+                          ? "Deal nicht geladen"
+                          : "Kein Deal verknuepft"
+                      }
+                      className={
+                        "border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/30 " +
+                        (clickable ? "cursor-pointer" : "")
+                      }
                     >
                       <td className="px-3 py-2 whitespace-nowrap">
                         {formatDate(p.charge_date)}
@@ -387,6 +423,7 @@ export default function AllPaymentsTable({
                           href={gcUrl}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className={
                             "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border hover:opacity-80 " +
                             stat.cls
@@ -408,6 +445,14 @@ export default function AllPaymentsTable({
           </table>
         )}
       </div>
+
+      {detailDeal ? (
+        <PaymentDetailModal
+          deal={detailDeal}
+          onClose={() => setDetailDeal(null)}
+          canManageDunning={canManageDunning}
+        />
+      ) : null}
     </div>
   );
 }
