@@ -108,6 +108,7 @@ export default function ZahlungenTabs({
           defaultStatus="cancelled"
           deals={deals}
           canManageDunning={canManagePayments}
+          groupByCustomer
           emptyMessage="Aktuell keine stornierten Zahlungen."
         />
       ) : tab === "rueckbelastungen" ? (

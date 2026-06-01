@@ -8,7 +8,7 @@
  */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import PaymentDetailModal from "@/components/PaymentDetailModal";
 import type { Deal } from "@/lib/types";
 
@@ -52,6 +52,9 @@ interface Props {
   deals?: Deal[];
   /** Wer darf das Mahnungs-Modal aktiv nutzen (Buttons sichtbar)? */
   canManageDunning?: boolean;
+  /** Nach Kunde gruppieren (Kunden-Zeilen mit Aufklapp-Pfeil).
+   *  Genutzt im 'Stornierte Zahlungen'-Tab fuer Uebersicht. */
+  groupByCustomer?: boolean;
 }
 
 const eur = (cents: number | null | undefined) =>
@@ -153,7 +156,11 @@ export default function AllPaymentsTable({
   emptyMessage = "Keine Zahlungen passen zu den Filtern.",
   deals,
   canManageDunning = false,
+  groupByCustomer = false,
 }: Props = {}) {
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set(),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [payments, setPayments] = useState<ApiPayment[]>([]);
@@ -378,6 +385,58 @@ export default function AllPaymentsTable({
 
   const isSandbox = env === "sandbox";
 
+  // Gruppen pro Kunde (fuer Stornierte-Tab Uebersicht).
+  // Key: customer_id oder mandate_id oder name (Fallback).
+  // Sortierung: nach Gesamt-Betrag DESC (groesste Stornos zuerst).
+  const groupedRows = useMemo(() => {
+    if (!groupByCustomer) return [];
+    const map = new Map<
+      string,
+      {
+        key: string;
+        customer_name: string;
+        customer_email: string | null;
+        mitarbeiter: string | null;
+        deal_id: string | null;
+        items: ApiPayment[];
+        totalCents: number;
+      }
+    >();
+    for (const p of filtered) {
+      const key =
+        p.customer_id ??
+        p.mandate_id ??
+        `name:${p.customer_name}|email:${p.customer_email ?? ""}`;
+      const g = map.get(key);
+      if (g) {
+        g.items.push(p);
+        g.totalCents += p.amount_cents ?? 0;
+      } else {
+        map.set(key, {
+          key,
+          customer_name: p.customer_name,
+          customer_email: p.customer_email,
+          mitarbeiter: p.mitarbeiter,
+          deal_id: p.deal_id,
+          items: [p],
+          totalCents: p.amount_cents ?? 0,
+        });
+      }
+    }
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => b.totalCents - a.totalCents);
+    return arr;
+  }, [filtered, groupByCustomer]);
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-3">
       {/* Filterleiste */}
@@ -544,6 +603,108 @@ export default function AllPaymentsTable({
           </div>
         ) : error ? (
           <div className="px-3 py-4 text-sm text-red-700">Fehler: {error}</div>
+        ) : groupByCustomer ? (
+          /* Gruppierte Kunden-Ansicht (z.B. fuer Stornierte Zahlungen) */
+          <table className="w-full text-sm">
+            <thead className="bg-[color:var(--surface)] text-xs uppercase">
+              <tr className="text-left">
+                <th className="px-3 py-2 w-8"></th>
+                <th className="px-3 py-2">Kunde</th>
+                <th className="px-3 py-2">Mitarbeiter</th>
+                <th className="px-3 py-2 text-right">Anzahl</th>
+                <th className="px-3 py-2 text-right">Gesamt-Betrag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedRows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
+                  >
+                    {emptyMessage}
+                  </td>
+                </tr>
+              ) : (
+                groupedRows.map((g) => {
+                  const open = expandedGroups.has(g.key);
+                  return (
+                    <Fragment key={g.key}>
+                      <tr
+                        onClick={() => toggleGroup(g.key)}
+                        className="border-t border-[color:var(--border)] hover:bg-[color:var(--surface)]/50 cursor-pointer"
+                      >
+                        <td className="px-3 py-2 text-[color:var(--brand-orange)] font-semibold">
+                          {open ? "▼" : "▶"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium">{g.customer_name}</div>
+                          {g.customer_email ? (
+                            <div className="text-[10px] text-[color:var(--muted)]">
+                              {g.customer_email}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-[color:var(--muted)]">
+                          {g.mitarbeiter || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {g.items.length}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                          {eur(g.totalCents)}
+                        </td>
+                      </tr>
+                      {open
+                        ? g.items
+                            .slice()
+                            .sort((a, b) =>
+                              (b.charge_date ?? "").localeCompare(
+                                a.charge_date ?? "",
+                              ),
+                            )
+                            .map((p) => {
+                              const stat = statusBadge(p.status);
+                              return (
+                                <tr
+                                  key={p.id}
+                                  className="border-t border-[color:var(--border)] bg-[color:var(--surface)]/20"
+                                >
+                                  <td></td>
+                                  <td className="px-3 py-1.5 text-xs">
+                                    <span className="text-[color:var(--muted)]">
+                                      {formatDate(p.charge_date)}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-xs">
+                                    <span
+                                      className={
+                                        "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border " +
+                                        stat.cls
+                                      }
+                                    >
+                                      {stat.label}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right tabular-nums text-xs">
+                                    {eur(p.amount_cents)}
+                                  </td>
+                                  <td
+                                    className="px-3 py-1.5 text-xs text-[color:var(--muted)] truncate max-w-[400px]"
+                                    title={p.description ?? ""}
+                                  >
+                                    {p.description || "—"}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                        : null}
+                    </Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-[color:var(--surface)] text-xs uppercase">
