@@ -359,13 +359,14 @@ export default function AllPaymentsTable({
                 <th className="px-3 py-2 text-right">Betrag</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">Beschreibung</th>
+                <th className="px-3 py-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-3 py-8 text-center text-sm text-[color:var(--muted)]"
                   >
                     {emptyMessage}
@@ -436,6 +437,9 @@ export default function AllPaymentsTable({
                       <td className="px-3 py-2 text-xs text-[color:var(--muted)] max-w-[280px] truncate"
                         title={p.description ?? ""}>
                         {p.description || "—"}
+                      </td>
+                      <td className="px-2 py-2 text-right text-[color:var(--brand-orange)] font-semibold">
+                        {clickable ? "→" : ""}
                       </td>
                     </tr>
                   );

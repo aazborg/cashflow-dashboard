@@ -162,6 +162,7 @@ export function monthlySeriesForMitarbeiter(
 
   for (const d of filtered) {
     if (d.pending_delete) continue;
+    if (d.is_shadow) continue;
     for (const p of expandPayments(d)) {
       const key = `${p.date.getFullYear()}-${String(p.date.getMonth() + 1).padStart(2, "0")}`;
       const i = idx.get(key);
@@ -179,6 +180,7 @@ export function avgVerkaufspreis(deals: Deal[], mitarbeiterId: string | null): n
   ).filter(
     (d) =>
       !d.pending_delete &&
+      !d.is_shadow &&
       d.betrag > 0 &&
       d.source !== "legacy",
   );
@@ -204,6 +206,7 @@ export function cashDistribution(
   ).filter(
     (d) =>
       !d.pending_delete &&
+      !d.is_shadow &&
       d.source !== "legacy" &&
       d.betrag > 0 &&
       d.start_datum &&
@@ -261,6 +264,7 @@ export function outstandingByMitarbeiter(
   const map = new Map<string, OutstandingRow>();
   for (const d of deals) {
     if (d.pending_delete) continue;
+    if (d.is_shadow) continue;
     if (!map.has(d.mitarbeiter_id)) {
       map.set(d.mitarbeiter_id, {
         mitarbeiter_id: d.mitarbeiter_id,

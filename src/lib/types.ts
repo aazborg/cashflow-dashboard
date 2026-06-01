@@ -45,9 +45,13 @@ export interface Deal {
   anzahl_raten: number | null;
   intervall: Intervall | null;
   hubspot_deal_id: string | null;
-  source: "hubspot" | "manual" | "legacy";
+  source: "hubspot" | "manual" | "legacy" | "gocardless_shadow";
   created_at: string;
   pending_delete?: boolean;
+  /** Schatten-Deal: vom Bot fuer GoCardless-Customer ohne echtem
+   *  Vertrag auto-angelegt. NICHT in /daten / Cashflow / Statistik
+   *  sichtbar -- nur in /zahlungen, damit das Mahnungs-Modal greift. */
+  is_shadow?: boolean;
   /** Aus dem signierten Drive-Vertrag geparst (vertrags_modell_sync). */
   zahlungsmodell?: "einmal" | "raten" | null;
   raten_info?: string | null;

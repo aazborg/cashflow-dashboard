@@ -23,8 +23,9 @@ interface DealRow {
   anzahl_raten: number | null;
   intervall: Intervall | null;
   hubspot_deal_id: string | null;
-  source: "hubspot" | "manual" | "legacy";
+  source: "hubspot" | "manual" | "legacy" | "gocardless_shadow";
   pending_delete: boolean;
+  is_shadow?: boolean | null;
   created_at: string;
   zahlungsmodell?: "einmal" | "raten" | null;
   raten_info?: string | null;
@@ -77,6 +78,7 @@ function rowToDeal(r: DealRow): Deal {
     source: r.source,
     created_at: r.created_at,
     pending_delete: r.pending_delete,
+    is_shadow: r.is_shadow ?? false,
     zahlungsmodell: r.zahlungsmodell ?? null,
     raten_info: r.raten_info ?? null,
     vertrag_synced_at: r.vertrag_synced_at ?? null,
@@ -114,11 +116,25 @@ function rowToDeal(r: DealRow): Deal {
   };
 }
 
-export async function listDeals(): Promise<Deal[]> {
-  const { data, error } = await supabaseAdmin()
+/**
+ * Listet Deals. Default: NUR echte Deals (kein Schatten).
+ *
+ * Schatten-Deals werden vom Bot fuer GoCardless-Customers ohne
+ * Vertrag angelegt -- damit das Mahnungs-Modal in /zahlungen greift.
+ * Sie sollen NICHT in /daten / Cashflow / Statistik auftauchen.
+ *
+ * /zahlungen ruft mit includeShadow=true auf.
+ */
+export async function listDeals(
+  opts: { includeShadow?: boolean } = {},
+): Promise<Deal[]> {
+  const q = supabaseAdmin()
     .from("deals")
     .select("*")
     .order("created_at", { ascending: true });
+  const { data, error } = opts.includeShadow
+    ? await q
+    : await q.eq("is_shadow", false);
   if (error) throw error;
   return (data ?? []).map((r) => rowToDeal(r as DealRow));
 }

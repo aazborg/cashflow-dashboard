@@ -22,8 +22,12 @@ export default async function ZahlungenPage() {
   const ctx = await getSessionContext();
   if (!ctx) redirect("/login");
 
+  // includeShadow=true: Schatten-Deals werden hier MIT angezeigt,
+  // damit das Mahnungs-Modal auch fuer GC-Customer ohne echtem
+  // Vertrag funktioniert. Im Kunden-Tab erscheinen sie als Zeile
+  // (mit Name+Email aus GC, ohne Betrag).
   const [allDeals, employees] = await Promise.all([
-    listDeals(),
+    listDeals({ includeShadow: true }),
     listEmployees(),
   ]);
 
