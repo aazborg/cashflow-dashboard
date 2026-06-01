@@ -236,6 +236,63 @@ export default function AllPaymentsTable({
   const [dunningFilter, setDunningFilter] = useState<
     "all" | "none" | "mahnung_1" | "mahnung_2" | "inkasso" | "resolved"
   >("all");
+  // Lokaler State fuer dunning_status-Override pro Deal (optimistic UI).
+  // Key: deal_id, Value: aktueller dunning_status nach manueller Aenderung.
+  const [localDunning, setLocalDunning] = useState<
+    Map<string, "mahnung_1" | "mahnung_2" | "inkasso" | "resolved" | null>
+  >(new Map());
+  async function setDunningManual(
+    dealId: string,
+    status:
+      | "mahnung_1"
+      | "mahnung_2"
+      | "inkasso"
+      | "resolved"
+      | null,
+  ) {
+    const prev = localDunning.get(dealId);
+    setLocalDunning((m) => {
+      const n = new Map(m);
+      n.set(dealId, status);
+      return n;
+    });
+    try {
+      const res = await fetch("/cashflow/api/deals/dunning-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deal_id: dealId,
+          dunning_status: status,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setLocalDunning((m) => {
+        const n = new Map(m);
+        if (prev === undefined) n.delete(dealId);
+        else n.set(dealId, prev);
+        return n;
+      });
+      alert(
+        "Konnte Mahn-Status nicht speichern: " +
+          (e instanceof Error ? e.message : String(e)),
+      );
+    }
+  }
+  function effectiveDunning(
+    dealId: string | null,
+  ):
+    | "mahnung_1"
+    | "mahnung_2"
+    | "inkasso"
+    | "resolved"
+    | null
+    | undefined {
+    if (!dealId) return null;
+    const local = localDunning.get(dealId);
+    if (local !== undefined) return local;
+    return dealsById.get(dealId)?.dunning_status ?? null;
+  }
 
   // Mahnungs-Modal: deal_id aus Payment -> Deal aus uebergebener Liste
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
@@ -387,9 +444,7 @@ export default function AllPaymentsTable({
       if (dateTo && (p.charge_date ?? "") > dateTo) return false;
       // Mahn-Status-Filter (nur relevant wenn Spalte sichtbar)
       if (showDunningCol && dunningFilter !== "all") {
-        const ds = p.deal_id
-          ? dealsById.get(p.deal_id)?.dunning_status ?? null
-          : null;
+        const ds = effectiveDunning(p.deal_id);
         if (dunningFilter === "none") {
           if (ds !== null && ds !== undefined) return false;
         } else if (ds !== dunningFilter) {
@@ -421,7 +476,7 @@ export default function AllPaymentsTable({
   }, [payments, search, statusFilter, sort, dateFrom, dateTo,
        hideRecovered, recoveredFailedIds,
        showDunningCol, dunningFilter, dealsById,
-       showDoneFeature, hideDone, localResolutions]);
+       showDoneFeature, hideDone, localResolutions, localDunning]);
 
   const totals = useMemo(() => {
     let total = 0,
@@ -893,26 +948,41 @@ export default function AllPaymentsTable({
                         </a>
                       </td>
                       {showDunningCol ? (
-                        <td className="px-3 py-2 text-xs">
-                          {(() => {
-                            const b = dunningBadge(
-                              linkedDeal?.dunning_status,
-                            );
-                            return b ? (
-                              <span
-                                className={
-                                  "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border " +
-                                  b.cls
-                                }
-                              >
-                                {b.label}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-[color:var(--muted)]">
-                                — kein Mahnschritt
-                              </span>
-                            );
-                          })()}
+                        <td
+                          className="px-3 py-2 text-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {linkedDeal ? (
+                            <select
+                              value={
+                                effectiveDunning(linkedDeal.id) ?? ""
+                              }
+                              onChange={(e) =>
+                                setDunningManual(
+                                  linkedDeal.id,
+                                  e.target.value === ""
+                                    ? null
+                                    : (e.target.value as
+                                        | "mahnung_1"
+                                        | "mahnung_2"
+                                        | "inkasso"
+                                        | "resolved"),
+                                )
+                              }
+                              className="border border-[color:var(--border)] rounded px-1 py-0.5 text-[10px] bg-white"
+                              title="Setzt nur den Status -- triggert keine Email. Echte Mahnung: Zeile klicken -> Modal."
+                            >
+                              <option value="">— kein Mahnschritt</option>
+                              <option value="mahnung_1">1. Mahnung</option>
+                              <option value="mahnung_2">2. Mahnung</option>
+                              <option value="inkasso">Inkasso</option>
+                              <option value="resolved">Erledigt</option>
+                            </select>
+                          ) : (
+                            <span className="text-[10px] text-[color:var(--muted)]">
+                              kein Deal
+                            </span>
+                          )}
                         </td>
                       ) : null}
                       <td className="px-3 py-2 text-xs text-[color:var(--muted)] max-w-[280px]"
