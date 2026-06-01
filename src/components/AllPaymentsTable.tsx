@@ -59,6 +59,21 @@ interface Props {
   /** Nach Kunde gruppieren (Kunden-Zeilen mit Aufklapp-Pfeil).
    *  Genutzt im 'Stornierte Zahlungen'-Tab fuer Uebersicht. */
   groupByCustomer?: boolean;
+  /** Callback wenn der User pro Zeile dunning_status setzt.
+   *  Parent (ZahlungenTabs) haelt einen Override-Map damit der
+   *  geaenderte Status tab-uebergreifend persistiert (z.B. landet
+   *  ein 'inkasso'-Eintrag sofort im Inkasso-Tab). */
+  onDealUpdate?: (
+    dealId: string,
+    patch: {
+      dunning_status?:
+        | "mahnung_1"
+        | "mahnung_2"
+        | "inkasso"
+        | "resolved"
+        | null;
+    },
+  ) => void;
 }
 
 const eur = (cents: number | null | undefined) =>
@@ -161,6 +176,7 @@ export default function AllPaymentsTable({
   deals,
   canManageDunning = false,
   groupByCustomer = false,
+  onDealUpdate,
 }: Props = {}) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(),
@@ -284,14 +300,17 @@ export default function AllPaymentsTable({
       );
     }
   }
+  // Im Failed-Tab default 'Kein Mahnschritt' -- Mario sieht so nur
+  // die wirklich noch unbearbeiteten. Sobald er per Dropdown den
+  // Status setzt, verschwindet die Zeile aus dieser Liste und
+  // taucht im 'Mahnungen/Inkasso'-Tab auf (selbe deals-Prop,
+  // gepatcht via onDealUpdate).
   const [dunningFilter, setDunningFilter] = useState<
     "all" | "none" | "mahnung_1" | "mahnung_2" | "inkasso" | "resolved"
-  >("all");
-  // Lokaler State fuer dunning_status-Override pro Deal (optimistic UI).
-  // Key: deal_id, Value: aktueller dunning_status nach manueller Aenderung.
-  const [localDunning, setLocalDunning] = useState<
-    Map<string, "mahnung_1" | "mahnung_2" | "inkasso" | "resolved" | null>
-  >(new Map());
+  >(defaultStatus === "failed" ? "none" : "all");
+  // Source of Truth fuer dunning_status: das deals-prop (vom Parent
+  // ZahlungenTabs bereits gepatcht). API-Call optimistic via
+  // onDealUpdate -- Parent state weiterleben tab-uebergreifend.
   async function setDunningManual(
     dealId: string,
     status:
@@ -301,12 +320,9 @@ export default function AllPaymentsTable({
       | "resolved"
       | null,
   ) {
-    const prev = localDunning.get(dealId);
-    setLocalDunning((m) => {
-      const n = new Map(m);
-      n.set(dealId, status);
-      return n;
-    });
+    const prevStatus =
+      dealsById.get(dealId)?.dunning_status ?? null;
+    onDealUpdate?.(dealId, { dunning_status: status });
     try {
       const res = await fetch("/cashflow/api/deals/dunning-status", {
         method: "POST",
@@ -318,12 +334,7 @@ export default function AllPaymentsTable({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
-      setLocalDunning((m) => {
-        const n = new Map(m);
-        if (prev === undefined) n.delete(dealId);
-        else n.set(dealId, prev);
-        return n;
-      });
+      onDealUpdate?.(dealId, { dunning_status: prevStatus });
       alert(
         "Konnte Mahn-Status nicht speichern: " +
           (e instanceof Error ? e.message : String(e)),
@@ -340,8 +351,6 @@ export default function AllPaymentsTable({
     | null
     | undefined {
     if (!dealId) return null;
-    const local = localDunning.get(dealId);
-    if (local !== undefined) return local;
     return dealsById.get(dealId)?.dunning_status ?? null;
   }
 
@@ -527,7 +536,7 @@ export default function AllPaymentsTable({
   }, [payments, search, statusFilter, sort, dateFrom, dateTo,
        hideRecovered, recoveredFailedIds,
        showDunningCol, dunningFilter, dealsById,
-       showDoneFeature, hideDone, localResolutions, localDunning]);
+       showDoneFeature, hideDone, localResolutions]);
 
   const totals = useMemo(() => {
     let total = 0,

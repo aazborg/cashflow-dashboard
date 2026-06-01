@@ -5,13 +5,23 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ZahlungenTable from "@/components/ZahlungenTable";
 import AllPaymentsTable from "@/components/AllPaymentsTable";
 import MandatesTable from "@/components/MandatesTable";
 import ManualMandateModal from "@/components/ManualMandateModal";
 import InkassoTable from "@/components/InkassoTable";
 import type { Deal, Employee } from "@/lib/types";
+
+export type DealOverride = {
+  dunning_status?:
+    | "mahnung_1"
+    | "mahnung_2"
+    | "inkasso"
+    | "resolved"
+    | null;
+};
+export type DealOverrides = Map<string, DealOverride>;
 
 type Tab = "kunden" | "zahlungen" | "fehlgeschlagen" | "storniert" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
 
@@ -28,6 +38,27 @@ export default function ZahlungenTabs({
 }: Props) {
   const [tab, setTab] = useState<Tab>("kunden");
   const [manualOpen, setManualOpen] = useState(false);
+  // Tab-uebergreifende lokale Deal-Overrides. Wird gefuellt wenn der
+  // User pro Zeile den Mahn-Status setzt -- damit beim Tab-Wechsel
+  // (Failed -> Inkasso) die Aenderung sichtbar bleibt, OHNE die
+  // ganze Server-Seite refetchen zu muessen.
+  const [overrides, setOverrides] = useState<DealOverrides>(new Map());
+  const onDealUpdate = (id: string, patch: DealOverride) => {
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(id) ?? {};
+      next.set(id, { ...existing, ...patch });
+      return next;
+    });
+  };
+  const effectiveDeals = useMemo(() => {
+    if (overrides.size === 0) return deals;
+    return deals.map((d) => {
+      const o = overrides.get(d.id);
+      if (!o) return d;
+      return { ...d, ...o };
+    });
+  }, [deals, overrides]);
   return (
     <div className="space-y-3">
       <div className="flex justify-end -mb-1">
@@ -83,7 +114,7 @@ export default function ZahlungenTabs({
       </div>
       {tab === "kunden" ? (
         <ZahlungenTable
-          deals={deals}
+          deals={effectiveDeals}
           employees={employees}
           isAdmin={isAdmin}
           canManageDunning={canManagePayments}
@@ -91,23 +122,25 @@ export default function ZahlungenTabs({
       ) : tab === "zahlungen" ? (
         <AllPaymentsTable
           key="all"
-          deals={deals}
+          deals={effectiveDeals}
           canManageDunning={canManagePayments}
         />
       ) : tab === "fehlgeschlagen" ? (
         <AllPaymentsTable
           key="failed"
           defaultStatus="failed"
-          deals={deals}
+          deals={effectiveDeals}
           canManageDunning={canManagePayments}
+          onDealUpdate={onDealUpdate}
           emptyMessage="Aktuell keine fehlgeschlagenen Zahlungen. 🎉"
         />
       ) : tab === "storniert" ? (
         <AllPaymentsTable
           key="cancelled"
           defaultStatus="cancelled"
-          deals={deals}
+          deals={effectiveDeals}
           canManageDunning={canManagePayments}
+          onDealUpdate={onDealUpdate}
           groupByCustomer
           emptyMessage="Aktuell keine stornierten Zahlungen."
         />
@@ -115,8 +148,9 @@ export default function ZahlungenTabs({
         <AllPaymentsTable
           key="chargeback"
           defaultStatus="chargeback"
-          deals={deals}
+          deals={effectiveDeals}
           canManageDunning={canManagePayments}
+          onDealUpdate={onDealUpdate}
           emptyMessage="Aktuell keine Rückbelastungen (charged_back). 🎉"
         />
       ) : tab === "geloeschte_mandate" ? (
@@ -127,7 +161,7 @@ export default function ZahlungenTabs({
         />
       ) : (
         <InkassoTable
-          deals={deals}
+          deals={effectiveDeals}
           isAdmin={isAdmin}
           canManageDunning={canManagePayments}
         />
