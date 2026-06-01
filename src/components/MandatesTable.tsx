@@ -24,6 +24,7 @@ interface ApiMandate {
   done_by_email?: string | null;
   customer_has_active_mandate?: boolean;
   customer_flag?: string | null;
+  customer_flag_reason?: string | null;
 }
 
 interface Props {
@@ -100,23 +101,38 @@ export default function MandatesTable({
   const [localResolutions, setLocalResolutions] = useState<
     Map<string, string | null>
   >(new Map());
+  type CustomerFlagValue =
+    | { status: "storniert"; reason: "vertragsende" | "ueberwiesen" | "inkasso" }
+    | null;
   const [localCustomerFlags, setLocalCustomerFlags] = useState<
-    Map<string, "storniert" | null>
+    Map<string, CustomerFlagValue>
   >(new Map());
-  function effectiveCustomerFlag(m: ApiMandate): string | null {
+  function effectiveCustomerFlag(m: ApiMandate): CustomerFlagValue {
     if (!m.customer_id) return null;
     const local = localCustomerFlags.get(m.customer_id);
     if (local !== undefined) return local;
-    return m.customer_flag ?? null;
+    if (
+      m.customer_flag === "storniert" &&
+      (m.customer_flag_reason === "vertragsende" ||
+        m.customer_flag_reason === "ueberwiesen" ||
+        m.customer_flag_reason === "inkasso")
+    ) {
+      return { status: "storniert", reason: m.customer_flag_reason };
+    }
+    return null;
   }
-  async function toggleCustomerStorniert(m: ApiMandate) {
+  async function setCustomerFlag(
+    m: ApiMandate,
+    reason: "vertragsende" | "ueberwiesen" | "inkasso" | null,
+  ) {
     if (!m.customer_id) return;
-    const cur = effectiveCustomerFlag(m);
-    const next: "storniert" | null =
-      cur === "storniert" ? null : "storniert";
+    const prev = effectiveCustomerFlag(m);
     const cid = m.customer_id;
-    setLocalCustomerFlags((prev) => {
-      const n = new Map(prev);
+    const next: CustomerFlagValue = reason
+      ? { status: "storniert", reason }
+      : null;
+    setLocalCustomerFlags((p) => {
+      const n = new Map(p);
       n.set(cid, next);
       return n;
     });
@@ -126,14 +142,15 @@ export default function MandatesTable({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gc_customer_id: cid,
-          status: next,
+          status: reason ? "storniert" : null,
+          reason,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
-      setLocalCustomerFlags((prev) => {
-        const n = new Map(prev);
-        n.set(cid, (cur as "storniert" | null) ?? null);
+      setLocalCustomerFlags((p) => {
+        const n = new Map(p);
+        n.set(cid, prev);
         return n;
       });
       alert(
@@ -352,7 +369,7 @@ export default function MandatesTable({
                         <MandateCustomerStatusCell
                           mandate={m}
                           flag={effectiveCustomerFlag(m)}
-                          onToggle={() => toggleCustomerStorniert(m)}
+                          onSetReason={(r) => setCustomerFlag(m, r)}
                         />
                       </td>
                       <td className="px-3 py-2 text-[11px] font-mono text-[color:var(--muted)]">
@@ -383,17 +400,34 @@ export default function MandatesTable({
   );
 }
 
+const M_REASON_LABEL: Record<string, string> = {
+  vertragsende: "⊘ Vertragsende",
+  ueberwiesen: "💶 Überwiesen",
+  inkasso: "⚖ Inkasso",
+};
+const M_REASON_CLS: Record<string, string> = {
+  vertragsende: "bg-slate-200 text-slate-700 border-slate-300",
+  ueberwiesen: "bg-blue-100 text-blue-900 border-blue-300",
+  inkasso: "bg-purple-100 text-purple-900 border-purple-300",
+};
+
 function MandateCustomerStatusCell({
   mandate,
   flag,
-  onToggle,
+  onSetReason,
 }: {
   mandate: ApiMandate;
-  flag: string | null;
-  onToggle: () => void;
+  flag:
+    | {
+        status: "storniert";
+        reason: "vertragsende" | "ueberwiesen" | "inkasso";
+      }
+    | null;
+  onSetReason: (
+    reason: "vertragsende" | "ueberwiesen" | "inkasso" | null,
+  ) => void;
 }) {
   const hasActive = !!mandate.customer_has_active_mandate;
-  const isStorniert = flag === "storniert";
   if (!mandate.customer_id) {
     return <span className="text-[10px] text-[color:var(--muted)]">—</span>;
   }
@@ -401,24 +435,27 @@ function MandateCustomerStatusCell({
     return (
       <span
         className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-green-100 text-green-900 border-green-300"
-        title="Kunde hat noch ein aktives SEPA-Mandat -- Einzug funktioniert."
+        title="Kunde hat zukuenftig geplante Zahlung(en) -- Einzug laeuft."
       >
         ✓ aktiv
       </span>
     );
   }
-  if (isStorniert) {
+  if (flag) {
     return (
       <div className="flex items-center gap-1">
         <span
-          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-slate-200 text-slate-700 border-slate-300"
-          title="Kunde wurde als 'Vertragsende OK' markiert -- kein Mandat noetig."
+          className={
+            "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border " +
+            (M_REASON_CLS[flag.reason] ?? "bg-slate-100")
+          }
+          title={`Markiert als '${flag.reason}'`}
         >
-          ⊘ Vertragsende
+          {M_REASON_LABEL[flag.reason] ?? flag.reason}
         </span>
         <button
           type="button"
-          onClick={onToggle}
+          onClick={() => onSetReason(null)}
           className="text-[10px] text-[color:var(--brand-orange)] hover:underline"
           title="Markierung entfernen"
         >
@@ -428,21 +465,30 @@ function MandateCustomerStatusCell({
     );
   }
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       <span
         className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border bg-red-100 text-red-900 border-red-300"
-        title="ACHTUNG: Kunde hat KEIN aktives Mandat -- aktuell kommt kein Geld rein. Wenn das gewollt ist (Vertragsende), markiere als 'storniert'."
+        title="ACHTUNG: Kunde hat KEIN aktives Mandat und keine zukuenftigen Zahlungen."
       >
         ⚠ KEIN MANDAT
       </span>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="text-[10px] text-[color:var(--muted)] hover:text-[color:var(--brand-orange)] hover:underline"
-        title="Als 'Vertragsende OK' markieren (es ist gerechtfertigt, dass kein Mandat da ist)."
+      <select
+        defaultValue=""
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "") return;
+          onSetReason(
+            v as "vertragsende" | "ueberwiesen" | "inkasso",
+          );
+        }}
+        className="text-[10px] px-1 py-0.5 rounded border border-[color:var(--border)] bg-white text-[color:var(--muted)] hover:text-[color:var(--brand-orange)]"
+        title="Warum ist das OK? 'Inkasso' uebernimmt den Fall in den Inkasso-Tab."
       >
-        OK so?
-      </button>
+        <option value="">Grund?</option>
+        <option value="vertragsende">Vertragsende</option>
+        <option value="ueberwiesen">Auf Konto überwiesen</option>
+        <option value="inkasso">Bei Inkasso</option>
+      </select>
     </div>
   );
 }

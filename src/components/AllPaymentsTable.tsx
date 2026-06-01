@@ -33,6 +33,7 @@ interface ApiPayment {
   done_by_email?: string | null;
   customer_has_active_mandate?: boolean;
   customer_flag?: string | null;
+  customer_flag_reason?: string | null;
 }
 
 type StatusFilter =
@@ -206,21 +207,42 @@ export default function AllPaymentsTable({
   // (Failed-Tab hat Mahn-Status, da macht Doppelung wenig Sinn.)
   const showCustomerStatusCol =
     defaultStatus === "cancelled" || defaultStatus === "chargeback";
-  // Lokaler Override pro customer_id fuer Optimistic UI
+  // Lokaler Override pro customer_id fuer Optimistic UI.
+  // Wert = aktuelle reason ('vertragsende'/'ueberwiesen'/'inkasso')
+  // oder null wenn keine Markierung.
+  type CustomerFlagValue =
+    | { status: "storniert"; reason: "vertragsende" | "ueberwiesen" | "inkasso" }
+    | null;
   const [localCustomerFlags, setLocalCustomerFlags] = useState<
-    Map<string, "storniert" | null>
+    Map<string, CustomerFlagValue>
   >(new Map());
-  function effectiveCustomerFlag(p: ApiPayment): string | null {
+  function effectiveCustomerFlag(p: ApiPayment): CustomerFlagValue {
     if (!p.customer_id) return null;
     const local = localCustomerFlags.get(p.customer_id);
     if (local !== undefined) return local;
-    return p.customer_flag ?? null;
+    if (
+      p.customer_flag === "storniert" &&
+      (p.customer_flag_reason === "vertragsende" ||
+        p.customer_flag_reason === "ueberwiesen" ||
+        p.customer_flag_reason === "inkasso")
+    ) {
+      return {
+        status: "storniert",
+        reason: p.customer_flag_reason,
+      };
+    }
+    return null;
   }
-  async function toggleCustomerStorniert(p: ApiPayment) {
+  async function setCustomerFlag(
+    p: ApiPayment,
+    reason: "vertragsende" | "ueberwiesen" | "inkasso" | null,
+  ) {
     if (!p.customer_id) return;
-    const cur = effectiveCustomerFlag(p);
-    const next: "storniert" | null = cur === "storniert" ? null : "storniert";
+    const prev = effectiveCustomerFlag(p);
     const cid = p.customer_id;
+    const next: CustomerFlagValue = reason
+      ? { status: "storniert", reason }
+      : null;
     setLocalCustomerFlags((m) => {
       const n = new Map(m);
       n.set(cid, next);
@@ -232,14 +254,22 @@ export default function AllPaymentsTable({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gc_customer_id: cid,
-          status: next,
+          status: reason ? "storniert" : null,
+          reason,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Bei reason='inkasso': Backend hat schon die deals auf
+      // dunning_status='inkasso' gepatcht. Wir aktualisieren das
+      // Frontend-State via onDealUpdate, damit Tab-Wechsel sofort
+      // den Kunden im Inkasso-Tab zeigt.
+      if (reason === "inkasso" && onDealUpdate && p.deal_id) {
+        onDealUpdate(p.deal_id, { dunning_status: "inkasso" });
+      }
     } catch (e) {
       setLocalCustomerFlags((m) => {
         const n = new Map(m);
-        n.set(cid, (cur as "storniert" | null) ?? null);
+        n.set(cid, prev);
         return n;
       });
       alert(
@@ -843,8 +873,8 @@ export default function AllPaymentsTable({
                           <CustomerStatusCell
                             payment={g.items[0]}
                             flag={effectiveCustomerFlag(g.items[0])}
-                            onToggle={() =>
-                              toggleCustomerStorniert(g.items[0])
+                            onSetReason={(reason) =>
+                              setCustomerFlag(g.items[0], reason)
                             }
                           />
                         </td>
@@ -1093,7 +1123,9 @@ export default function AllPaymentsTable({
                           <CustomerStatusCell
                             payment={p}
                             flag={effectiveCustomerFlag(p)}
-                            onToggle={() => toggleCustomerStorniert(p)}
+                            onSetReason={(reason) =>
+                              setCustomerFlag(p, reason)
+                            }
                           />
                         </td>
                       ) : null}
@@ -1138,27 +1170,42 @@ export default function AllPaymentsTable({
   );
 }
 
+const REASON_LABEL: Record<string, string> = {
+  vertragsende: "⊘ Vertragsende",
+  ueberwiesen: "💶 Überwiesen",
+  inkasso: "⚖ Inkasso",
+};
+const REASON_CLS: Record<string, string> = {
+  vertragsende: "bg-slate-200 text-slate-700 border-slate-300",
+  ueberwiesen: "bg-blue-100 text-blue-900 border-blue-300",
+  inkasso: "bg-purple-100 text-purple-900 border-purple-300",
+};
+
 /**
- * Zeigt die Mandat-Lage des Kunden + Schnell-Toggle 'storniert OK'.
+ * Mandat-Lage pro Kunden-Zeile mit Grund-Auswahl.
  *
- *  hat aktives Mandat       -> grüner Haken 'Einzug laeuft'
- *  KEIN aktives Mandat,
- *    'storniert' markiert    -> grauer Haken 'Vertrag beendet (OK)'
- *  KEIN aktives Mandat,
- *    NICHT markiert          -> rote Warnung 'KEIN MANDAT'
- *                                + Button um als storniert zu markieren
+ *  hat zukuenftige Zahlung    -> ✓ aktiv  (gruen)
+ *  keine + Grund gesetzt      -> Grund-Badge (Vertragsende/
+ *                                Ueberwiesen/Inkasso) + 'rück'
+ *  keine + nicht markiert     -> ⚠ KEIN MANDAT + Dropdown 'Grund?'
  */
 function CustomerStatusCell({
   payment,
   flag,
-  onToggle,
+  onSetReason,
 }: {
   payment: ApiPayment;
-  flag: string | null;
-  onToggle: () => void;
+  flag:
+    | {
+        status: "storniert";
+        reason: "vertragsende" | "ueberwiesen" | "inkasso";
+      }
+    | null;
+  onSetReason: (
+    reason: "vertragsende" | "ueberwiesen" | "inkasso" | null,
+  ) => void;
 }) {
   const hasActive = !!payment.customer_has_active_mandate;
-  const isStorniert = flag === "storniert";
   if (!payment.customer_id) {
     return (
       <span className="text-[10px] text-[color:var(--muted)]">—</span>
@@ -1166,28 +1213,29 @@ function CustomerStatusCell({
   }
   if (hasActive) {
     return (
-      <div className="flex items-center gap-1">
-        <span
-          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-green-100 text-green-900 border-green-300"
-          title="Kunde hat noch ein aktives SEPA-Mandat -- Einzug funktioniert."
-        >
-          ✓ aktiv
-        </span>
-      </div>
+      <span
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-green-100 text-green-900 border-green-300"
+        title="Kunde hat zukuenftig geplante Zahlung(en) -- Einzug laeuft."
+      >
+        ✓ aktiv
+      </span>
     );
   }
-  if (isStorniert) {
+  if (flag) {
     return (
       <div className="flex items-center gap-1">
         <span
-          className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-slate-200 text-slate-700 border-slate-300"
-          title="Kunde wurde als 'Vertragsende OK' markiert -- kein Mandat noetig."
+          className={
+            "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border " +
+            (REASON_CLS[flag.reason] ?? "bg-slate-100")
+          }
+          title={`Markiert als '${flag.reason}' -- kein Mandat ist OK.`}
         >
-          ⊘ Vertragsende
+          {REASON_LABEL[flag.reason] ?? flag.reason}
         </span>
         <button
           type="button"
-          onClick={onToggle}
+          onClick={() => onSetReason(null)}
           className="text-[10px] text-[color:var(--brand-orange)] hover:underline"
           title="Markierung entfernen"
         >
@@ -1196,23 +1244,32 @@ function CustomerStatusCell({
       </div>
     );
   }
-  // No active mandate AND not marked -> WARNING
+  // No active mandate + not marked -> warning + reason-select
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       <span
         className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border bg-red-100 text-red-900 border-red-300"
-        title="ACHTUNG: Kunde hat KEIN aktives Mandat -- aktuell kommt kein Geld rein. Wenn das gewollt ist (Vertragsende), markiere als 'storniert'."
+        title="ACHTUNG: Kunde hat KEIN aktives Mandat und KEINE zukuenftigen Zahlungen. Aktuell kommt kein Geld rein."
       >
         ⚠ KEIN MANDAT
       </span>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="text-[10px] text-[color:var(--muted)] hover:text-[color:var(--brand-orange)] hover:underline"
-        title="Als 'Vertragsende OK' markieren (es ist gerechtfertigt, dass kein Mandat da ist)."
+      <select
+        defaultValue=""
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "") return;
+          onSetReason(
+            v as "vertragsende" | "ueberwiesen" | "inkasso",
+          );
+        }}
+        className="text-[10px] px-1 py-0.5 rounded border border-[color:var(--border)] bg-white text-[color:var(--muted)] hover:text-[color:var(--brand-orange)]"
+        title="Warum ist das OK? Bei 'Inkasso' wird der Fall automatisch in den Inkasso-Tab uebernommen."
       >
-        OK so?
-      </button>
+        <option value="">Grund?</option>
+        <option value="vertragsende">Vertragsende</option>
+        <option value="ueberwiesen">Auf Konto überwiesen</option>
+        <option value="inkasso">Bei Inkasso</option>
+      </select>
     </div>
   );
 }

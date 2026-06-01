@@ -135,7 +135,10 @@ export async function GET(req: NextRequest) {
     new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
   );
   const upcomingCustomers = new Set<string>();
-  const customerFlags = new Map<string, string>();
+  const customerFlags = new Map<
+    string,
+    { status: string; reason: string | null }
+  >();
   const today = new Date().toISOString().slice(0, 10);
   if (customerIds.length > 0) {
     const CHUNK = 200;
@@ -162,13 +165,17 @@ export async function GET(req: NextRequest) {
       const part = customerIds.slice(i, i + CHUNK);
       const r = await sb
         .from("gocardless_customer_flags")
-        .select("gc_customer_id,status")
+        .select("gc_customer_id,status,reason")
         .in("gc_customer_id", part);
       for (const row of (r.data ?? []) as Array<{
         gc_customer_id: string;
         status: string;
+        reason: string | null;
       }>) {
-        customerFlags.set(row.gc_customer_id, row.status);
+        customerFlags.set(row.gc_customer_id, {
+          status: row.status,
+          reason: row.reason,
+        });
       }
     }
   }
@@ -178,7 +185,11 @@ export async function GET(req: NextRequest) {
     const hasUpcoming = r.customer_id
       ? upcomingCustomers.has(r.customer_id)
       : false;
-    const flag = r.customer_id ? customerFlags.get(r.customer_id) ?? null : null;
+    const flagEntry = r.customer_id
+      ? customerFlags.get(r.customer_id)
+      : undefined;
+    const flag = flagEntry?.status ?? null;
+    const flagReason = flagEntry?.reason ?? null;
     return {
       id: r.gc_id,
       status: r.status,
@@ -195,6 +206,7 @@ export async function GET(req: NextRequest) {
       done_by_email: res?.done_by_email ?? null,
       customer_has_active_mandate: hasUpcoming,
       customer_flag: flag,
+      customer_flag_reason: flagReason,
     };
   });
 
