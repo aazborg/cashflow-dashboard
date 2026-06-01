@@ -172,6 +172,9 @@ export default function AllPaymentsTable({
   );
   // Mahn-Status-Spalte nur im Failed-Tab anzeigen (sonst zu voll).
   const showDunningCol = defaultStatus === "failed";
+  const [dunningFilter, setDunningFilter] = useState<
+    "all" | "none" | "mahnung_1" | "mahnung_2" | "inkasso" | "resolved"
+  >("all");
 
   // Mahnungs-Modal: deal_id aus Payment -> Deal aus uebergebener Liste
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
@@ -264,6 +267,17 @@ export default function AllPaymentsTable({
       }
       if (dateFrom && (p.charge_date ?? "") < dateFrom) return false;
       if (dateTo && (p.charge_date ?? "") > dateTo) return false;
+      // Mahn-Status-Filter (nur relevant wenn Spalte sichtbar)
+      if (showDunningCol && dunningFilter !== "all") {
+        const ds = p.deal_id
+          ? dealsById.get(p.deal_id)?.dunning_status ?? null
+          : null;
+        if (dunningFilter === "none") {
+          if (ds !== null && ds !== undefined) return false;
+        } else if (ds !== dunningFilter) {
+          return false;
+        }
+      }
       return true;
     });
     rows = rows.slice().sort((a, b) => {
@@ -287,7 +301,8 @@ export default function AllPaymentsTable({
     });
     return rows;
   }, [payments, search, statusFilter, sort, dateFrom, dateTo,
-       hideRecovered, recoveredFailedIds]);
+       hideRecovered, recoveredFailedIds,
+       showDunningCol, dunningFilter, dealsById]);
 
   const totals = useMemo(() => {
     let total = 0,
@@ -343,6 +358,30 @@ export default function AllPaymentsTable({
             </select>
           </div>
         )}
+        {showDunningCol ? (
+          <div>
+            <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
+              Mahn-Status
+            </label>
+            <select
+              value={dunningFilter}
+              onChange={(e) =>
+                setDunningFilter(
+                  e.target.value as typeof dunningFilter,
+                )
+              }
+              className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+              title="Filtert die Liste nach dem Mahn-Stand des verknuepften Deals."
+            >
+              <option value="all">Alle</option>
+              <option value="none">Kein Mahnschritt</option>
+              <option value="mahnung_1">1. Mahnung</option>
+              <option value="mahnung_2">2. Mahnung</option>
+              <option value="inkasso">Inkasso</option>
+              <option value="resolved">Erledigt</option>
+            </select>
+          </div>
+        ) : null}
         <div>
           <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
             Von
