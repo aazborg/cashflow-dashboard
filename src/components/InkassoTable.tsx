@@ -110,6 +110,7 @@ export default function InkassoTable({
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [search, setSearch] = useState("");
   const [hideResolved, setHideResolved] = useState(true);
+  const [mitarbeiterFilter, setMitarbeiterFilter] = useState<string>("all");
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(),
@@ -185,6 +186,13 @@ export default function InkassoTable({
         const hay = `${d.vorname ?? ""} ${d.nachname ?? ""} ${d.email ?? ""} ${d.mitarbeiter_name ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      if (mitarbeiterFilter !== "all") {
+        if (mitarbeiterFilter === "none") {
+          if (d.mitarbeiter_id && d.mitarbeiter_id !== "") return false;
+        } else if (d.mitarbeiter_id !== mitarbeiterFilter) {
+          return false;
+        }
+      }
       return true;
     });
     rows = rows.slice().sort((a, b) => {
@@ -198,7 +206,32 @@ export default function InkassoTable({
       return ub.localeCompare(ua);
     });
     return rows;
-  }, [deals, statusFilter, stageFilter, search, hideResolved]);
+  }, [deals, statusFilter, stageFilter, search, hideResolved, mitarbeiterFilter]);
+
+  // Mitarbeiter-Optionen aus den vorhandenen Deals ableiten
+  // (so erscheinen nur Mitarbeiter die tatsaechlich Inkasso-Faelle
+  // haben -- nicht das ganze Team).
+  const mitarbeiterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    let importCount = 0;
+    for (const d of deals) {
+      if (!d.dunning_status && !d.inkasso_stage) continue;
+      const mid = d.mitarbeiter_id ?? "";
+      const mname = d.mitarbeiter_name ?? "";
+      if (mid === "" || mid === "import") {
+        importCount++;
+        if (mid === "import") map.set("import", "Import");
+        continue;
+      }
+      map.set(mid, mname || mid);
+    }
+    const arr = Array.from(map.entries()).map(([id, name]) => ({
+      id,
+      name,
+    }));
+    arr.sort((a, b) => a.name.localeCompare(b.name, "de"));
+    return { arr, hasUnassigned: importCount > 0 };
+  }, [deals]);
 
   // Gruppierung nach Kunde (Email -> Fallback Name).
   // Hintergrund: ein Kunde kann mehrere Deals haben (echter Deal
@@ -432,6 +465,24 @@ export default function InkassoTable({
             <option value="gericht">Vor Gericht</option>
             <option value="gewonnen">Gewonnen</option>
             <option value="verloren">Verloren</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
+            Mitarbeiter
+          </label>
+          <select
+            value={mitarbeiterFilter}
+            onChange={(e) => setMitarbeiterFilter(e.target.value)}
+            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+            title="Filtert auf die Inkasso-Faelle eines bestimmten Mitarbeiters (z.B. fuer Provisions-Rueckabwicklung)."
+          >
+            <option value="all">Alle Mitarbeiter</option>
+            {mitarbeiterOptions.arr.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
           </select>
         </div>
         <div className="flex items-end pb-1">
