@@ -10,6 +10,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import PaymentDetailModal from "@/components/PaymentDetailModal";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 import type { Deal } from "@/lib/types";
 
 interface ApiPayment {
@@ -197,7 +198,13 @@ export default function AllPaymentsTable({
   const [env, setEnv] = useState<string>("");
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(defaultStatus);
+  // Status-Filter ist jetzt Multi-Select. Wenn defaultStatus !== 'all'
+  // (z.B. Failed-/Storno-Tab), wird initial nur dieser Wert vor-
+  // selektiert und der Filter unten ausgeblendet -- Tab ist
+  // ein impliziter Status-Vorfilter.
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(
+    defaultStatus === "all" ? new Set() : new Set([defaultStatus]),
+  );
   const [sort, setSort] = useState<SortKey>("date_desc");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -344,9 +351,18 @@ export default function AllPaymentsTable({
   // Status setzt, verschwindet die Zeile aus dieser Liste und
   // taucht im 'Mahnungen/Inkasso'-Tab auf (selbe deals-Prop,
   // gepatcht via onDealUpdate).
-  const [dunningFilter, setDunningFilter] = useState<
-    "all" | "none" | "mahnung_1" | "mahnung_2" | "inkasso" | "resolved"
-  >(defaultStatus === "failed" ? "none" : "all");
+  // Mahn-Status-Filter: Multi-Select. 'none' bedeutet 'kein
+  // Mahnschritt' (null), die anderen sind die echten Statuswerte.
+  // Im Failed-Tab default 'none' (Mario sieht nur Unbearbeitete).
+  const [dunningFilter, setDunningFilter] = useState<Set<string>>(
+    defaultStatus === "failed" ? new Set(["none"]) : new Set(),
+  );
+  // Einzug-Filter (Mandat-Lage / Customer-Status). Nur in den
+  // Tabs aktiv die showCustomerStatusCol haben (cancelled/chargeback).
+  // Werte: aktiv / kein_mandat / vertragsende / ueberwiesen / inkasso
+  const [einzugFilter, setEinzugFilter] = useState<Set<string>>(
+    new Set(),
+  );
   // Per-Payment Mahn-Status (statt pro Deal). Ein Kunde kann mehrere
   // failed Payments haben -- die werden einzeln getrackt:
   // eine kriegt 'mahnung_1', die andere bleibt offen, eine andere
@@ -559,20 +575,38 @@ export default function AllPaymentsTable({
         const hay = `${p.customer_name} ${p.customer_email ?? ""} ${p.description ?? ""} ${p.reference ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (statusFilter !== "all") {
-        if (statusGroup(p.status) !== statusFilter) return false;
+      // Multi-Status: leeres Set = alle erlaubt
+      if (statusFilter.size > 0) {
+        if (!statusFilter.has(statusGroup(p.status))) return false;
       }
       if (dateFrom && (p.charge_date ?? "") < dateFrom) return false;
       if (dateTo && (p.charge_date ?? "") > dateTo) return false;
-      // Mahn-Status-Filter (Per-Payment, nur relevant wenn
-      // Spalte sichtbar)
-      if (showDunningCol && dunningFilter !== "all") {
+      // Mahn-Status-Multi (Per-Payment, nur in Failed-Tab sichtbar)
+      if (showDunningCol && dunningFilter.size > 0) {
         const ds = effectivePaymentDunning(p);
-        if (dunningFilter === "none") {
-          if (ds !== null) return false;
-        } else if (ds !== dunningFilter) {
-          return false;
-        }
+        const dsKey = ds === null ? "none" : ds;
+        if (!dunningFilter.has(dsKey)) return false;
+      }
+      // Einzug-Multi (Customer-Lage)
+      if (showCustomerStatusCol && einzugFilter.size > 0) {
+        const hasActive = !!p.customer_has_active_mandate;
+        const flag =
+          p.customer_id && localCustomerFlags.has(p.customer_id)
+            ? localCustomerFlags.get(p.customer_id)
+            : p.customer_flag === "storniert" && p.customer_flag_reason
+              ? {
+                  status: "storniert" as const,
+                  reason: p.customer_flag_reason as
+                    | "vertragsende"
+                    | "ueberwiesen"
+                    | "inkasso",
+                }
+              : null;
+        let einzugKey: string;
+        if (hasActive) einzugKey = "aktiv";
+        else if (flag) einzugKey = flag.reason;
+        else einzugKey = "kein_mandat";
+        if (!einzugFilter.has(einzugKey)) return false;
       }
       return true;
     });
@@ -599,7 +633,8 @@ export default function AllPaymentsTable({
   }, [payments, search, statusFilter, sort, dateFrom, dateTo,
        hideRecovered, recoveredFailedIds,
        showDunningCol, dunningFilter, dealsById,
-       showDoneFeature, hideDone, localResolutions, localPaymentDunning]);
+       showDoneFeature, hideDone, localResolutions, localPaymentDunning,
+       showCustomerStatusCol, einzugFilter, localCustomerFlags]);
 
   const totals = useMemo(() => {
     let total = 0,
@@ -688,48 +723,49 @@ export default function AllPaymentsTable({
           />
         </div>
         {hideStatusFilter ? null : (
-          <div>
-            <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
-              Status
-            </label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-              className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
-            >
-              <option value="all">Alle</option>
-              <option value="confirmed">Bestätigt</option>
-              <option value="pending">In Bearbeitung</option>
-              <option value="failed">Fehlgeschlagen</option>
-              <option value="cancelled">Storniert</option>
-              <option value="chargeback">Rückbelastet</option>
-              <option value="scheduled">Geplant</option>
-            </select>
-          </div>
+          <MultiSelectFilter
+            label="Status"
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            options={[
+              { value: "confirmed", label: "Bestätigt" },
+              { value: "pending", label: "In Bearbeitung" },
+              { value: "failed", label: "Fehlgeschlagen" },
+              { value: "cancelled", label: "Storniert" },
+              { value: "chargeback", label: "Rückbelastet" },
+              { value: "scheduled", label: "Geplant" },
+            ]}
+          />
         )}
         {showDunningCol ? (
-          <div>
-            <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
-              Mahn-Status
-            </label>
-            <select
-              value={dunningFilter}
-              onChange={(e) =>
-                setDunningFilter(
-                  e.target.value as typeof dunningFilter,
-                )
-              }
-              className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
-              title="Filtert die Liste nach dem Mahn-Stand des verknuepften Deals."
-            >
-              <option value="all">Alle</option>
-              <option value="none">Kein Mahnschritt</option>
-              <option value="mahnung_1">1. Mahnung</option>
-              <option value="mahnung_2">2. Mahnung</option>
-              <option value="inkasso">Inkasso</option>
-              <option value="resolved">Erledigt</option>
-            </select>
-          </div>
+          <MultiSelectFilter
+            label="Mahn-Status"
+            selected={dunningFilter}
+            onChange={setDunningFilter}
+            title="Filtert nach dem Mahn-Stand der Zahlung. Mehrere Werte gleichzeitig waehlbar."
+            options={[
+              { value: "none", label: "Kein Mahnschritt" },
+              { value: "mahnung_1", label: "1. Mahnung" },
+              { value: "mahnung_2", label: "2. Mahnung" },
+              { value: "inkasso", label: "Inkasso" },
+              { value: "resolved", label: "Erledigt" },
+            ]}
+          />
+        ) : null}
+        {showCustomerStatusCol ? (
+          <MultiSelectFilter
+            label="Einzug"
+            selected={einzugFilter}
+            onChange={setEinzugFilter}
+            title="Filtert nach der aktuellen Mandat-Lage des Kunden."
+            options={[
+              { value: "aktiv", label: "✓ aktiv" },
+              { value: "kein_mandat", label: "⚠ Kein Mandat" },
+              { value: "vertragsende", label: "⊘ Vertragsende" },
+              { value: "ueberwiesen", label: "💶 Überwiesen" },
+              { value: "inkasso", label: "⚖ Bei Inkasso" },
+            ]}
+          />
         ) : null}
         <div>
           <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">

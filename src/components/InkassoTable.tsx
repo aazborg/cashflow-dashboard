@@ -10,22 +10,9 @@
 import { Fragment, useMemo, useState } from "react";
 import type { Deal } from "@/lib/types";
 import PaymentDetailModal from "@/components/PaymentDetailModal";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
 
-type StatusFilter =
-  | "all"
-  | "mahnung_1"
-  | "mahnung_2"
-  | "inkasso"
-  | "resolved";
-
-type StageFilter =
-  | "all"
-  | "none"
-  | "ergo"
-  | "anwalt"
-  | "gericht"
-  | "gewonnen"
-  | "verloren";
+// Status- und Stage-Filter sind jetzt Multi-Select (Set<string>).
 
 const STAGE_LABELS: Record<string, string> = {
   ergo: "Bei Ergo",
@@ -106,11 +93,14 @@ export default function InkassoTable({
   // Fallback fuer alte Aufrufe ohne explizites canManageDunning:
   // admin impliziert canManageDunning
   const canEdit = canManageDunning || isAdmin;
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  // Alle Filter jetzt Multi-Select. Leeres Set = alle.
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [stageFilter, setStageFilter] = useState<Set<string>>(new Set());
+  const [mitarbeiterFilter, setMitarbeiterFilter] = useState<Set<string>>(
+    new Set(),
+  );
   const [search, setSearch] = useState("");
   const [hideResolved, setHideResolved] = useState(true);
-  const [mitarbeiterFilter, setMitarbeiterFilter] = useState<string>("all");
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     new Set(),
@@ -173,25 +163,21 @@ export default function InkassoTable({
       ) {
         return false;
       }
-      if (statusFilter !== "all" && d.dunning_status !== statusFilter) {
-        return false;
+      if (statusFilter.size > 0) {
+        const key = d.dunning_status ?? "none";
+        if (!statusFilter.has(key)) return false;
       }
-      if (stageFilter !== "all") {
-        if (stageFilter === "none" && d.inkasso_stage) return false;
-        if (stageFilter !== "none" && d.inkasso_stage !== stageFilter) {
-          return false;
-        }
+      if (stageFilter.size > 0) {
+        const key = d.inkasso_stage ?? "none";
+        if (!stageFilter.has(key)) return false;
       }
       if (q) {
         const hay = `${d.vorname ?? ""} ${d.nachname ?? ""} ${d.email ?? ""} ${d.mitarbeiter_name ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (mitarbeiterFilter !== "all") {
-        if (mitarbeiterFilter === "none") {
-          if (d.mitarbeiter_id && d.mitarbeiter_id !== "") return false;
-        } else if (d.mitarbeiter_id !== mitarbeiterFilter) {
-          return false;
-        }
+      if (mitarbeiterFilter.size > 0) {
+        const key = d.mitarbeiter_id || "none";
+        if (!mitarbeiterFilter.has(key)) return false;
       }
       return true;
     });
@@ -433,58 +419,40 @@ export default function InkassoTable({
             className="w-full border border-[color:var(--border)] rounded px-3 py-1.5 text-sm"
           />
         </div>
-        <div>
-          <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
-            Status
-          </label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
-          >
-            <option value="all">Alle</option>
-            <option value="mahnung_1">1. Mahnung</option>
-            <option value="mahnung_2">2. Mahnung</option>
-            <option value="inkasso">Inkasso</option>
-            <option value="resolved">Erledigt</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
-            Inkasso-Stage
-          </label>
-          <select
-            value={stageFilter}
-            onChange={(e) => setStageFilter(e.target.value as StageFilter)}
-            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
-          >
-            <option value="all">Alle</option>
-            <option value="none">(ohne Zuordnung)</option>
-            <option value="ergo">Bei Ergo</option>
-            <option value="anwalt">Bei Anwalt</option>
-            <option value="gericht">Vor Gericht</option>
-            <option value="gewonnen">Gewonnen</option>
-            <option value="verloren">Verloren</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
-            Mitarbeiter
-          </label>
-          <select
-            value={mitarbeiterFilter}
-            onChange={(e) => setMitarbeiterFilter(e.target.value)}
-            className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
-            title="Filtert auf die Inkasso-Faelle eines bestimmten Mitarbeiters (z.B. fuer Provisions-Rueckabwicklung)."
-          >
-            <option value="all">Alle Mitarbeiter</option>
-            {mitarbeiterOptions.arr.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <MultiSelectFilter
+          label="Status"
+          selected={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: "mahnung_1", label: "1. Mahnung" },
+            { value: "mahnung_2", label: "2. Mahnung" },
+            { value: "inkasso", label: "Inkasso" },
+            { value: "resolved", label: "Erledigt" },
+          ]}
+        />
+        <MultiSelectFilter
+          label="Inkasso-Stage"
+          selected={stageFilter}
+          onChange={setStageFilter}
+          options={[
+            { value: "none", label: "(ohne Zuordnung)" },
+            { value: "ergo", label: "Bei Ergo" },
+            { value: "anwalt", label: "Bei Anwalt" },
+            { value: "gericht", label: "Vor Gericht" },
+            { value: "gewonnen", label: "Gewonnen" },
+            { value: "verloren", label: "Verloren" },
+          ]}
+        />
+        <MultiSelectFilter
+          label="Mitarbeiter"
+          selected={mitarbeiterFilter}
+          onChange={setMitarbeiterFilter}
+          title="Inkasso-Faelle pro Mitarbeiter (Provisions-Rueckabwicklung)."
+          options={mitarbeiterOptions.arr.map((m) => ({
+            value: m.id,
+            label: m.name,
+          }))}
+        />
         <div className="flex items-end pb-1">
           <label
             className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
