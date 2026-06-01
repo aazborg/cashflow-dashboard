@@ -47,30 +47,60 @@ export async function GET(req: NextRequest) {
     : [];
 
   const sb = supabaseAdmin();
-  let q = sb
-    .from("gocardless_mandates_cache")
-    .select(
-      "gc_id,status,scheme,reference,created_at_gc," +
-        "next_possible_charge_date,customer_id,customer_name," +
-        "customer_email,mitarbeiter,deal_id,env,synced_at",
-      { count: "exact" },
-    )
-    .order("created_at_gc", { ascending: false, nullsFirst: false });
-  if (statuses.length > 0) {
-    q = q.in("status", statuses);
-  }
-  // PostgREST defaultet auf 1000 Zeilen -- range() ueberschreibt das.
-  q = q.range(0, 49999);
+  // Supabase hat ein server-side Hard-Limit von 1000 Zeilen.
+  // Wir paginieren explizit.
+  const PAGE = 1000;
+  const cols =
+    "gc_id,status,scheme,reference,created_at_gc," +
+    "next_possible_charge_date,customer_id,customer_name," +
+    "customer_email,mitarbeiter,deal_id,env,synced_at";
 
-  const { data, error, count } = await q;
-  if (error) {
+  const headQ = sb
+    .from("gocardless_mandates_cache")
+    .select(cols, { count: "exact", head: true });
+  const head = await (statuses.length > 0
+    ? headQ.in("status", statuses)
+    : headQ);
+  if (head.error) {
     return NextResponse.json(
-      { error: `Supabase: ${error.message}` },
+      { error: `Supabase head: ${head.error.message}` },
       { status: 500 },
     );
   }
+  const total = head.count ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const requests: Array<
+    PromiseLike<{
+      data: unknown[] | null;
+      error: { message: string } | null;
+    }>
+  > = [];
+  for (let i = 0; i < pages; i++) {
+    const from = i * PAGE;
+    const to = from + PAGE - 1;
+    let pq = sb
+      .from("gocardless_mandates_cache")
+      .select(cols)
+      .order("created_at_gc", { ascending: false, nullsFirst: false })
+      .order("gc_id", { ascending: true })
+      .range(from, to);
+    if (statuses.length > 0) {
+      pq = pq.in("status", statuses);
+    }
+    requests.push(pq);
+  }
+  const results = await Promise.all(requests);
+  const firstErr = results.find((r) => r.error);
+  if (firstErr?.error) {
+    return NextResponse.json(
+      { error: `Supabase page: ${firstErr.error.message}` },
+      { status: 500 },
+    );
+  }
+  const data = results.flatMap((r) => r.data ?? []);
+  const count = total;
 
-  const rows = (data ?? []) as unknown as CacheRow[];
+  const rows = data as unknown as CacheRow[];
   const synced = rows.length > 0 ? rows[0].synced_at : null;
   const env = rows.length > 0 ? rows[0].env : "live";
   const mandates = rows.map((r) => ({
