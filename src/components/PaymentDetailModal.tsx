@@ -46,9 +46,25 @@ interface Props {
   onClose: () => void;
   /** Admin-only Buttons (Mahnungen/Inkasso/Cancel) zeigen. */
   canManageDunning?: boolean;
+  /** Optional: Notification an Parent, dass sich der Deal geaendert
+   *  hat (z.B. dunning_status). Damit andere Tabs sofort den neuen
+   *  Status sehen (Inkasso-Tab nimmt den Deal auf). */
+  onDealChanged?: (
+    dealId: string,
+    patch: { dunning_status?: string },
+  ) => void;
 }
 
-function DunningBtns({ dealId }: { dealId: string }) {
+function DunningBtns({
+  dealId,
+  onDealChanged,
+}: {
+  dealId: string;
+  onDealChanged?: (
+    dealId: string,
+    patch: { dunning_status?: string },
+  ) => void;
+}) {
   const [busy, setBusy] = useState<"1" | "2" | "ink" | null>(null);
   const [msg, setMsg] = useState<string>("");
   const [err, setErr] = useState<string>("");
@@ -76,6 +92,11 @@ function DunningBtns({ dealId }: { dealId: string }) {
         setErr(j.error || `HTTP ${res.status}`);
       } else {
         setMsg(`✓ ${label} ausgelöst (Fee-Payment: ${j.fee_payment_id ?? "—"}, Email: ${j.email_message_id ? "OK" : "FAIL"})`);
+        // Parent (ZahlungenTabs) ueber neuen dunning_status informieren
+        // -> der Deal taucht sofort im Inkasso-Tab auf.
+        onDealChanged?.(dealId, {
+          dunning_status: stufe === 1 ? "mahnung_1" : "mahnung_2",
+        });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -108,6 +129,11 @@ function DunningBtns({ dealId }: { dealId: string }) {
         const att: string = (j.attachments ?? []).join(", ") || "(keine)";
         const tag = testMode ? "TEST" : "INKASSO";
         setMsg(`✓ ${tag} an ${j.to} versendet. Anhänge: ${att}`);
+        // Echtes Inkasso -> Status uebernehmen (Test laesst Status,
+        // weil noch nichts wirklich versandt wurde an Ergo).
+        if (!testMode) {
+          onDealChanged?.(dealId, { dunning_status: "inkasso" });
+        }
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -293,7 +319,7 @@ function statusBadge(status: string | null): {
 }
 
 export default function PaymentDetailModal({
-  deal, onClose, canManageDunning = false,
+  deal, onClose, canManageDunning = false, onDealChanged,
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -515,7 +541,12 @@ export default function PaymentDetailModal({
               {/* Aktionen */}
               {deal.gocardless_mandate_id ? (
                 <div className="space-y-2 pt-2 border-t border-[color:var(--border)]">
-                  {canManageDunning ? <DunningBtns dealId={deal.id} /> : null}
+                  {canManageDunning ? (
+                    <DunningBtns
+                      dealId={deal.id}
+                      onDealChanged={onDealChanged}
+                    />
+                  ) : null}
                   <div className="flex items-center justify-between gap-2 text-xs">
                     {canManageDunning ? (
                       <CancelMandateBtn

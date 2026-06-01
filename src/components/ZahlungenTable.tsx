@@ -34,6 +34,20 @@ interface Props {
   employees: Employee[];
   isAdmin: boolean;
   canManageDunning?: boolean;
+  /** Wird gerufen wenn der Mahn-Workflow im Modal Status veraendert
+   *  -- Parent (ZahlungenTabs) patcht die Deal-Override-Map damit
+   *  der Deal sofort im Inkasso-Tab erscheint. */
+  onDealUpdate?: (
+    dealId: string,
+    patch: {
+      dunning_status?:
+        | "mahnung_1"
+        | "mahnung_2"
+        | "inkasso"
+        | "resolved"
+        | null;
+    },
+  ) => void;
 }
 
 const eur = (n: number) =>
@@ -126,6 +140,7 @@ export default function ZahlungenTable({
   employees,
   isAdmin,
   canManageDunning,
+  onDealUpdate,
 }: Props) {
   void employees;
   const canDunning = canManageDunning ?? isAdmin;
@@ -463,6 +478,16 @@ export default function ZahlungenTable({
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
           canManageDunning={canDunning}
+          onDealChanged={(id, patch) =>
+            onDealUpdate?.(id, {
+              dunning_status: patch.dunning_status as
+                | "mahnung_1"
+                | "mahnung_2"
+                | "inkasso"
+                | "resolved"
+                | null,
+            })
+          }
         />
       ) : null}
     </div>

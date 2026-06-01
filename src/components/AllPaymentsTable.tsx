@@ -1275,6 +1275,12 @@ export default function AllPaymentsTable({
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
           canManageDunning={canManageDunning}
+          onDealChanged={(id, patch) =>
+            onDealUpdate?.(
+              id,
+              patch as { dunning_status?: typeof detailDeal.dunning_status },
+            )
+          }
         />
       ) : null}
     </div>

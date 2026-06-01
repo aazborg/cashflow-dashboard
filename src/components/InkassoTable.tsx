@@ -35,6 +35,18 @@ interface Props {
   isAdmin?: boolean;
   /** Stage-Select + Dunning-Buttons (admin/accounting). */
   canManageDunning?: boolean;
+  /** Tab-uebergreifender Override (siehe ZahlungenTabs). */
+  onDealUpdate?: (
+    dealId: string,
+    patch: {
+      dunning_status?:
+        | "mahnung_1"
+        | "mahnung_2"
+        | "inkasso"
+        | "resolved"
+        | null;
+    },
+  ) => void;
 }
 
 const eur = (n: number) =>
@@ -89,6 +101,7 @@ export default function InkassoTable({
   deals: initialDeals,
   isAdmin = false,
   canManageDunning = false,
+  onDealUpdate,
 }: Props) {
   // Fallback fuer alte Aufrufe ohne explizites canManageDunning:
   // admin impliziert canManageDunning
@@ -737,6 +750,35 @@ export default function InkassoTable({
           deal={detailDeal}
           onClose={() => setDetailDeal(null)}
           canManageDunning={canEdit}
+          onDealChanged={(id, patch) => {
+            // Lokal patchen damit der Inkasso-Tab sofort den Status zeigt
+            setDeals((ds) =>
+              ds.map((d) =>
+                d.id === id
+                  ? {
+                      ...d,
+                      ...(patch.dunning_status !== undefined
+                        ? {
+                            dunning_status:
+                              patch.dunning_status as Deal["dunning_status"],
+                            dunning_updated_at: new Date().toISOString(),
+                          }
+                        : {}),
+                    }
+                  : d,
+              ),
+            );
+            // Auch an Parent (ZahlungenTabs) damit andere Tabs ebenfalls
+            // den neuen Status haben.
+            onDealUpdate?.(id, {
+              dunning_status: patch.dunning_status as
+                | "mahnung_1"
+                | "mahnung_2"
+                | "inkasso"
+                | "resolved"
+                | null,
+            });
+          }}
         />
       ) : null}
     </div>

@@ -118,6 +118,7 @@ export default function ZahlungenTabs({
           employees={employees}
           isAdmin={isAdmin}
           canManageDunning={canManagePayments}
+          onDealUpdate={onDealUpdate}
         />
       ) : tab === "zahlungen" ? (
         <AllPaymentsTable
@@ -164,6 +165,7 @@ export default function ZahlungenTabs({
           deals={effectiveDeals}
           isAdmin={isAdmin}
           canManageDunning={canManagePayments}
+          onDealUpdate={onDealUpdate}
         />
       )}
 
