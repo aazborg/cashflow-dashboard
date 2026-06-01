@@ -134,6 +134,11 @@ export default function AllPaymentsTable({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const hideStatusFilter = defaultStatus !== "all";
+  // Default an im 'Fehlgeschlagen'-Tab -- Mario will dort die echten
+  // unbeglichenen Faelle sehen, nicht doppelte Retry-Eintraege.
+  const [hideRecovered, setHideRecovered] = useState(
+    defaultStatus === "failed",
+  );
 
   // Mahnungs-Modal: deal_id aus Payment -> Deal aus uebergebener Liste
   const [detailDeal, setDetailDeal] = useState<Deal | null>(null);
@@ -172,9 +177,49 @@ export default function AllPaymentsTable({
     })();
   }, []);
 
+  // "Doch eingezogen": failed-Payment wo derselbe Kunde fuer den
+  // SELBEN Betrag innerhalb +/- 90 Tagen eine confirmed/paid_out
+  // Payment hat. Typischer GC-Retry-Loop: Lastschrift schlaegt fehl,
+  // Kunde zahlt nach paar Tagen (manuell oder GC retry) -> alte
+  // Failed-Zeile bleibt fuer immer im System stehen.
+  const recoveredFailedIds = useMemo(() => {
+    const recovered = new Set<string>();
+    // Erfolgreiche Payments pro Kunde+Betrag indexieren
+    const successByKey = new Map<string, ApiPayment[]>();
+    for (const p of payments) {
+      if (statusGroup(p.status) !== "confirmed") continue;
+      const key = `${p.customer_id ?? p.mandate_id ?? "?"}|${p.amount_cents ?? 0}`;
+      const arr = successByKey.get(key) ?? [];
+      arr.push(p);
+      successByKey.set(key, arr);
+    }
+    const DAYS = 1000 * 60 * 60 * 24;
+    for (const p of payments) {
+      if (statusGroup(p.status) !== "failed") continue;
+      const key = `${p.customer_id ?? p.mandate_id ?? "?"}|${p.amount_cents ?? 0}`;
+      const candidates = successByKey.get(key);
+      if (!candidates || candidates.length === 0) continue;
+      const fail = p.charge_date ? new Date(p.charge_date).getTime() : null;
+      if (!fail) continue;
+      for (const c of candidates) {
+        if (!c.charge_date) continue;
+        const ok = new Date(c.charge_date).getTime();
+        const days = (ok - fail) / DAYS;
+        // Erfolgreiche Zahlung im Zeitfenster -90..+90 Tage:
+        // GC-Retry oder manuelle Nachzahlung
+        if (days >= -90 && days <= 90) {
+          recovered.add(p.id);
+          break;
+        }
+      }
+    }
+    return recovered;
+  }, [payments]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = payments.filter((p) => {
+      if (hideRecovered && recoveredFailedIds.has(p.id)) return false;
       if (q) {
         const hay = `${p.customer_name} ${p.customer_email ?? ""} ${p.description ?? ""} ${p.reference ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -206,7 +251,8 @@ export default function AllPaymentsTable({
       }
     });
     return rows;
-  }, [payments, search, statusFilter, sort, dateFrom, dateTo]);
+  }, [payments, search, statusFilter, sort, dateFrom, dateTo,
+       hideRecovered, recoveredFailedIds]);
 
   const totals = useMemo(() => {
     let total = 0,
@@ -283,6 +329,25 @@ export default function AllPaymentsTable({
             onChange={(e) => setDateTo(e.target.value)}
             className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
           />
+        </div>
+        <div className="flex items-end pb-1">
+          <label
+            className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
+            title="Verstecke alle fehlgeschlagenen Zahlungen, bei denen derselbe Kunde innerhalb von 90 Tagen denselben Betrag erfolgreich gezahlt hat (typischer GoCardless-Retry)."
+          >
+            <input
+              type="checkbox"
+              checked={hideRecovered}
+              onChange={(e) => setHideRecovered(e.target.checked)}
+              className="cursor-pointer"
+            />
+            <span>Doch eingezogene ausblenden</span>
+            {recoveredFailedIds.size > 0 ? (
+              <span className="text-[10px] text-[color:var(--brand-orange)] font-semibold">
+                ({recoveredFailedIds.size})
+              </span>
+            ) : null}
+          </label>
         </div>
         <div>
           <label className="block text-[10px] font-semibold uppercase text-[color:var(--muted)] mb-0.5">
