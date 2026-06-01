@@ -101,7 +101,7 @@ export default function MandatesTable({
         const q = statusFilter
           ? `?status=${encodeURIComponent(statusFilter)}`
           : "";
-        const res = await fetch(`/cashflow/api/bot/gocardless/all-mandates${q}`);
+        const res = await fetch(`/cashflow/api/mandates${q}`);
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
           setError(j.error || `HTTP ${res.status}`);
