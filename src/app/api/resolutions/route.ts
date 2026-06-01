@@ -57,22 +57,30 @@ export async function POST(req: NextRequest) {
   const hasDoneField = body.done !== undefined;
   const done = !!body.done;
   const hasDunningField = body.dunning_status !== undefined;
+  const hasNoteField = body.note !== undefined;
   const dunningRaw = body.dunning_status;
-  const dunning_status =
-    dunningRaw === null || dunningRaw === ""
-      ? null
-      : typeof dunningRaw === "string" && DUNNING.has(dunningRaw)
-        ? (dunningRaw as
-            | "mahnung_1"
-            | "mahnung_2"
-            | "inkasso"
-            | "resolved")
-        : "INVALID";
-  if (dunning_status === "INVALID") {
-    return NextResponse.json(
-      { error: "dunning_status invalid" },
-      { status: 400 },
-    );
+  // Nur validieren wenn das Feld tatsaechlich mitgeschickt wurde.
+  let dunning_status:
+    | "mahnung_1"
+    | "mahnung_2"
+    | "inkasso"
+    | "resolved"
+    | null = null;
+  if (hasDunningField) {
+    if (dunningRaw === null || dunningRaw === "") {
+      dunning_status = null;
+    } else if (typeof dunningRaw === "string" && DUNNING.has(dunningRaw)) {
+      dunning_status = dunningRaw as
+        | "mahnung_1"
+        | "mahnung_2"
+        | "inkasso"
+        | "resolved";
+    } else {
+      return NextResponse.json(
+        { error: "dunning_status invalid" },
+        { status: 400 },
+      );
+    }
   }
 
   const sb = supabaseAdmin();
@@ -100,12 +108,14 @@ export async function POST(req: NextRequest) {
   const nextDunning = hasDunningField
     ? dunning_status
     : (existingRow?.dunning_status ?? null);
-  const nextNote = hasDoneField || hasDunningField
-    ? (note ?? existingRow?.note ?? null)
+  // Note: wenn der Caller note-Feld gesendet hat, ueberschreiben mit
+  // dem neuen Wert (auch wenn es leer ist). Wenn nicht: existing.
+  const nextNote = hasNoteField
+    ? (note && note.length > 0 ? note : null)
     : (existingRow?.note ?? null);
 
-  // Wenn nichts mehr gesetzt -> Zeile loeschen (Cleanup)
-  if (!nextDoneAt && !nextDunning) {
+  // Wenn ALLES leer -> Zeile loeschen (Cleanup)
+  if (!nextDoneAt && !nextDunning && !nextNote) {
     const { error } = await sb
       .from("gocardless_resolutions")
       .delete()
