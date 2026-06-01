@@ -213,14 +213,17 @@ export default function AllPaymentsTable({
     })();
   }, []);
 
-  // "Doch eingezogen": failed-Payment wo derselbe Kunde fuer den
-  // SELBEN Betrag innerhalb +/- 90 Tagen eine confirmed/paid_out
-  // Payment hat. Typischer GC-Retry-Loop: Lastschrift schlaegt fehl,
-  // Kunde zahlt nach paar Tagen (manuell oder GC retry) -> alte
-  // Failed-Zeile bleibt fuer immer im System stehen.
+  // "Doch eingezogen" oder "Duplikate": 2 Faelle:
+  //  (A) Failed-Payment + spaeter confirmed/paid_out fuer selben
+  //      Kunden+Betrag innerhalb 14 Tagen (echter Retry-Erfolg).
+  //  (B) Mehrere failed-Payments fuer selben Kunden+Betrag+
+  //      Beschreibung -> GC-Retry-Welle (z.B. Rueckbuchungs-Gebuehr).
+  //      Wir behalten nur den JUENGSTEN failed -- die aelteren sind
+  //      Duplikate desselben offenen Postens.
   const recoveredFailedIds = useMemo(() => {
     const recovered = new Set<string>();
-    // Erfolgreiche Payments pro Kunde+Betrag indexieren
+    const DAYS = 1000 * 60 * 60 * 24;
+    // (A) Erfolgreiche Payments pro Kunde+Betrag indexieren
     const successByKey = new Map<string, ApiPayment[]>();
     for (const p of payments) {
       if (statusGroup(p.status) !== "confirmed") continue;
@@ -229,9 +232,40 @@ export default function AllPaymentsTable({
       arr.push(p);
       successByKey.set(key, arr);
     }
-    const DAYS = 1000 * 60 * 60 * 24;
+    // (B) Failed-Cluster nach Kunde+Betrag+Beschreibung gruppieren
+    const failedByCluster = new Map<string, ApiPayment[]>();
     for (const p of payments) {
       if (statusGroup(p.status) !== "failed") continue;
+      const descKey = (p.description ?? "").trim();
+      const clusterKey = `${p.customer_id ?? p.mandate_id ?? "?"}|${p.amount_cents ?? 0}|${descKey}`;
+      const arr = failedByCluster.get(clusterKey) ?? [];
+      arr.push(p);
+      failedByCluster.set(clusterKey, arr);
+    }
+    // Innerhalb jedes Failed-Clusters: nur der mit dem juengsten
+    // charge_date bleibt, der Rest wird ausgeblendet
+    for (const cluster of failedByCluster.values()) {
+      if (cluster.length < 2) continue;
+      // Finde die juengste charge_date in diesem Cluster
+      let newest = cluster[0];
+      let newestT = newest.charge_date
+        ? new Date(newest.charge_date).getTime()
+        : -Infinity;
+      for (const p of cluster) {
+        const t = p.charge_date ? new Date(p.charge_date).getTime() : -Infinity;
+        if (t > newestT) {
+          newest = p;
+          newestT = t;
+        }
+      }
+      for (const p of cluster) {
+        if (p.id !== newest.id) recovered.add(p.id);
+      }
+    }
+    // (A) Failed mit spaeterem confirmed
+    for (const p of payments) {
+      if (statusGroup(p.status) !== "failed") continue;
+      if (recovered.has(p.id)) continue; // schon als Duplikat markiert
       const key = `${p.customer_id ?? p.mandate_id ?? "?"}|${p.amount_cents ?? 0}`;
       const candidates = successByKey.get(key);
       if (!candidates || candidates.length === 0) continue;
@@ -243,8 +277,7 @@ export default function AllPaymentsTable({
         const days = (ok - fail) / DAYS;
         // 14-Tage-Fenster: bei monatlichen Raten ist der naechste
         // Cycle erst nach ~30 Tagen, kann also nicht faelschlich
-        // gematcht werden. Bei GC-Retry oder manueller Nachzahlung
-        // passiert das innerhalb von Tagen, max. ~2 Wochen.
+        // gematcht werden.
         if (days >= -14 && days <= 14) {
           recovered.add(p.id);
           break;
@@ -407,7 +440,7 @@ export default function AllPaymentsTable({
         <div className="flex items-end pb-1">
           <label
             className="inline-flex items-center gap-1.5 text-xs text-[color:var(--muted)] cursor-pointer select-none"
-            title="Verstecke alle fehlgeschlagenen Zahlungen, bei denen derselbe Kunde innerhalb von 90 Tagen denselben Betrag erfolgreich gezahlt hat (typischer GoCardless-Retry)."
+            title="Versteckt 2 Arten von Karteileichen: (1) failed-Zahlungen wo derselbe Kunde innerhalb 14 Tagen denselben Betrag erfolgreich bezahlt hat (echter Retry-Erfolg). (2) Mehrfach-failed-Eintraege fuer denselben Posten (z.B. Rueckbuchungsgebuehr die GC mehrfach probiert) -- nur der juengste bleibt sichtbar."
           >
             <input
               type="checkbox"
@@ -415,7 +448,7 @@ export default function AllPaymentsTable({
               onChange={(e) => setHideRecovered(e.target.checked)}
               className="cursor-pointer"
             />
-            <span>Doch eingezogene ausblenden</span>
+            <span>Duplikate/eingezogene ausblenden</span>
             {recoveredFailedIds.size > 0 ? (
               <span className="text-[10px] text-[color:var(--brand-orange)] font-semibold">
                 ({recoveredFailedIds.size})
