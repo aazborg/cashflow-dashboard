@@ -75,7 +75,10 @@ export default function NoteCell({
           note: next ?? "",
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`HTTP ${res.status} — ${body.slice(0, 300)}`);
+      }
       setEditing(false);
     } catch (e) {
       setNote(prev);
