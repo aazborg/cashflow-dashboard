@@ -59,6 +59,8 @@ export async function GET(req: NextRequest) {
   if (statuses.length > 0) {
     q = q.in("status", statuses);
   }
+  // PostgREST defaultet auf 1000 Zeilen -- range() ueberschreibt das.
+  q = q.range(0, 49999);
 
   const { data, error, count } = await q;
   if (error) {

@@ -47,6 +47,9 @@ export async function GET() {
   }
 
   const sb = supabaseAdmin();
+  // PostgREST defaultet auf 1000 Zeilen. Wir wollen ALLE Payments
+  // (aktuell ~5500), daher explizit range() bis 49999 (-> bis zu
+  // 50k Zeilen). Bei 5.5k Zeilen ~1.5 MB JSON, unproblematisch.
   const { data, error, count } = await sb
     .from("gocardless_payments_cache")
     .select(
@@ -56,7 +59,8 @@ export async function GET() {
         "subscription_id,instalment_schedule_id,env,synced_at",
       { count: "exact" },
     )
-    .order("charge_date", { ascending: false, nullsFirst: false });
+    .order("charge_date", { ascending: false, nullsFirst: false })
+    .range(0, 49999);
 
   if (error) {
     return NextResponse.json(
