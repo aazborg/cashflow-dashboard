@@ -39,8 +39,9 @@ interface CacheRow {
 
 interface ResolutionRow {
   gc_id: string;
-  done_at: string;
-  done_by_email: string;
+  done_at: string | null;
+  done_by_email: string | null;
+  dunning_status: string | null;
   note: string | null;
 }
 
@@ -114,7 +115,7 @@ export async function GET() {
     for (let i = 0; i < 50; i++) {
       const r = await sb
         .from("gocardless_resolutions")
-        .select("gc_id,done_at,done_by_email,note")
+        .select("gc_id,done_at,done_by_email,dunning_status,note")
         .eq("kind", "payment")
         .range(from, from + 999);
       if (r.error) break;
@@ -213,6 +214,7 @@ export async function GET() {
       instalment_schedule_id: r.instalment_schedule_id,
       done_at: res?.done_at ?? null,
       done_by_email: res?.done_by_email ?? null,
+      dunning_status: res?.dunning_status ?? null,
       // Echtes 'Geld kommt rein'-Signal: zukuenftige geplante
       // Zahlung existiert. Wenn alle scheduled Zahlungen gecancelled
       // sind, ist auch ein active mandate quasi tot fuer uns.

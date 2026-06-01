@@ -31,6 +31,15 @@ interface ApiPayment {
   instalment_schedule_id: string | null;
   done_at?: string | null;
   done_by_email?: string | null;
+  /** Per-Payment Mahn-Status. Wenn null und die zugehoerige
+   *  Deal-Zeile dunning_status hat, faellt das UI auf den Deal-Wert
+   *  zurueck (Default-Annahme). Set durch /api/resolutions. */
+  dunning_status?:
+    | "mahnung_1"
+    | "mahnung_2"
+    | "inkasso"
+    | "resolved"
+    | null;
   customer_has_active_mandate?: boolean;
   customer_flag?: string | null;
   customer_flag_reason?: string | null;
@@ -338,50 +347,59 @@ export default function AllPaymentsTable({
   const [dunningFilter, setDunningFilter] = useState<
     "all" | "none" | "mahnung_1" | "mahnung_2" | "inkasso" | "resolved"
   >(defaultStatus === "failed" ? "none" : "all");
-  // Source of Truth fuer dunning_status: das deals-prop (vom Parent
-  // ZahlungenTabs bereits gepatcht). API-Call optimistic via
-  // onDealUpdate -- Parent state weiterleben tab-uebergreifend.
-  async function setDunningManual(
-    dealId: string,
-    status:
-      | "mahnung_1"
-      | "mahnung_2"
-      | "inkasso"
-      | "resolved"
-      | null,
-  ) {
-    const prevStatus =
-      dealsById.get(dealId)?.dunning_status ?? null;
-    onDealUpdate?.(dealId, { dunning_status: status });
+  // Per-Payment Mahn-Status (statt pro Deal). Ein Kunde kann mehrere
+  // failed Payments haben -- die werden einzeln getrackt:
+  // eine kriegt 'mahnung_1', die andere bleibt offen, eine andere
+  // 'resolved' (Kunde hat die EINE Rate nachgezahlt).
+  type DunningVal =
+    | "mahnung_1"
+    | "mahnung_2"
+    | "inkasso"
+    | "resolved"
+    | null;
+  const [localPaymentDunning, setLocalPaymentDunning] = useState<
+    Map<string, DunningVal>
+  >(new Map());
+  function effectivePaymentDunning(p: ApiPayment): DunningVal {
+    const local = localPaymentDunning.get(p.id);
+    if (local !== undefined) return local;
+    return p.dunning_status ?? null;
+  }
+  async function setPaymentDunning(p: ApiPayment, status: DunningVal) {
+    const prev = effectivePaymentDunning(p);
+    setLocalPaymentDunning((m) => {
+      const n = new Map(m);
+      n.set(p.id, status);
+      return n;
+    });
     try {
-      const res = await fetch("/cashflow/api/deals/dunning-status", {
+      const res = await fetch("/cashflow/api/resolutions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          deal_id: dealId,
+          gc_id: p.id,
+          kind: "payment",
           dunning_status: status,
         }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Wenn status='inkasso': cascade auch auf Deal -> erscheint im
+      // Inkasso-Tab (aggregierte Sicht). Deal-Status bleibt der
+      // schwerste verfuegbare.
+      if (status === "inkasso" && onDealUpdate && p.deal_id) {
+        onDealUpdate(p.deal_id, { dunning_status: "inkasso" });
+      }
     } catch (e) {
-      onDealUpdate?.(dealId, { dunning_status: prevStatus });
+      setLocalPaymentDunning((m) => {
+        const n = new Map(m);
+        n.set(p.id, prev);
+        return n;
+      });
       alert(
         "Konnte Mahn-Status nicht speichern: " +
           (e instanceof Error ? e.message : String(e)),
       );
     }
-  }
-  function effectiveDunning(
-    dealId: string | null,
-  ):
-    | "mahnung_1"
-    | "mahnung_2"
-    | "inkasso"
-    | "resolved"
-    | null
-    | undefined {
-    if (!dealId) return null;
-    return dealsById.get(dealId)?.dunning_status ?? null;
   }
 
   // Mahnungs-Modal: deal_id aus Payment -> Deal aus uebergebener Liste
@@ -532,11 +550,12 @@ export default function AllPaymentsTable({
       }
       if (dateFrom && (p.charge_date ?? "") < dateFrom) return false;
       if (dateTo && (p.charge_date ?? "") > dateTo) return false;
-      // Mahn-Status-Filter (nur relevant wenn Spalte sichtbar)
+      // Mahn-Status-Filter (Per-Payment, nur relevant wenn
+      // Spalte sichtbar)
       if (showDunningCol && dunningFilter !== "all") {
-        const ds = effectiveDunning(p.deal_id);
+        const ds = effectivePaymentDunning(p);
         if (dunningFilter === "none") {
-          if (ds !== null && ds !== undefined) return false;
+          if (ds !== null) return false;
         } else if (ds !== dunningFilter) {
           return false;
         }
@@ -566,7 +585,7 @@ export default function AllPaymentsTable({
   }, [payments, search, statusFilter, sort, dateFrom, dateTo,
        hideRecovered, recoveredFailedIds,
        showDunningCol, dunningFilter, dealsById,
-       showDoneFeature, hideDone, localResolutions]);
+       showDoneFeature, hideDone, localResolutions, localPaymentDunning]);
 
   const totals = useMemo(() => {
     let total = 0,
@@ -1063,37 +1082,29 @@ export default function AllPaymentsTable({
                           className="px-3 py-2 text-xs"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {linkedDeal ? (
-                            <select
-                              value={
-                                effectiveDunning(linkedDeal.id) ?? ""
-                              }
-                              onChange={(e) =>
-                                setDunningManual(
-                                  linkedDeal.id,
-                                  e.target.value === ""
-                                    ? null
-                                    : (e.target.value as
-                                        | "mahnung_1"
-                                        | "mahnung_2"
-                                        | "inkasso"
-                                        | "resolved"),
-                                )
-                              }
-                              className="border border-[color:var(--border)] rounded px-1 py-0.5 text-[10px] bg-white"
-                              title="Setzt nur den Status -- triggert keine Email. Echte Mahnung: Zeile klicken -> Modal."
-                            >
-                              <option value="">— kein Mahnschritt</option>
-                              <option value="mahnung_1">1. Mahnung</option>
-                              <option value="mahnung_2">2. Mahnung</option>
-                              <option value="inkasso">Inkasso</option>
-                              <option value="resolved">Erledigt</option>
-                            </select>
-                          ) : (
-                            <span className="text-[10px] text-[color:var(--muted)]">
-                              kein Deal
-                            </span>
-                          )}
+                          <select
+                            value={effectivePaymentDunning(p) ?? ""}
+                            onChange={(e) =>
+                              setPaymentDunning(
+                                p,
+                                e.target.value === ""
+                                  ? null
+                                  : (e.target.value as
+                                      | "mahnung_1"
+                                      | "mahnung_2"
+                                      | "inkasso"
+                                      | "resolved"),
+                              )
+                            }
+                            className="border border-[color:var(--border)] rounded px-1 py-0.5 text-[10px] bg-white"
+                            title="Status fuer DIESE EINE Zahlung. Triggert keine Email. Bei 'Inkasso' wandert die Zahlung in den Inkasso-Tab."
+                          >
+                            <option value="">— kein Mahnschritt</option>
+                            <option value="mahnung_1">1. Mahnung</option>
+                            <option value="mahnung_2">2. Mahnung</option>
+                            <option value="inkasso">Inkasso</option>
+                            <option value="resolved">Erledigt</option>
+                          </select>
                         </td>
                       ) : null}
                       <td className="px-3 py-2 text-xs text-[color:var(--muted)] max-w-[280px]"
