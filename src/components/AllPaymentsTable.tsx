@@ -391,18 +391,24 @@ export default function AllPaymentsTable({
     // Reihenfolge der Quellen:
     //   1. Lokaler Override (User hat in dieser Session gewaehlt)
     //   2. Per-Payment-Wert aus gocardless_resolutions
-    //   3. Fallback: Status auf dem verknuepften Deal -- damit
-    //      Markierungen die vor Einfuehrung des Per-Payment-Features
-    //      gesetzt wurden NICHT verschwinden. Sobald der User pro
-    //      Payment explizit waehlt, gewinnt der Per-Payment-Wert.
+    //   3. Fallback: Status auf dem verknuepften Deal -- ABER NUR
+    //      bei echten Deals (nicht Shadow). Bei Shadow-Deals ist der
+    //      dunning_status oft 'resolved'/'mahnung_x' aus dem
+    //      Bot-Workflow von einer EINZELNEN Payment, und sagt nichts
+    //      ueber die anderen Payments des Customers aus. Sonst
+    //      verschwinden frische Failed-Payments faelschlich aus
+    //      dem Failed-Tab, weil der Shadow-Deal noch auf 'resolved'
+    //      von einer alten Aktion steht.
     const local = localPaymentDunning.get(p.id);
     if (local !== undefined) return local;
     if (p.dunning_status !== null && p.dunning_status !== undefined) {
       return p.dunning_status;
     }
     if (p.deal_id) {
-      const dealStatus = dealsById.get(p.deal_id)?.dunning_status;
-      if (dealStatus) return dealStatus as DunningVal;
+      const deal = dealsById.get(p.deal_id);
+      if (deal && !deal.is_shadow && deal.dunning_status) {
+        return deal.dunning_status as DunningVal;
+      }
     }
     return null;
   }
