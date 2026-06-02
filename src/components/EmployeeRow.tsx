@@ -16,7 +16,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(employee.name);
   const [ownerId, setOwnerId] = useState(employee.hubspot_owner_id ?? "");
-  const [role, setRole] = useState<"admin" | "member" | "accounting">(employee.role);
+  const [role, setRole] = useState<
+    "admin" | "member" | "accounting" | "customer_happiness"
+  >(employee.role);
   const [isSetter, setIsSetter] = useState(employee.is_setter);
   const [isCloser, setIsCloser] = useState(employee.is_closer);
   const [setterHours, setSetterHours] = useState<SetterHours | "">(
@@ -219,6 +221,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
               >
                 <option value="member">Mitglied</option>
                 <option value="accounting">Accounting (Buchhaltung)</option>
+                <option value="customer_happiness">
+                  Customer Happiness
+                </option>
                 <option value="admin">Admin</option>
               </select>
               <label className="inline-flex items-center gap-1 text-xs">
@@ -247,6 +252,16 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
                   Admin
                 </span>
               ) : null}
+              {employee.role === "accounting" ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                  Accounting
+                </span>
+              ) : null}
+              {employee.role === "customer_happiness" ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700">
+                  Customer Happiness
+                </span>
+              ) : null}
               {employee.is_closer ? (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[color:var(--brand-green)]/15 text-[color:var(--brand-green)]">
                   Closer
@@ -258,7 +273,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
                   {employee.setter_hours ? ` · ${employee.setter_hours}` : ""}
                 </span>
               ) : null}
-              {employee.role !== "admin" && !employee.is_closer && !employee.is_setter ? (
+              {employee.role === "member"
+                && !employee.is_closer
+                && !employee.is_setter ? (
                 <span className="text-[10px] text-[color:var(--muted)]">—</span>
               ) : null}
             </div>

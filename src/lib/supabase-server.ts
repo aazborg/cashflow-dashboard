@@ -48,6 +48,7 @@ export interface SessionContext {
   employee: Employee;
   isAdmin: boolean;
   isAccounting: boolean;
+  isCustomerHappiness: boolean;
   isSetter: boolean;
   isCloser: boolean;
   /** ID used to match the employee against `deals.mitarbeiter_id` and
@@ -89,6 +90,7 @@ export async function getSessionContext(): Promise<SessionContext | null> {
     employee: emp,
     isAdmin: emp.role === "admin",
     isAccounting: emp.role === "accounting",
+    isCustomerHappiness: emp.role === "customer_happiness",
     isSetter: emp.is_setter,
     isCloser: emp.is_closer,
     ownerId: emp.hubspot_owner_id ?? emp.id,

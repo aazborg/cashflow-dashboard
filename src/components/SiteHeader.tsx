@@ -10,8 +10,10 @@ interface SiteHeaderProps {
   isAdmin: boolean;
   isSetter: boolean;
   isAccounting: boolean;
+  isCustomerHappiness: boolean;
   isAuthed: boolean;
   canUseRechnungsBot: boolean;
+  canSeeCustomerHappiness: boolean;
   signOutAction: () => Promise<void>;
 }
 
@@ -37,19 +39,24 @@ export function SiteHeader({
   isAdmin,
   isSetter,
   isAccounting,
+  isCustomerHappiness,
   isAuthed,
   canUseRechnungsBot,
+  canSeeCustomerHappiness,
   signOutAction,
 }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // Sales sichtbar fuer alle ausser pure Accounting (ohne Admin).
-  const showSales = !isAccounting || isAdmin;
+  // Rollen-Logik:
+  //   Sales:      alle ausser pure Accounting + pure Customer-Happiness
+  //               (Admin sieht alles).
+  //   Accounting: Accounting-Rolle oder Admin.
+  //   Customer Happiness: customer_happiness-Rolle oder Admin.
+  const showSales =
+    isAdmin || (!isAccounting && !isCustomerHappiness);
   const showAccounting = isAdmin || isAccounting;
-  // Customer Happiness: erstmal fuer alle authentifizierten User
-  // (Permission kann spaeter eingeschraenkt werden).
-  const showHappiness = true;
+  const showHappiness = canSeeCustomerHappiness;
 
   const sections: SectionDef[] = useMemo(
     () => [

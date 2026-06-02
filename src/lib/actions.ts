@@ -221,7 +221,7 @@ export async function updateEmployeeAction(formData: FormData) {
   const patch: Partial<{
     name: string;
     hubspot_owner_id: string | null;
-    role: "admin" | "member";
+    role: "admin" | "member" | "accounting" | "customer_happiness";
     is_setter: boolean;
     is_closer: boolean;
     setter_hours: "20h" | "25h" | "30h" | "35h" | "40h" | null;
@@ -238,7 +238,14 @@ export async function updateEmployeeAction(formData: FormData) {
   patch.hubspot_owner_id = hubspot_owner_id;
 
   const roleRaw = String(formData.get("role") ?? "").trim();
-  if (roleRaw === "admin" || roleRaw === "member") patch.role = roleRaw;
+  if (
+    roleRaw === "admin"
+    || roleRaw === "member"
+    || roleRaw === "accounting"
+    || roleRaw === "customer_happiness"
+  ) {
+    patch.role = roleRaw;
+  }
 
   // Mehrfach-Rollen (orthogonal zur admin/member-Spalte): is_setter, is_closer.
   // Werden nur gesetzt, wenn die jeweilige Spalte im Formular vorhanden ist.
@@ -256,8 +263,8 @@ export async function updateEmployeeAction(formData: FormData) {
     }
   }
 
-  // Schutz: nicht den letzten aktiven Admin auf member herabstufen.
-  if (patch.role === "member") {
+  // Schutz: nicht den letzten aktiven Admin auf eine non-Admin-Rolle herabstufen.
+  if (patch.role && patch.role !== "admin") {
     const all = await listEmployees();
     const activeAdmins = all.filter((e) => e.role === "admin" && e.active);
     const isCurrentlyActiveAdmin = activeAdmins.some((e) => e.id === id);

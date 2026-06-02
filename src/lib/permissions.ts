@@ -82,11 +82,29 @@ export function canSeeAllDeals(
 }
 
 /** Darf Sales-Dashboards/Rechner/Statistik sehen: alle ausser
- *  reine Accounting-Rolle. Admins sehen alles. */
+ *  reine Accounting-Rolle. Admins sehen alles. Customer-Happiness
+ *  hat KEIN Sales-Sicht. */
 export function canSeeRevenueDashboards(
-  ctx: Pick<SessionContext, "isAdmin" | "isAccounting"> | null,
+  ctx: Pick<
+    SessionContext,
+    "isAdmin" | "isAccounting" | "isCustomerHappiness"
+  > | null,
 ): boolean {
   if (!ctx) return false;
-  if (ctx.isAccounting && !ctx.isAdmin) return false;
+  if (ctx.isAdmin) return true;
+  if (ctx.isAccounting) return false;
+  if (ctx.isCustomerHappiness) return false;
   return true;
+}
+
+/** Customer-Happiness-Bereich (Teilnehmer-Management).
+ *  Admin + dedizierte customer_happiness-Rolle. */
+export function canSeeCustomerHappiness(
+  ctx: Pick<
+    SessionContext,
+    "isAdmin" | "isCustomerHappiness"
+  > | null,
+): boolean {
+  if (!ctx) return false;
+  return !!(ctx.isAdmin || ctx.isCustomerHappiness);
 }
