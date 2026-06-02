@@ -30,19 +30,47 @@ const PIPELINE_LABEL_ALLOWLIST = new Set([
  * naechsten Aufruf neu geholt (HubSpot kann neue Stages anlegen).
  */
 let _wonStageCache: { ids: Set<string>; ts: number } | null = null;
+let _wonStagesByPipelineCache: {
+  map: Map<string, Set<string>>;
+  ts: number;
+} | null = null;
 const WON_STAGE_TTL_MS = 5 * 60 * 1000; // 5 Min
 
 export async function getWonStageIds(token: string): Promise<Set<string>> {
   if (_wonStageCache && Date.now() - _wonStageCache.ts < WON_STAGE_TTL_MS) {
     return _wonStageCache.ids;
   }
+  const byPipeline = await getWonStagesByPipeline(token);
+  const ids = new Set<string>();
+  for (const set of byPipeline.values()) for (const id of set) ids.add(id);
+  // Sicherheitsnetz: alter hartcodierter Wert immer mit drin
+  ids.add(CLOSED_WON_STAGE_ID);
+  _wonStageCache = { ids, ts: Date.now() };
+  return ids;
+}
+
+/**
+ * Won-Stages pro Pipeline-Label. Wird in syncHubspotWonDeals genutzt
+ * um pro Pipeline einen eigenen Closedate-Cutoff anwenden zu koennen
+ * (Bestandskunden: erst ab heute, Neukunden: globaler env-cutoff).
+ */
+export async function getWonStagesByPipeline(
+  token: string,
+): Promise<Map<string, Set<string>>> {
+  if (
+    _wonStagesByPipelineCache &&
+    Date.now() - _wonStagesByPipelineCache.ts < WON_STAGE_TTL_MS
+  ) {
+    return _wonStagesByPipelineCache.map;
+  }
   const res = await fetch(`${HUBSPOT_BASE}/crm/v3/pipelines/deals`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    // Fallback: harter Neukunden-Wert, damit das System nicht ausfaellt
-    // wenn HubSpot kurzzeitig nicht erreichbar ist.
-    return new Set([CLOSED_WON_STAGE_ID]);
+    // Fallback: nur Neukunden mit hartcodiertem Wert
+    const fallback = new Map<string, Set<string>>();
+    fallback.set("Neukunden", new Set([CLOSED_WON_STAGE_ID]));
+    return fallback;
   }
   const j = (await res.json()) as {
     results?: Array<{
@@ -55,9 +83,10 @@ export async function getWonStageIds(token: string): Promise<Set<string>> {
       }>;
     }>;
   };
-  const ids = new Set<string>();
+  const map = new Map<string, Set<string>>();
   for (const pl of j.results ?? []) {
     if (!PIPELINE_LABEL_ALLOWLIST.has(pl.label)) continue;
+    const ids = new Set<string>();
     for (const st of pl.stages ?? []) {
       const prob = st.metadata?.probability;
       const closed = st.metadata?.isClosed;
@@ -65,11 +94,14 @@ export async function getWonStageIds(token: string): Promise<Set<string>> {
         ids.add(st.id);
       }
     }
+    if (ids.size > 0) map.set(pl.label, ids);
   }
-  // Sicherheitsnetz: alter hartcodierter Wert immer mit drin
-  ids.add(CLOSED_WON_STAGE_ID);
-  _wonStageCache = { ids, ts: Date.now() };
-  return ids;
+  // Sicherheitsnetz: Neukunden hartcodiert sicherstellen
+  const neu = map.get("Neukunden") ?? new Set<string>();
+  neu.add(CLOSED_WON_STAGE_ID);
+  map.set("Neukunden", neu);
+  _wonStagesByPipelineCache = { map, ts: Date.now() };
+  return map;
 }
 
 interface HubspotDealResult {
@@ -258,16 +290,34 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
       .map((e) => [e.hubspot_owner_id as string, e] as const),
   );
 
-  // Optionaler Cutoff: nur Deals, die NACH diesem Datum (Stichtag) auf
-  // "Closed Won" gezogen wurden, werden importiert. Der Stichtag selbst ist
-  // ausgeschlossen — wir vergleichen mit closedate > <stichtag>T23:59:59.999Z.
-  // Beispiel: HUBSPOT_SYNC_CUTOFF_CLOSEDATE=2026-05-12 → nur Deals mit
-  // closedate ab dem 13.5.2026 (UTC) kommen rein, Deals vom 12.5. nicht.
+  // Optionaler GLOBALER Cutoff fuer Neukunden (alter Mechanismus).
+  // Nur Deals mit closedate > <stichtag>T23:59:59.999Z kommen rein.
+  // Beispiel: HUBSPOT_SYNC_CUTOFF_CLOSEDATE=2026-05-12 → erst ab 13.5.
   const cutoffRaw = process.env.HUBSPOT_SYNC_CUTOFF_CLOSEDATE;
-  const cutoffMillis =
+  const neukundenCutoffMillis =
     cutoffRaw && /^\d{4}-\d{2}-\d{2}$/.test(cutoffRaw)
       ? Date.parse(`${cutoffRaw}T23:59:59.999Z`)
       : null;
+
+  // BESTANDSKUNDEN: harter Cutoff auf 'gestern' (UTC-Tagesende).
+  // Damit kommen ausschliesslich Deals mit closedate ab HEUTE (UTC)
+  // ins Dashboard -- die historischen Bestandskunden-Deals, die wir
+  // intern schon manuell verarbeitet hatten, bleiben draussen.
+  // Override moeglich via env HUBSPOT_SYNC_CUTOFF_CLOSEDATE_BESTANDSKUNDEN.
+  function computeBestandskundenCutoff(): number {
+    const override =
+      process.env.HUBSPOT_SYNC_CUTOFF_CLOSEDATE_BESTANDSKUNDEN;
+    if (override && /^\d{4}-\d{2}-\d{2}$/.test(override)) {
+      return Date.parse(`${override}T23:59:59.999Z`);
+    }
+    // Default: gestern 23:59:59.999 UTC -> heute > gestern -> heutige
+    // Deals kommen rein.
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const ymd = yesterday.toISOString().slice(0, 10);
+    return Date.parse(`${ymd}T23:59:59.999Z`);
+  }
+  const bestandskundenCutoffMillis = computeBestandskundenCutoff();
 
   let after: string | undefined;
   let pages = 0;
@@ -278,10 +328,20 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
   let unmatched_owners = 0;
   const errors: SyncSummary["errors"] = [];
 
-  // Alle Won-Stages aller Pipelines holen (dynamisch, gecached 5 Min).
-  // Damit kommen Deals jeder Pipeline ins Dashboard, sobald sie auf
-  // "Closed Won" gesetzt werden.
-  const wonStageIds = Array.from(await getWonStageIds(token));
+  // Won-Stages PRO Pipeline holen, damit wir pro Pipeline einen
+  // eigenen Cutoff anwenden koennen (Neukunden = env, Bestandskunden
+  // = ab heute).
+  const wonByPipeline = await getWonStagesByPipeline(token);
+
+  // Pro Pipeline iterieren -- jeder mit eigenem Cutoff. Damit haben
+  // wir maximale Klarheit + keine Cross-Effekte.
+  for (const [pipelineLabel, stageIdSet] of wonByPipeline.entries()) {
+    const wonStageIds = Array.from(stageIdSet);
+    const cutoffMillis =
+      pipelineLabel === "Bestandskunden"
+        ? bestandskundenCutoffMillis
+        : neukundenCutoffMillis;
+    after = undefined;
   do {
     const filters: Array<{
       propertyName: string;
@@ -325,12 +385,12 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
     });
     if (!res.ok) {
       throw new Error(
-        `HubSpot search ${res.status}: ${await res.text().catch(() => "")}`,
+        `HubSpot search ${res.status} (Pipeline ${pipelineLabel}): ${await res.text().catch(() => "")}`,
       );
     }
     const json = (await res.json()) as HubspotSearchResponse;
     pages++;
-    total = json.total;
+    total += json.total;
 
     const emailByDealId = await fetchDealContactEmails(
       token,
@@ -387,6 +447,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
 
     after = json.paging?.next?.after;
   } while (after);
+  } // for pipeline
 
   return {
     total,
