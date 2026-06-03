@@ -450,7 +450,10 @@ function ContactDetail({
         </button>
       </div>
 
-      <ContactSeminars personId={contact.person_id} />
+      <ContactSeminars
+        personId={contact.person_id}
+        personName={contact.vollname || `Person ${contact.person_id}`}
+      />
     </div>
   );
 }
