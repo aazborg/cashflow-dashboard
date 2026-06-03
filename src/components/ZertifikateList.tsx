@@ -175,42 +175,71 @@ export default function ZertifikateList() {
   }, []);
 
   const printSelected = useCallback(async () => {
-    const picked = entries.filter((e) => selected.has(e.id));
-    if (picked.length === 0) return;
-    if (picked.length > 10) {
-      if (
-        !confirm(
-          `Du druckst ${picked.length} Zertifikate. Pop-Up-Blocker müssen aus sein, sonst gehen einige Tabs nicht auf. Fortfahren?`,
-        )
-      )
-        return;
-    }
-    for (const z of picked) {
-      const url = z.google_pdf_url ?? z.google_doc_url;
-      if (!url) continue;
-      window.open(url, "_blank", "noopener");
-    }
-    // Auto-Mark als erledigt nach Druck
-    const ids = picked.map((p) => p.id);
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
     try {
-      await fetch(`/cashflow/api/zertifikate/bulk-update`, {
+      // Bot merged alle Zertifikate zu EINEM PDF und liefert es
+      // als Stream. Wir oeffnen den Blob in einem neuen Tab --
+      // genau 1 window.open() pro Click, kein Popup-Blocker-Problem.
+      const res = await fetch(`/cashflow/api/zertifikate/bulk-pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, action: "erledigt" }),
+        body: JSON.stringify({ ids }),
       });
-      const ts = new Date().toISOString();
-      setEntries((prev) =>
-        prev.map((e) =>
-          selected.has(e.id)
-            ? { ...e, erledigt_am: ts, erledigt_von: "you" }
-            : e,
-        ),
-      );
-      setSelected(new Set());
-    } catch {
-      /* best effort */
+      if (!res.ok) {
+        const txt = await res.text();
+        try {
+          const j = JSON.parse(txt) as { error?: string };
+          throw new Error(j.error ?? `HTTP ${res.status}`);
+        } catch {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank", "noopener");
+      // Versuche Print-Dialog direkt anzustossen (best effort --
+      // klappt nur wenn Popup-Blocker es zulaesst)
+      if (win) {
+        win.addEventListener("load", () => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+      // URL nach 1 Min wieder freigeben
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      // Auto-Mark als erledigt
+      try {
+        await fetch(`/cashflow/api/zertifikate/bulk-update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, action: "erledigt" }),
+        });
+        const ts = new Date().toISOString();
+        setEntries((prev) =>
+          prev.map((e) =>
+            selected.has(e.id)
+              ? { ...e, erledigt_am: ts, erledigt_von: "you" }
+              : e,
+          ),
+        );
+        setSelected(new Set());
+      } catch {
+        /* best effort */
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBulkBusy(false);
     }
-  }, [entries, selected]);
+  }, [selected]);
 
   return (
     <div className="bg-white rounded-lg border border-[color:var(--border)] p-4">
