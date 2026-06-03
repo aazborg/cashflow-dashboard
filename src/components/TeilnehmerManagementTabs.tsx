@@ -3,8 +3,9 @@
 import { useState } from "react";
 import ContactSearch from "./ContactSearch";
 import UmbuchungenList from "./UmbuchungenList";
+import ZertifikateList from "./ZertifikateList";
 
-type Tab = "teilnehmer" | "umbuchungen";
+type Tab = "teilnehmer" | "umbuchungen" | "zertifikate";
 
 export default function TeilnehmerManagementTabs() {
   const [tab, setTab] = useState<Tab>("teilnehmer");
@@ -20,8 +21,20 @@ export default function TeilnehmerManagementTabs() {
         >
           Umbuchungen
         </TabButton>
+        <TabButton
+          active={tab === "zertifikate"}
+          onClick={() => setTab("zertifikate")}
+        >
+          Zertifikate
+        </TabButton>
       </nav>
-      {tab === "teilnehmer" ? <ContactSearch /> : <UmbuchungenList />}
+      {tab === "teilnehmer" ? (
+        <ContactSearch />
+      ) : tab === "umbuchungen" ? (
+        <UmbuchungenList />
+      ) : (
+        <ZertifikateList />
+      )}
     </div>
   );
 }
