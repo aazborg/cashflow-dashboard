@@ -29,6 +29,8 @@ interface SeminarEvent {
   bis: string;
   status: string;
   rolle: string;
+  qualification_id?: number | null;
+  qualification_name?: string | null;
 }
 
 interface EventsResponse {
@@ -56,6 +58,7 @@ export default function ContactSeminars({
   const [stornoError, setStornoError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [showStorniert, setShowStorniert] = useState(true);
+  const [groupByReihe, setGroupByReihe] = useState(false);
   const [rebookEvent, setRebookEvent] = useState<SeminarEvent | null>(null);
   // Expand-State pro Zeile + lazy-geladene Schedules
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -141,12 +144,13 @@ export default function ContactSeminars({
     void fetchEvents(includeTrainer);
   }, [personId, includeTrainer, fetchEvents]);
 
-  // Lokale Filterung: Such-String (gegen Titel, ID, Rolle) +
-  // optional Storniert ausblenden
+  // Lokale Filterung: Such-String (gegen Titel, ID, Rolle, Reihe) +
+  // optional Storniert ausblenden. Bei groupByReihe Sortierung
+  // nach Reihen-Name + Datum, damit visuell beieinander.
   const filteredEvents = useMemo(() => {
     if (!events) return null;
     const f = filter.trim().toLowerCase();
-    return events.filter((ev) => {
+    const filtered = events.filter((ev) => {
       const isStorniert = (ev.status || "").toLowerCase().includes("storn");
       if (!showStorniert && isStorniert) return false;
       if (!f) return true;
@@ -154,10 +158,18 @@ export default function ContactSeminars({
         (ev.event_name || "").toLowerCase().includes(f) ||
         String(ev.event_id).includes(f) ||
         (ev.status || "").toLowerCase().includes(f) ||
-        (ev.rolle || "").toLowerCase().includes(f)
+        (ev.rolle || "").toLowerCase().includes(f) ||
+        (ev.qualification_name || "").toLowerCase().includes(f)
       );
     });
-  }, [events, filter, showStorniert]);
+    if (!groupByReihe) return filtered;
+    return [...filtered].sort((a, b) => {
+      const qa = (a.qualification_name || "ZZZ").toLowerCase();
+      const qb = (b.qualification_name || "ZZZ").toLowerCase();
+      if (qa !== qb) return qa.localeCompare(qb);
+      return (a.von || "").localeCompare(b.von || "");
+    });
+  }, [events, filter, showStorniert, groupByReihe]);
 
   const submitStorno = useCallback(async () => {
     if (stornoEventId == null) return;
@@ -229,6 +241,15 @@ export default function ContactSeminars({
               className="accent-[color:var(--brand-orange)]"
             />
             <span>Stornierte anzeigen</span>
+          </label>
+          <label className="inline-flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={groupByReihe}
+              onChange={(e) => setGroupByReihe(e.target.checked)}
+              className="accent-[color:var(--brand-orange)]"
+            />
+            <span>Nach Reihe gruppieren</span>
           </label>
           <button
             type="button"
@@ -319,8 +340,25 @@ export default function ContactSeminars({
                   .includes("storn");
                 const isExpanded = expandedId === ev.event_id;
                 const sched = schedulesByEvent[ev.event_id];
+                const prev = i > 0 ? filteredEvents[i - 1] : null;
+                const showReiheHeader =
+                  groupByReihe &&
+                  (i === 0 ||
+                    (prev?.qualification_id ?? null) !==
+                      (ev.qualification_id ?? null));
                 return (
                   <Fragment key={`${ev.event_id}-${i}`}>
+                    {showReiheHeader ? (
+                      <tr className="bg-[color:var(--brand-yellow)]/10">
+                        <td></td>
+                        <td
+                          colSpan={7}
+                          className="py-1.5 px-3 text-[11px] uppercase tracking-wide font-semibold text-[color:var(--foreground)]"
+                        >
+                          {ev.qualification_name ?? "Einzelseminare / Sonstige"}
+                        </td>
+                      </tr>
+                    ) : null}
                     <tr className="border-b border-[color:var(--border)]/60">
                       <td className="py-2 align-top">
                         <button
@@ -354,7 +392,14 @@ export default function ContactSeminars({
                       <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted)] tabular-nums">
                         {ev.event_id}
                       </td>
-                      <td className="py-2 pr-3">{ev.event_name || "—"}</td>
+                      <td className="py-2 pr-3">
+                        <div>{ev.event_name || "—"}</div>
+                        {!groupByReihe && ev.qualification_name ? (
+                          <div className="text-[11px] text-[color:var(--muted)] mt-0.5 truncate">
+                            ↳ {ev.qualification_name}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="py-2 pr-3">
                         <StatusBadge status={ev.status} />
                       </td>
