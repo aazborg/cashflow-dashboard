@@ -12,6 +12,7 @@
  * neuen Rechnung automatisch aktualisiert.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ContactSeminars from "./ContactSeminars";
 
 interface Contact {
   person_id: number;
@@ -448,6 +449,8 @@ function ContactDetail({
             : "Adresse neu laden"}
         </button>
       </div>
+
+      <ContactSeminars personId={contact.person_id} />
     </div>
   );
 }
