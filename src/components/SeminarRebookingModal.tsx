@@ -89,11 +89,29 @@ export default function SeminarRebookingModal({
       }
       const all = json.seminars ?? [];
       const targetName = oldEventName.trim().toLowerCase();
-      // Nur exakt gleicher Name + andere event_id
-      const filtered = all.filter(
-        (s) =>
-          s.name.trim().toLowerCase() === targetName && s.id !== oldEventId,
-      );
+      // Modul-Namen koennen Untertitel anhaengen
+      // ("Spezifische Interventionen I" vs
+      //  "Spezifische Interventionen I: Reframing ..."). Wir
+      // matchen alles, bei dem ein Name das Praefix des anderen
+      // ist (case-insensitiv) und nicht das aktuelle Event.
+      const filtered = all
+        .filter((s) => {
+          if (s.id === oldEventId) return false;
+          const a = s.name.trim().toLowerCase();
+          if (!a) return false;
+          return a === targetName ||
+            a.startsWith(targetName) ||
+            targetName.startsWith(a);
+        })
+        .sort((x, y) => {
+          // Exakte Matches oben, dann nach Datum
+          const xExact =
+            x.name.trim().toLowerCase() === targetName ? 0 : 1;
+          const yExact =
+            y.name.trim().toLowerCase() === targetName ? 0 : 1;
+          if (xExact !== yExact) return xExact - yExact;
+          return (x.von || "").localeCompare(y.von || "");
+        });
       setAlternatives(filtered);
     } catch (err) {
       setError((err as Error).message);
@@ -258,26 +276,36 @@ export default function SeminarRebookingModal({
                     Keine weiteren Termine für „{oldEventName}" gefunden.
                   </div>
                 ) : (
-                  alternatives.map((s) => (
-                    <button
-                      key={`${s.typ}-${s.id}`}
-                      type="button"
-                      onClick={() => setSelected(s)}
-                      className="w-full text-left px-3 py-2.5 hover:bg-[color:var(--brand-yellow)]/20"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium text-sm tabular-nums">
-                          {fmtDate(s.von) || "?"} – {fmtDate(s.bis) || "?"}
+                  alternatives.map((s) => {
+                    const nameDiff =
+                      s.name.trim().toLowerCase() !==
+                      oldEventName.trim().toLowerCase();
+                    return (
+                      <button
+                        key={`${s.typ}-${s.id}`}
+                        type="button"
+                        onClick={() => setSelected(s)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-[color:var(--brand-yellow)]/20"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium text-sm tabular-nums">
+                            {fmtDate(s.von) || "?"} – {fmtDate(s.bis) || "?"}
+                          </div>
+                          <span className="text-[10px] text-[color:var(--muted)] shrink-0">
+                            ID {s.id}
+                            {s.termine_count
+                              ? ` · ${s.termine_count} Module`
+                              : ""}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-[color:var(--muted)]">
-                          ID {s.id}
-                          {s.termine_count
-                            ? ` · ${s.termine_count} Module`
-                            : ""}
-                        </span>
-                      </div>
-                    </button>
-                  ))
+                        {nameDiff ? (
+                          <div className="text-[11px] text-[color:var(--brand-orange)] mt-0.5 truncate">
+                            {s.name}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
