@@ -52,8 +52,16 @@ export async function POST(req: NextRequest) {
       return new NextResponse(text, { status: res.status });
     }
   }
-  const buf = await res.arrayBuffer();
-  return new NextResponse(buf, {
+  // Stream der Bot-Response direkt durch -- vermeidet den Vercel-
+  // Memory-Buffer der bei groesseren Merge-PDFs zu 500ern fuehren
+  // kann.
+  if (!res.body) {
+    return NextResponse.json(
+      { error: "Leerer Bot-Response" },
+      { status: 502 },
+    );
+  }
+  return new NextResponse(res.body, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
