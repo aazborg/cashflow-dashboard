@@ -217,6 +217,7 @@ export default function SeminarRebookingModal({
   useEffect(() => {
     setSnapshot(null);
     setAllowOverbook(false);
+    setError(null);  // Reset Fehler aus vorherigem Submit
     if (!selected || selected.typ !== "event") return;
     void (async () => {
       setSnapLoading(true);
