@@ -14,6 +14,13 @@ interface SeminarHit {
   von: string | null;
   bis: string | null;
   termine_count?: number;
+  belegung?: {
+    aktive: number;
+    max: number | null;
+    frei: number | null;
+    voll: boolean;
+    loading?: boolean;
+  };
 }
 
 interface Snapshot {
@@ -150,7 +157,52 @@ export default function SeminarRebookingModal({
           if (xExact !== yExact) return xExact - yExact;
           return (x.von || "").localeCompare(y.von || "");
         });
-      setAlternatives(filtered);
+      // Mark as loading
+      setAlternatives(
+        filtered.map((s) => ({
+          ...s,
+          belegung: s.typ === "event" ? { aktive: 0, max: null, frei: null, voll: false, loading: true } : undefined,
+        })),
+      );
+      // Parallel Belegung laden (nur Events)
+      void (async () => {
+        const eventHits = filtered.filter((s) => s.typ === "event");
+        await Promise.all(
+          eventHits.map(async (s) => {
+            try {
+              const r = await fetch(
+                `/cashflow/api/seminars/${s.id}/snapshot`,
+                { cache: "no-store" },
+              );
+              const sn = (await r.json()) as Snapshot;
+              setAlternatives((prev) =>
+                prev.map((p) =>
+                  p.id === s.id
+                    ? {
+                        ...p,
+                        belegung: {
+                          aktive: sn.aktive ?? 0,
+                          max: sn.max_registration ?? null,
+                          frei: sn.frei ?? null,
+                          voll: !!sn.voll,
+                          loading: false,
+                        },
+                      }
+                    : p,
+                ),
+              );
+            } catch {
+              setAlternatives((prev) =>
+                prev.map((p) =>
+                  p.id === s.id
+                    ? { ...p, belegung: { aktive: 0, max: null, frei: null, voll: false, loading: false } }
+                    : p,
+                ),
+              );
+            }
+          }),
+        );
+      })();
     } catch (err) {
       setError((err as Error).message);
       setAlternatives([]);
@@ -320,23 +372,50 @@ export default function SeminarRebookingModal({
                     const nameDiff =
                       s.name.trim().toLowerCase() !==
                       oldEventName.trim().toLowerCase();
+                    const b = s.belegung;
+                    const isVoll = !!b?.voll;
                     return (
                       <button
                         key={`${s.typ}-${s.id}`}
                         type="button"
-                        onClick={() => setSelected(s)}
-                        className="w-full text-left px-3 py-2.5 hover:bg-[color:var(--brand-yellow)]/20"
+                        onClick={() => !isVoll && setSelected(s)}
+                        disabled={isVoll}
+                        className={
+                          "w-full text-left px-3 py-2.5 " +
+                          (isVoll
+                            ? "opacity-60 cursor-not-allowed"
+                            : "hover:bg-[color:var(--brand-yellow)]/20")
+                        }
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-medium text-sm tabular-nums">
                             {fmtDate(s.von) || "?"} – {fmtDate(s.bis) || "?"}
                           </div>
-                          <span className="text-[10px] text-[color:var(--muted)] shrink-0">
-                            ID {s.id}
-                            {s.termine_count
-                              ? ` · ${s.termine_count} Module`
-                              : ""}
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {b?.loading ? (
+                              <span className="text-[10px] text-[color:var(--muted)]">
+                                Belegung …
+                              </span>
+                            ) : isVoll ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold">
+                                AUSGEBUCHT {b?.aktive}/{b?.max ?? "?"}
+                              </span>
+                            ) : b && b.frei != null ? (
+                              <span
+                                className={
+                                  "text-[10px] px-1.5 py-0.5 rounded font-semibold " +
+                                  (b.frei <= 3
+                                    ? "bg-amber-100 text-amber-800"
+                                    : "bg-green-100 text-green-700")
+                                }
+                              >
+                                {b.frei} frei
+                              </span>
+                            ) : null}
+                            <span className="text-[10px] text-[color:var(--muted)]">
+                              ID {s.id}
+                            </span>
+                          </div>
                         </div>
                         {nameDiff ? (
                           <div className="text-[11px] text-[color:var(--brand-orange)] mt-0.5 truncate">
