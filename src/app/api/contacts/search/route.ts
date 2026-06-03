@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     "person_id, vorname, nachname, vollname, email, " +
     "is_participant, is_trainer, " +
     "telefon, mobil, strasse, plz, ort, land, " +
-    "adresse_status, adresse_geholt_am, " +
+    "adresse_status, adresse_quelle, adresse_geholt_am, " +
     "last_synced_at, detail_synced_at";
 
   let query = sb

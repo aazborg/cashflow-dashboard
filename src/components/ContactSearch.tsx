@@ -28,6 +28,7 @@ interface Contact {
   ort: string | null;
   land: string | null;
   adresse_status: "pending" | "fetched" | "missing" | "error";
+  adresse_quelle: "simplyorg" | "mixed" | "hubspot" | null;
   adresse_geholt_am: string | null;
   last_synced_at: string;
   detail_synced_at: string | null;
@@ -122,6 +123,7 @@ export default function ContactSearch() {
       const json = (await res.json()) as {
         ok?: boolean;
         error?: string;
+        source?: "simplyorg" | "mixed" | "hubspot" | "missing";
         detail?: {
           telefon?: string | null;
           mobil?: string | null;
@@ -136,6 +138,7 @@ export default function ContactSearch() {
       }
       // Lokal aktualisieren (ohne Roundtrip)
       const d = json.detail ?? null;
+      const src = json.source ?? "missing";
       const now = new Date().toISOString();
       setResults((prev) =>
         prev.map((c) =>
@@ -148,7 +151,11 @@ export default function ContactSearch() {
                 plz: d?.plz ?? null,
                 ort: d?.ort ?? null,
                 land: d?.land ?? null,
-                adresse_status: d ? "fetched" : "missing",
+                adresse_status: src === "missing" ? "missing" : "fetched",
+                adresse_quelle:
+                  src === "missing"
+                    ? null
+                    : (src as "simplyorg" | "mixed" | "hubspot"),
                 adresse_geholt_am: now,
                 detail_synced_at: now,
               }
@@ -391,6 +398,20 @@ function ContactDetail({
             <span className="font-medium text-[color:var(--foreground)]">
               {adresseStatusLabel(contact.adresse_status)}
             </span>
+            {contact.adresse_quelle ? (
+              <span
+                className={
+                  "ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded font-semibold " +
+                  (contact.adresse_quelle === "simplyorg"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : contact.adresse_quelle === "mixed"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-sky-100 text-sky-700")
+                }
+              >
+                {quelleLabel(contact.adresse_quelle)}
+              </span>
+            ) : null}
           </span>
           <span>Zuletzt synchronisiert: {fmtTs(contact.last_synced_at)}</span>
           {contact.detail_synced_at ? (
@@ -443,12 +464,23 @@ function adresseStatusLabel(s: Contact["adresse_status"]): string {
     case "fetched":
       return "geladen";
     case "missing":
-      return "keine in SimplyOrg hinterlegt";
+      return "weder in SimplyOrg noch HubSpot";
     case "error":
       return "Fehler beim Laden";
     case "pending":
     default:
       return "noch nicht geladen";
+  }
+}
+
+function quelleLabel(q: NonNullable<Contact["adresse_quelle"]>): string {
+  switch (q) {
+    case "simplyorg":
+      return "SimplyOrg";
+    case "mixed":
+      return "SimplyOrg + HubSpot";
+    case "hubspot":
+      return "HubSpot";
   }
 }
 
