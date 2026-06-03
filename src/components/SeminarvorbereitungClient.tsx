@@ -36,31 +36,22 @@ interface WeekResponse {
   error?: string;
 }
 
-type BerechnungsTyp =
-  | "pro_monat"
-  | "pro_teilnehmer_woche"
-  | "pro_teilnehmer_tag"
-  | "pro_seminartag"
-  | "fix_pro_woche";
+interface Kategorie {
+  id: string;
+  name: string;
+  sortierung: number;
+  aktiv: boolean;
+}
 
 interface Produkt {
   id: string;
   name: string;
   einheit: string;
-  berechnungs_typ: BerechnungsTyp;
-  menge_pro_einheit: number;
+  kategorie_id: string | null;
   sortierung: number;
   aktiv: boolean;
   notiz: string | null;
 }
-
-const BERECHNUNG_LABELS: Record<BerechnungsTyp, string> = {
-  pro_monat: "Stk/Monat (÷4)",
-  pro_teilnehmer_woche: "pro Teilnehmer/Woche",
-  pro_teilnehmer_tag: "pro Teilnehmer/Tag",
-  pro_seminartag: "pro Seminartag",
-  fix_pro_woche: "fix pro Woche",
-};
 
 export default function SeminarvorbereitungClient() {
   const [weekStart, setWeekStart] = useState<string>(() => nextSaturday());
@@ -69,6 +60,26 @@ export default function SeminarvorbereitungClient() {
   const [error, setError] = useState<string | null>(null);
   const [produkte, setProdukte] = useState<Produkt[]>([]);
   const [pLoading, setPLoading] = useState(false);
+  const [kategorien, setKategorien] = useState<Kategorie[]>([]);
+
+  const loadKategorien = useCallback(async () => {
+    try {
+      const r = await fetch(`/cashflow/api/seminarmanagement/kategorien`, {
+        cache: "no-store",
+      });
+      const j = (await r.json()) as {
+        ok?: boolean;
+        kategorien?: Kategorie[];
+      };
+      if (r.ok && j.ok !== false) setKategorien(j.kategorien ?? []);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadKategorien();
+  }, [loadKategorien]);
 
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
 
@@ -236,9 +247,10 @@ export default function SeminarvorbereitungClient() {
       {/* Produkte */}
       <ProdukteSection
         produkte={produkte}
+        kategorien={kategorien}
         loading={pLoading}
         onReload={loadProdukte}
-        week={week}
+        onKatReload={loadKategorien}
       />
     </div>
   );
@@ -246,36 +258,75 @@ export default function SeminarvorbereitungClient() {
 
 function ProdukteSection({
   produkte,
+  kategorien,
   loading,
   onReload,
-  week,
+  onKatReload,
 }: {
   produkte: Produkt[];
+  kategorien: Kategorie[];
   loading: boolean;
   onReload: () => void;
-  week: WeekResponse | null;
+  onKatReload: () => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [managingKat, setManagingKat] = useState(false);
+
+  // Gruppiere Produkte nach Kategorie
+  const gruppiert = useMemo(() => {
+    const m = new Map<string | null, Produkt[]>();
+    for (const p of produkte) {
+      const k = p.kategorie_id;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(p);
+    }
+    return m;
+  }, [produkte]);
+
+  const sortedKategorien = useMemo(
+    () => [...kategorien].sort((a, b) => a.sortierung - b.sortierung || a.name.localeCompare(b.name)),
+    [kategorien],
+  );
+
   return (
     <div className="bg-white border border-[color:var(--border)] rounded-lg p-4">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="text-sm font-semibold">Produktbedarf</h2>
-        <button
-          type="button"
-          onClick={() => setAdding((v) => !v)}
-          className="text-xs px-2.5 py-1 rounded-md border border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30"
-        >
-          {adding ? "Schließen" : "+ Produkt"}
-        </button>
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <h2 className="text-sm font-semibold">Produkte</h2>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setManagingKat((v) => !v)}
+            className="text-xs px-2.5 py-1 rounded-md border border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30"
+          >
+            {managingKat ? "Kategorien schließen" : "Kategorien verwalten"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setAdding((v) => !v)}
+            className="text-xs px-2.5 py-1 rounded-md border border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30"
+          >
+            {adding ? "Schließen" : "+ Produkt"}
+          </button>
+        </div>
       </div>
+
+      {managingKat ? (
+        <KategorienManager
+          kategorien={sortedKategorien}
+          onReload={onKatReload}
+        />
+      ) : null}
+
       {adding ? (
         <AddProduktForm
+          kategorien={sortedKategorien}
           onSuccess={() => {
             setAdding(false);
             onReload();
           }}
         />
       ) : null}
+
       {loading ? (
         <div className="text-xs text-[color:var(--muted)] py-4 text-center">
           Lade Produkte …
@@ -285,78 +336,186 @@ function ProdukteSection({
           Noch keine Produkte definiert.
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[color:var(--border)] text-[10px] uppercase tracking-wide text-[color:var(--muted)]">
-                <th className="text-left py-2 pr-3 font-semibold">Produkt</th>
-                <th className="text-left py-2 pr-3 font-semibold">Schlüssel</th>
-                <th className="text-right py-2 pr-3 font-semibold">Menge</th>
-                <th className="text-right py-2 pr-3 font-semibold">
-                  Wochenbedarf
-                </th>
-                <th className="text-right py-2 font-semibold w-20">Aktion</th>
-              </tr>
-            </thead>
-            <tbody>
-              {produkte.map((p) => {
-                const bedarf = computeBedarf(p, week);
-                return (
-                  <tr
-                    key={p.id}
-                    className="border-b border-[color:var(--border)]/60"
-                  >
-                    <td className="py-2 pr-3">
-                      <div className="font-medium">{p.name}</div>
-                      {p.notiz ? (
-                        <div className="text-[11px] text-[color:var(--muted)]">
-                          {p.notiz}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="py-2 pr-3 text-xs text-[color:var(--muted)]">
-                      {BERECHNUNG_LABELS[p.berechnungs_typ]}
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">
-                      {fmtNum(p.menge_pro_einheit)} {p.einheit}
-                    </td>
-                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-[color:var(--brand-orange)]">
-                      {bedarf == null
-                        ? "—"
-                        : `${fmtNum(bedarf)} ${p.einheit}`}
-                    </td>
-                    <td className="py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!confirm(`Produkt "${p.name}" loeschen?`)) return;
-                          await fetch(
-                            `/cashflow/api/seminarmanagement/produkte/${p.id}`,
-                            { method: "DELETE" },
-                          );
-                          onReload();
-                        }}
-                        className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 font-semibold"
-                      >
-                        Löschen
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {sortedKategorien.map((kat) => {
+            const ps = gruppiert.get(kat.id) ?? [];
+            if (ps.length === 0) return null;
+            return (
+              <ProduktGruppe
+                key={kat.id}
+                title={kat.name}
+                produkte={ps}
+                onReload={onReload}
+              />
+            );
+          })}
+          {/* Ohne Kategorie */}
+          {gruppiert.has(null) ? (
+            <ProduktGruppe
+              title="Ohne Kategorie"
+              produkte={gruppiert.get(null) ?? []}
+              onReload={onReload}
+              muted
+            />
+          ) : null}
         </div>
       )}
     </div>
   );
 }
 
-function AddProduktForm({ onSuccess }: { onSuccess: () => void }) {
+function ProduktGruppe({
+  title,
+  produkte,
+  onReload,
+  muted,
+}: {
+  title: string;
+  produkte: Produkt[];
+  onReload: () => void;
+  muted?: boolean;
+}) {
+  return (
+    <div className={muted ? "opacity-70" : ""}>
+      <div className="text-[11px] uppercase tracking-wide font-semibold text-[color:var(--muted)] mb-1.5">
+        {title} <span className="text-[10px]">({produkte.length})</span>
+      </div>
+      <div className="border border-[color:var(--border)] rounded divide-y divide-[color:var(--border)]/60">
+        {produkte.map((p) => (
+          <div
+            key={p.id}
+            className="flex items-center justify-between gap-3 px-3 py-2"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{p.name}</div>
+              {p.notiz ? (
+                <div className="text-[11px] text-[color:var(--muted)] truncate">
+                  {p.notiz}
+                </div>
+              ) : null}
+            </div>
+            <div className="text-xs text-[color:var(--muted)] whitespace-nowrap">
+              {p.einheit}
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirm(`Produkt "${p.name}" loeschen?`)) return;
+                await fetch(
+                  `/cashflow/api/seminarmanagement/produkte/${p.id}`,
+                  { method: "DELETE" },
+                );
+                onReload();
+              }}
+              className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 font-semibold"
+            >
+              Löschen
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KategorienManager({
+  kategorien,
+  onReload,
+}: {
+  kategorien: Kategorie[];
+  onReload: () => void;
+}) {
+  const [newName, setNewName] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function addKat() {
+    if (!newName.trim()) return;
+    setBusy(true);
+    try {
+      await fetch(`/cashflow/api/seminarmanagement/kategorien`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName.trim(),
+          sortierung: 100,
+        }),
+      });
+      setNewName("");
+      onReload();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="border border-[color:var(--border)] rounded-md p-3 mb-4 bg-[color:var(--brand-yellow)]/5">
+      <div className="text-[11px] uppercase tracking-wide font-semibold text-[color:var(--muted)] mb-2">
+        Kategorien
+      </div>
+      <div className="space-y-1 mb-3">
+        {kategorien.map((k) => (
+          <div
+            key={k.id}
+            className="flex items-center justify-between gap-2 text-sm bg-white border border-[color:var(--border)] rounded px-2 py-1"
+          >
+            <span>{k.name}</span>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirm(`Kategorie "${k.name}" loeschen?`)) return;
+                await fetch(
+                  `/cashflow/api/seminarmanagement/kategorien/${k.id}`,
+                  { method: "DELETE" },
+                );
+                onReload();
+              }}
+              className="text-[11px] text-red-700 hover:underline"
+            >
+              löschen
+            </button>
+          </div>
+        ))}
+        {kategorien.length === 0 ? (
+          <div className="text-xs text-[color:var(--muted)]">
+            Keine Kategorien angelegt.
+          </div>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          placeholder="Neue Kategorie"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          className="flex-1 border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+        />
+        <button
+          type="button"
+          onClick={addKat}
+          disabled={busy || !newName.trim()}
+          className={
+            "px-3 py-1.5 rounded text-sm font-semibold " +
+            (busy || !newName.trim()
+              ? "bg-[color:var(--border)] text-[color:var(--muted)]"
+              : "bg-[color:var(--brand-orange)] text-white hover:opacity-90")
+          }
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AddProduktForm({
+  kategorien,
+  onSuccess,
+}: {
+  kategorien: Kategorie[];
+  onSuccess: () => void;
+}) {
   const [name, setName] = useState("");
   const [einheit, setEinheit] = useState("Stk");
-  const [typ, setTyp] = useState<BerechnungsTyp>("pro_teilnehmer_woche");
-  const [menge, setMenge] = useState("");
+  const [kategorieId, setKategorieId] = useState<string>(
+    kategorien[0]?.id ?? "",
+  );
   const [notiz, setNotiz] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -367,11 +526,6 @@ function AddProduktForm({ onSuccess }: { onSuccess: () => void }) {
       setErr("Name + Einheit Pflicht");
       return;
     }
-    const m = Number.parseFloat(menge.replace(",", "."));
-    if (!Number.isFinite(m) || m <= 0) {
-      setErr("Menge muss > 0 sein");
-      return;
-    }
     setBusy(true);
     try {
       const r = await fetch(`/cashflow/api/seminarmanagement/produkte`, {
@@ -380,8 +534,7 @@ function AddProduktForm({ onSuccess }: { onSuccess: () => void }) {
         body: JSON.stringify({
           name: name.trim(),
           einheit: einheit.trim(),
-          berechnungs_typ: typ,
-          menge_pro_einheit: m,
+          kategorie_id: kategorieId || null,
           notiz: notiz.trim() || null,
         }),
       });
@@ -399,37 +552,28 @@ function AddProduktForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="border border-[color:var(--border)] rounded-md p-3 mb-4 bg-[color:var(--brand-yellow)]/5">
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <input
-          placeholder="Name (z. B. Obst)"
+          placeholder="Name (z. B. Bananen)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm sm:col-span-2"
         />
         <input
-          placeholder="Einheit"
+          placeholder="Einheit (kg, L, Stk)"
           value={einheit}
           onChange={(e) => setEinheit(e.target.value)}
           className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
         />
-        <input
-          type="number"
-          step="0.001"
-          placeholder="Menge"
-          value={menge}
-          onChange={(e) => setMenge(e.target.value)}
-          className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm tabular-nums"
-        />
         <select
-          value={typ}
-          onChange={(e) => setTyp(e.target.value as BerechnungsTyp)}
+          value={kategorieId}
+          onChange={(e) => setKategorieId(e.target.value)}
           className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
         >
-          {(
-            Object.entries(BERECHNUNG_LABELS) as [BerechnungsTyp, string][]
-          ).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
+          <option value="">— keine Kategorie —</option>
+          {kategorien.map((k) => (
+            <option key={k.id} value={k.id}>
+              {k.name}
             </option>
           ))}
         </select>
@@ -502,25 +646,6 @@ function StatCard({
       ) : null}
     </div>
   );
-}
-
-function computeBedarf(p: Produkt, week: WeekResponse | null): number | null {
-  const m = Number(p.menge_pro_einheit);
-  switch (p.berechnungs_typ) {
-    case "pro_monat":
-      return m / 4;
-    case "fix_pro_woche":
-      return m;
-    case "pro_teilnehmer_woche":
-      if (!week) return null;
-      return m * (week.summe_teilnehmer_unique ?? 0);
-    case "pro_teilnehmer_tag":
-      if (!week) return null;
-      return m * (week.summe_teilnehmer_tage ?? 0);
-    case "pro_seminartag":
-      if (!week) return null;
-      return m * (week.seminartage ?? 0);
-  }
 }
 
 function nextSaturday(): string {
