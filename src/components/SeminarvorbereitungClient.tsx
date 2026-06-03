@@ -252,6 +252,357 @@ export default function SeminarvorbereitungClient() {
         onReload={loadProdukte}
         onKatReload={loadKategorien}
       />
+
+      {/* Lieferanten */}
+      <LieferantenSection kategorien={kategorien} />
+    </div>
+  );
+}
+
+interface Lieferant {
+  id: string;
+  name: string;
+  telefon: string | null;
+  email: string | null;
+  notiz: string | null;
+  aktiv: boolean;
+  kategorie_ids: string[];
+}
+
+function LieferantenSection({ kategorien }: { kategorien: Kategorie[] }) {
+  const [lieferanten, setLieferanten] = useState<Lieferant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/cashflow/api/seminarmanagement/lieferanten`, {
+        cache: "no-store",
+      });
+      const j = (await r.json()) as {
+        ok?: boolean;
+        lieferanten?: Lieferant[];
+      };
+      if (r.ok && j.ok !== false) setLieferanten(j.lieferanten ?? []);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <div className="bg-white border border-[color:var(--border)] rounded-lg p-4">
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <h2 className="text-sm font-semibold">Lieferanten</h2>
+        <button
+          type="button"
+          onClick={() => setAdding((v) => !v)}
+          className="text-xs px-2.5 py-1 rounded-md border border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30"
+        >
+          {adding ? "Schließen" : "+ Lieferant"}
+        </button>
+      </div>
+
+      {adding ? (
+        <LieferantForm
+          kategorien={kategorien}
+          onSuccess={() => {
+            setAdding(false);
+            load();
+          }}
+        />
+      ) : null}
+
+      {loading ? (
+        <div className="text-xs text-[color:var(--muted)] py-4 text-center">
+          Lade Lieferanten …
+        </div>
+      ) : lieferanten.length === 0 ? (
+        <div className="text-xs text-[color:var(--muted)] py-4 text-center">
+          Noch keine Lieferanten angelegt.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {lieferanten.map((l) => (
+            <LieferantRow
+              key={l.id}
+              lieferant={l}
+              kategorien={kategorien}
+              onReload={load}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LieferantRow({
+  lieferant,
+  kategorien,
+  onReload,
+}: {
+  lieferant: Lieferant;
+  kategorien: Kategorie[];
+  onReload: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const katNames = useMemo(
+    () =>
+      lieferant.kategorie_ids
+        .map((id) => kategorien.find((k) => k.id === id)?.name)
+        .filter(Boolean)
+        .join(", "),
+    [lieferant.kategorie_ids, kategorien],
+  );
+  return (
+    <div className="border border-[color:var(--border)] rounded-md">
+      {editing ? (
+        <LieferantForm
+          lieferant={lieferant}
+          kategorien={kategorien}
+          onSuccess={() => {
+            setEditing(false);
+            onReload();
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="font-medium text-sm">{lieferant.name}</div>
+            <div className="text-[11px] text-[color:var(--muted)] mt-0.5">
+              {lieferant.email ? (
+                <a
+                  href={`mailto:${lieferant.email}`}
+                  className="text-[color:var(--brand-blue)] hover:underline mr-3"
+                >
+                  {lieferant.email}
+                </a>
+              ) : null}
+              {lieferant.telefon ? (
+                <a
+                  href={`tel:${lieferant.telefon}`}
+                  className="text-[color:var(--brand-blue)] hover:underline"
+                >
+                  {lieferant.telefon}
+                </a>
+              ) : null}
+            </div>
+            {katNames ? (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {lieferant.kategorie_ids.map((kid) => {
+                  const k = kategorien.find((x) => x.id === kid);
+                  if (!k) return null;
+                  return (
+                    <span
+                      key={kid}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-semibold"
+                    >
+                      {k.name}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-[11px] text-amber-700 mt-1">
+                Keine Kategorie zugewiesen
+              </div>
+            )}
+            {lieferant.notiz ? (
+              <div className="text-[11px] text-[color:var(--muted)] mt-1">
+                {lieferant.notiz}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-[11px] px-2 py-0.5 rounded border border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30 font-semibold"
+            >
+              Bearbeiten
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (
+                  !confirm(`Lieferant "${lieferant.name}" loeschen?`)
+                )
+                  return;
+                await fetch(
+                  `/cashflow/api/seminarmanagement/lieferanten/${lieferant.id}`,
+                  { method: "DELETE" },
+                );
+                onReload();
+              }}
+              className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 font-semibold"
+            >
+              Löschen
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LieferantForm({
+  lieferant,
+  kategorien,
+  onSuccess,
+  onCancel,
+}: {
+  lieferant?: Lieferant;
+  kategorien: Kategorie[];
+  onSuccess: () => void;
+  onCancel?: () => void;
+}) {
+  const isEdit = !!lieferant;
+  const [name, setName] = useState(lieferant?.name ?? "");
+  const [email, setEmail] = useState(lieferant?.email ?? "");
+  const [telefon, setTelefon] = useState(lieferant?.telefon ?? "");
+  const [notiz, setNotiz] = useState(lieferant?.notiz ?? "");
+  const [kids, setKids] = useState<Set<string>>(
+    new Set(lieferant?.kategorie_ids ?? []),
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function toggleKat(id: string) {
+    setKids((cur) => {
+      const n = new Set(cur);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+
+  async function submit() {
+    setErr(null);
+    if (!name.trim()) {
+      setErr("Name Pflicht");
+      return;
+    }
+    setBusy(true);
+    try {
+      const body = {
+        name: name.trim(),
+        email: email.trim() || null,
+        telefon: telefon.trim() || null,
+        notiz: notiz.trim() || null,
+        kategorie_ids: [...kids],
+      };
+      const url = isEdit
+        ? `/cashflow/api/seminarmanagement/lieferanten/${lieferant!.id}`
+        : `/cashflow/api/seminarmanagement/lieferanten`;
+      const r = await fetch(url, {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = (await r.json()) as { ok?: boolean; error?: string };
+      if (!r.ok || j.ok === false) {
+        throw new Error(j.error ?? `HTTP ${r.status}`);
+      }
+      onSuccess();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="p-3 bg-[color:var(--brand-yellow)]/5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <input
+          placeholder="Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+        />
+        <input
+          type="email"
+          placeholder="E-Mail"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+        />
+        <input
+          type="tel"
+          placeholder="Telefon"
+          value={telefon}
+          onChange={(e) => setTelefon(e.target.value)}
+          className="border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+        />
+      </div>
+      <input
+        placeholder="Notiz (optional)"
+        value={notiz}
+        onChange={(e) => setNotiz(e.target.value)}
+        className="mt-2 w-full border border-[color:var(--border)] rounded px-2 py-1.5 text-sm"
+      />
+      {kategorien.length > 0 ? (
+        <div className="mt-3">
+          <div className="text-[11px] uppercase tracking-wide text-[color:var(--muted)] mb-1.5">
+            Kategorien zuweisen
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {kategorien.map((k) => {
+              const on = kids.has(k.id);
+              return (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => toggleKat(k.id)}
+                  className={
+                    "text-[11px] px-2 py-1 rounded border font-semibold " +
+                    (on
+                      ? "bg-[color:var(--brand-orange)] text-white border-[color:var(--brand-orange)]"
+                      : "border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30")
+                  }
+                >
+                  {on ? "✓ " : ""}
+                  {k.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {err ? <div className="mt-2 text-xs text-red-700">{err}</div> : null}
+      <div className="mt-3 flex justify-end gap-2">
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="px-3 py-1.5 rounded text-sm border border-[color:var(--border)]"
+          >
+            Abbrechen
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={busy}
+          className={
+            "px-3 py-1.5 rounded text-sm font-semibold " +
+            (busy
+              ? "bg-[color:var(--border)] text-[color:var(--muted)]"
+              : "bg-[color:var(--brand-orange)] text-white hover:opacity-90")
+          }
+        >
+          {busy ? "Speichere …" : isEdit ? "Speichern" : "Anlegen"}
+        </button>
+      </div>
     </div>
   );
 }
