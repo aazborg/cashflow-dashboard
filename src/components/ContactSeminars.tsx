@@ -9,6 +9,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import SeminarBookingModal from "./SeminarBookingModal";
+import SeminarRebookingModal from "./SeminarRebookingModal";
 
 interface Schedule {
   schedule_id: number;
@@ -55,6 +56,7 @@ export default function ContactSeminars({
   const [stornoError, setStornoError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [showStorniert, setShowStorniert] = useState(true);
+  const [rebookEvent, setRebookEvent] = useState<SeminarEvent | null>(null);
   // Expand-State pro Zeile + lazy-geladene Schedules
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [schedulesByEvent, setSchedulesByEvent] = useState<
@@ -365,17 +367,27 @@ export default function ContactSeminars({
                             —
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStornoEventId(ev.event_id);
-                              setStornoReason("");
-                              setStornoError(null);
-                            }}
-                            className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 font-semibold"
-                          >
-                            Storno
-                          </button>
+                          <div className="inline-flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setRebookEvent(ev)}
+                              className="text-[11px] px-2 py-0.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 font-semibold"
+                              title="In anderen Termin desselben Seminars umbuchen"
+                            >
+                              Umbuchen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStornoEventId(ev.event_id);
+                                setStornoReason("");
+                                setStornoError(null);
+                              }}
+                              className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 font-semibold"
+                            >
+                              Storno
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -413,6 +425,21 @@ export default function ContactSeminars({
         onClose={() => setBookingOpen(false)}
         onSuccess={() => fetchEvents(includeTrainer)}
       />
+
+      {/* Umbuchungs-Modal */}
+      {rebookEvent ? (
+        <SeminarRebookingModal
+          personId={personId}
+          personName={personName}
+          oldEventId={rebookEvent.event_id}
+          oldEventName={rebookEvent.event_name}
+          oldVon={rebookEvent.von}
+          oldBis={rebookEvent.bis}
+          open={true}
+          onClose={() => setRebookEvent(null)}
+          onSuccess={() => fetchEvents(includeTrainer)}
+        />
+      ) : null}
 
       {/* Storno-Confirm-Modal */}
       {stornoEventId != null ? (
