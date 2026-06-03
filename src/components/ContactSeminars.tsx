@@ -8,6 +8,7 @@
  * Anschrift gerendert.
  */
 import { useCallback, useEffect, useState } from "react";
+import SeminarBookingModal from "./SeminarBookingModal";
 
 interface SeminarEvent {
   event_id: number;
@@ -27,13 +28,20 @@ interface EventsResponse {
 
 export default function ContactSeminars({
   personId,
+  personName,
 }: {
   personId: number;
+  personName: string;
 }) {
   const [events, setEvents] = useState<SeminarEvent[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [includeTrainer, setIncludeTrainer] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [stornoEventId, setStornoEventId] = useState<number | null>(null);
+  const [stornoReason, setStornoReason] = useState("");
+  const [stornoSubmitting, setStornoSubmitting] = useState(false);
+  const [stornoError, setStornoError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(
     async (withTrainer: boolean) => {
@@ -66,6 +74,37 @@ export default function ContactSeminars({
     setEvents(null);
     void fetchEvents(includeTrainer);
   }, [personId, includeTrainer, fetchEvents]);
+
+  const submitStorno = useCallback(async () => {
+    if (stornoEventId == null) return;
+    if (stornoReason.trim().length < 5) {
+      setStornoError("Bitte einen Grund (mind. 5 Zeichen) angeben.");
+      return;
+    }
+    setStornoSubmitting(true);
+    setStornoError(null);
+    try {
+      const res = await fetch(
+        `/cashflow/api/contacts/${personId}/events/${stornoEventId}/storno`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: stornoReason.trim() }),
+        },
+      );
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || json.ok === false) {
+        throw new Error(json.error ?? `HTTP ${res.status}`);
+      }
+      setStornoEventId(null);
+      setStornoReason("");
+      void fetchEvents(includeTrainer);
+    } catch (err) {
+      setStornoError((err as Error).message);
+    } finally {
+      setStornoSubmitting(false);
+    }
+  }, [personId, stornoEventId, stornoReason, includeTrainer, fetchEvents]);
 
   return (
     <div className="border-t border-[color:var(--border)] pt-4 mt-4">
@@ -107,6 +146,13 @@ export default function ContactSeminars({
           >
             {loading ? "Lade …" : "Aktualisieren"}
           </button>
+          <button
+            type="button"
+            onClick={() => setBookingOpen(true)}
+            className="px-2.5 py-1 rounded-md font-semibold bg-[color:var(--brand-orange)] text-white hover:opacity-90"
+          >
+            + Einbuchen
+          </button>
         </div>
       </div>
 
@@ -132,39 +178,137 @@ export default function ContactSeminars({
                   Seminartitel
                 </th>
                 <th className="text-left py-1.5 pr-3 font-semibold">Status</th>
-                <th className="text-left py-1.5 font-semibold">Rolle</th>
+                <th className="text-left py-1.5 pr-3 font-semibold">Rolle</th>
+                <th className="text-right py-1.5 font-semibold w-16">
+                  Aktion
+                </th>
               </tr>
             </thead>
             <tbody>
-              {events.map((ev, i) => (
-                <tr
-                  key={`${ev.event_id}-${i}`}
-                  className="border-b border-[color:var(--border)]/60 last:border-0"
-                >
-                  <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
-                    {ev.von || "—"}
-                  </td>
-                  <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
-                    {ev.bis || "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted)] tabular-nums">
-                    {ev.event_id}
-                  </td>
-                  <td className="py-2 pr-3">{ev.event_name || "—"}</td>
-                  <td className="py-2 pr-3">
-                    <StatusBadge status={ev.status} />
-                  </td>
-                  <td className="py-2 text-xs text-[color:var(--muted)]">
-                    {ev.rolle || "Teilnehmer"}
-                  </td>
-                </tr>
-              ))}
+              {events.map((ev, i) => {
+                const isStorniert = (ev.status || "")
+                  .toLowerCase()
+                  .includes("storn");
+                return (
+                  <tr
+                    key={`${ev.event_id}-${i}`}
+                    className="border-b border-[color:var(--border)]/60 last:border-0"
+                  >
+                    <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
+                      {ev.von || "—"}
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
+                      {ev.bis || "—"}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-xs text-[color:var(--muted)] tabular-nums">
+                      {ev.event_id}
+                    </td>
+                    <td className="py-2 pr-3">{ev.event_name || "—"}</td>
+                    <td className="py-2 pr-3">
+                      <StatusBadge status={ev.status} />
+                    </td>
+                    <td className="py-2 pr-3 text-xs text-[color:var(--muted)]">
+                      {ev.rolle || "Teilnehmer"}
+                    </td>
+                    <td className="py-2 text-right whitespace-nowrap">
+                      {isStorniert ? (
+                        <span className="text-[10px] text-[color:var(--muted)]">
+                          —
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStornoEventId(ev.event_id);
+                            setStornoReason("");
+                            setStornoError(null);
+                          }}
+                          className="text-[11px] px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 font-semibold"
+                        >
+                          Storno
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       ) : events && events.length === 0 && !error ? (
         <div className="text-xs text-[color:var(--muted)] py-4 text-center">
           Keine Seminar-Anmeldungen gefunden.
+        </div>
+      ) : null}
+
+      {/* Booking-Modal */}
+      <SeminarBookingModal
+        personId={personId}
+        personName={personName}
+        open={bookingOpen}
+        onClose={() => setBookingOpen(false)}
+        onSuccess={() => fetchEvents(includeTrainer)}
+      />
+
+      {/* Storno-Confirm-Modal */}
+      {stornoEventId != null ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !stornoSubmitting && setStornoEventId(null)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-md w-full p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold">Anmeldung stornieren?</h3>
+            <p className="text-sm text-[color:var(--muted)] mt-1">
+              {personName} aus „
+              {events?.find((e) => e.event_id === stornoEventId)?.event_name ??
+                `Event ${stornoEventId}`}
+              " (ID {stornoEventId}).
+            </p>
+            <label className="text-xs uppercase tracking-wide text-[color:var(--muted)] block mt-4 mb-1">
+              Grund (Audit-Log)
+            </label>
+            <input
+              type="text"
+              value={stornoReason}
+              onChange={(e) => setStornoReason(e.target.value)}
+              placeholder="z. B. Krankheit / Nachfrage Kunde"
+              className="block w-full border border-[color:var(--border)] rounded-md px-3 py-2 text-sm outline-none focus:border-[color:var(--brand-blue)]"
+              autoFocus
+            />
+            {stornoError ? (
+              <div className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {stornoError}
+              </div>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setStornoEventId(null)}
+                disabled={stornoSubmitting}
+                className="px-3 py-1.5 rounded border border-[color:var(--border)] text-sm"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={submitStorno}
+                disabled={
+                  stornoSubmitting || stornoReason.trim().length < 5
+                }
+                className={
+                  "px-4 py-1.5 rounded text-sm font-semibold " +
+                  (stornoSubmitting || stornoReason.trim().length < 5
+                    ? "bg-[color:var(--border)] text-[color:var(--muted)] cursor-not-allowed"
+                    : "bg-red-600 text-white hover:opacity-90")
+                }
+              >
+                {stornoSubmitting ? "Storniere …" : "Stornieren"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
