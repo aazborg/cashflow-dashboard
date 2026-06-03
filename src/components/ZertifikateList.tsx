@@ -21,6 +21,8 @@ interface ZertEntry {
   gedruckt_am: string | null;
   versendet_am: string | null;
   notiz: string | null;
+  erledigt_am: string | null;
+  erledigt_von: string | null;
 }
 
 const DEBOUNCE_MS = 300;
@@ -33,6 +35,8 @@ export default function ZertifikateList() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [hideErledigt, setHideErledigt] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const inflight = useRef<AbortController | null>(null);
 
   const load = useCallback(async (query: string) => {
@@ -102,19 +106,64 @@ export default function ZertifikateList() {
     }
   }, [load, q]);
 
+  const visibleEntries = useMemo(
+    () =>
+      hideErledigt ? entries.filter((e) => !e.erledigt_am) : entries,
+    [entries, hideErledigt],
+  );
+
   const allChecked = useMemo(
-    () => entries.length > 0 && entries.every((e) => selected.has(e.id)),
-    [entries, selected],
+    () =>
+      visibleEntries.length > 0 &&
+      visibleEntries.every((e) => selected.has(e.id)),
+    [visibleEntries, selected],
   );
 
   const toggleAll = useCallback(() => {
     setSelected((cur) => {
-      if (entries.every((e) => cur.has(e.id))) return new Set();
+      if (visibleEntries.every((e) => cur.has(e.id))) return new Set();
       const n = new Set(cur);
-      entries.forEach((e) => n.add(e.id));
+      visibleEntries.forEach((e) => n.add(e.id));
       return n;
     });
-  }, [entries]);
+  }, [visibleEntries]);
+
+  const bulkUpdate = useCallback(
+    async (action: "erledigt" | "wieder_offen") => {
+      const ids = [...selected];
+      if (ids.length === 0) return;
+      setBulkBusy(true);
+      try {
+        const res = await fetch(`/cashflow/api/zertifikate/bulk-update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids, action }),
+        });
+        const json = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        const ts = new Date().toISOString();
+        setEntries((prev) =>
+          prev.map((e) =>
+            selected.has(e.id)
+              ? {
+                  ...e,
+                  erledigt_am: action === "erledigt" ? ts : null,
+                  erledigt_von: action === "erledigt" ? "you" : null,
+                }
+              : e,
+          ),
+        );
+        if (action === "erledigt") setSelected(new Set());
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [selected],
+  );
 
   const toggleOne = useCallback((id: string) => {
     setSelected((cur) => {
@@ -125,7 +174,7 @@ export default function ZertifikateList() {
     });
   }, []);
 
-  const printSelected = useCallback(() => {
+  const printSelected = useCallback(async () => {
     const picked = entries.filter((e) => selected.has(e.id));
     if (picked.length === 0) return;
     if (picked.length > 10) {
@@ -140,6 +189,26 @@ export default function ZertifikateList() {
       const url = z.google_pdf_url ?? z.google_doc_url;
       if (!url) continue;
       window.open(url, "_blank", "noopener");
+    }
+    // Auto-Mark als erledigt nach Druck
+    const ids = picked.map((p) => p.id);
+    try {
+      await fetch(`/cashflow/api/zertifikate/bulk-update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, action: "erledigt" }),
+      });
+      const ts = new Date().toISOString();
+      setEntries((prev) =>
+        prev.map((e) =>
+          selected.has(e.id)
+            ? { ...e, erledigt_am: ts, erledigt_von: "you" }
+            : e,
+        ),
+      );
+      setSelected(new Set());
+    } catch {
+      /* best effort */
     }
   }, [entries, selected]);
 
@@ -187,18 +256,60 @@ export default function ZertifikateList() {
         <button
           type="button"
           onClick={printSelected}
-          disabled={selected.size === 0}
+          disabled={selected.size === 0 || bulkBusy}
           className={
             "px-3 py-1.5 rounded-md text-sm font-semibold " +
-            (selected.size === 0
+            (selected.size === 0 || bulkBusy
               ? "bg-[color:var(--border)] text-[color:var(--muted)] cursor-not-allowed"
               : "bg-[color:var(--brand-orange)] text-white hover:opacity-90")
           }
         >
           Drucken ({selected.size})
         </button>
+        <button
+          type="button"
+          onClick={() => bulkUpdate("erledigt")}
+          disabled={selected.size === 0 || bulkBusy}
+          className={
+            "px-3 py-1.5 rounded-md text-sm font-semibold " +
+            (selected.size === 0 || bulkBusy
+              ? "bg-[color:var(--border)] text-[color:var(--muted)] cursor-not-allowed"
+              : "bg-emerald-600 text-white hover:opacity-90")
+          }
+          title="Markiert die ausgewaehlten als erledigt"
+        >
+          ✓ Erledigt ({selected.size})
+        </button>
+        <button
+          type="button"
+          onClick={() => bulkUpdate("wieder_offen")}
+          disabled={selected.size === 0 || bulkBusy}
+          className={
+            "px-3 py-1.5 rounded-md text-sm font-semibold " +
+            (selected.size === 0 || bulkBusy
+              ? "bg-[color:var(--border)] text-[color:var(--muted)] cursor-not-allowed"
+              : "border border-[color:var(--border)] hover:bg-[color:var(--brand-yellow)]/30")
+          }
+          title="Setzt die ausgewaehlten wieder auf offen"
+        >
+          ↺ Wieder öffnen
+        </button>
+        <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs">
+          <input
+            type="checkbox"
+            checked={hideErledigt}
+            onChange={(e) => setHideErledigt(e.target.checked)}
+            className="accent-[color:var(--brand-orange)]"
+          />
+          <span>Erledigte ausblenden</span>
+        </label>
         <div className="text-xs text-[color:var(--muted)] tabular-nums">
-          {loading ? "Lade …" : `${entries.length} Zertifikate`}
+          {loading
+            ? "Lade …"
+            : hideErledigt
+            ? `${visibleEntries.length} / ${entries.length}`
+            : `${entries.length}`}{" "}
+          Zertifikate
         </div>
       </div>
 
@@ -214,9 +325,11 @@ export default function ZertifikateList() {
         </div>
       ) : null}
 
-      {entries.length === 0 && !loading ? (
+      {visibleEntries.length === 0 && !loading ? (
         <div className="py-10 text-center text-sm text-[color:var(--muted)]">
-          Keine Zertifikate gefunden. Klick „Aus Drive aktualisieren".
+          {entries.length === 0
+            ? `Keine Zertifikate gefunden. Klick „Aus Drive aktualisieren".`
+            : "Keine offenen Zertifikate (alle erledigt)."}
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -236,18 +349,25 @@ export default function ZertifikateList() {
                 <th className="text-left py-2 pr-3 font-semibold">Person</th>
                 <th className="text-left py-2 pr-3 font-semibold">Seminar</th>
                 <th className="text-left py-2 pr-3 font-semibold">Erstellt</th>
+                <th className="text-left py-2 pr-3 font-semibold">Status</th>
                 <th className="text-right py-2 font-semibold w-32">Aktion</th>
               </tr>
             </thead>
             <tbody>
-              {entries.map((z) => {
+              {visibleEntries.map((z) => {
                 const isSel = selected.has(z.id);
+                const isErledigt = !!z.erledigt_am;
+                const rowBg = isErledigt
+                  ? "bg-emerald-50"
+                  : isSel
+                  ? "bg-[color:var(--brand-yellow)]/10"
+                  : "";
                 return (
                   <tr
                     key={z.id}
                     className={
-                      "border-b border-[color:var(--border)]/60 " +
-                      (isSel ? "bg-[color:var(--brand-yellow)]/10" : "")
+                      "border-b border-[color:var(--border)]/60 transition-colors " +
+                      rowBg
                     }
                   >
                     <td className="py-2 px-2">
@@ -279,6 +399,22 @@ export default function ZertifikateList() {
                     </td>
                     <td className="py-2 pr-3 text-xs text-[color:var(--muted)] tabular-nums whitespace-nowrap">
                       {fmtDate(z.created_at_drive ?? z.modified_at_drive)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {isErledigt ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold"
+                          title={`Erledigt ${fmtDate(z.erledigt_am)}${
+                            z.erledigt_von ? ` von ${z.erledigt_von}` : ""
+                          }`}
+                        >
+                          ✓ erledigt
+                        </span>
+                      ) : (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold inline-block">
+                          offen
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 text-right whitespace-nowrap">
                       {z.google_doc_url ? (
