@@ -528,17 +528,30 @@ function nextSaturday(): string {
   // 6 = Saturday
   const days = (6 - d.getDay() + 7) % 7 || 7;
   d.setDate(d.getDate() + days);
-  return iso(d);
+  return isoLocal(d);
 }
 
-function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+/** YYYY-MM-DD im LOKAL-TZ -- vermeidet UTC-Shift. */
+function isoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 function addDays(s: string, n: number): string {
-  const d = new Date(s + "T00:00:00");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  const d = new Date(
+    Number(m[1]),
+    Number(m[2]) - 1,
+    Number(m[3]),
+    12, // 12:00 lokal -- vermeidet DST-Edgecase
+    0,
+    0,
+  );
   d.setDate(d.getDate() + n);
-  return iso(d);
+  return isoLocal(d);
 }
 
 function fmtDate(s: string): string {
