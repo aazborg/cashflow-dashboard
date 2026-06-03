@@ -13,7 +13,7 @@
 import { getSessionContext } from "@/lib/supabase-server";
 import { canSeeCustomerHappiness } from "@/lib/permissions";
 import { redirect } from "next/navigation";
-import ContactSearch from "@/components/ContactSearch";
+import TeilnehmerManagementTabs from "@/components/TeilnehmerManagementTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export default async function TeilnehmerManagementPage() {
             automatisch aktualisiert.
           </p>
         </div>
-        <ContactSearch />
+        <TeilnehmerManagementTabs />
       </div>
     </main>
   );
