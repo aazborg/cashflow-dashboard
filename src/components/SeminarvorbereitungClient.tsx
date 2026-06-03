@@ -156,14 +156,32 @@ export default function SeminarvorbereitungClient() {
             </button>
           </div>
           <div className="text-xs text-[color:var(--muted)]">
-            {loading ? "Lade …" : week ? (
-              <span>
-                {week.events_count} Seminare · {week.seminartage} Seminar-Tage ·
-                Σ {week.summe_teilnehmer_unique} TN
-              </span>
-            ) : null}
+            {loading ? "Lade …" : null}
           </div>
         </div>
+        {/* Wochen-Statistik */}
+        {week ? (
+          <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+            <StatCard label="Seminare" value={week.events_count} />
+            <StatCard label="Seminar-Tage" value={week.seminartage} />
+            <StatCard
+              label="Teilnehmer-Tage"
+              value={week.summe_teilnehmer_tage}
+              sub={`(${week.summe_teilnehmer_unique} echte Personen)`}
+              big
+            />
+            <StatCard
+              label="Ø TN / Seminar-Tag"
+              value={
+                week.seminartage > 0
+                  ? Math.round(
+                      (week.summe_teilnehmer_tage / week.seminartage) * 10,
+                    ) / 10
+                  : 0
+              }
+            />
+          </div>
+        ) : null}
         {error ? (
           <div className="mt-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
             {error}
@@ -440,6 +458,48 @@ function AddProduktForm({ onSuccess }: { onSuccess: () => void }) {
           {busy ? "Speichere …" : "Anlegen"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+  big,
+}: {
+  label: string;
+  value: number | string;
+  sub?: string;
+  big?: boolean;
+}) {
+  return (
+    <div
+      className={
+        "border rounded-md px-3 py-2 " +
+        (big
+          ? "border-[color:var(--brand-orange)]/40 bg-[color:var(--brand-orange)]/5"
+          : "border-[color:var(--border)] bg-[color:var(--background)]/50")
+      }
+    >
+      <div className="text-[10px] uppercase tracking-wide text-[color:var(--muted)]">
+        {label}
+      </div>
+      <div
+        className={
+          "tabular-nums " +
+          (big
+            ? "text-2xl font-bold text-[color:var(--brand-orange)]"
+            : "text-xl font-semibold")
+        }
+      >
+        {value}
+      </div>
+      {sub ? (
+        <div className="text-[11px] text-[color:var(--muted)] mt-0.5">
+          {sub}
+        </div>
+      ) : null}
     </div>
   );
 }
