@@ -221,7 +221,12 @@ export async function updateEmployeeAction(formData: FormData) {
   const patch: Partial<{
     name: string;
     hubspot_owner_id: string | null;
-    role: "admin" | "member" | "accounting" | "customer_happiness";
+    role:
+      | "admin"
+      | "member"
+      | "accounting"
+      | "customer_happiness"
+      | "seminarmanagement";
     is_setter: boolean;
     is_closer: boolean;
     setter_hours: "20h" | "25h" | "30h" | "35h" | "40h" | null;
@@ -243,6 +248,7 @@ export async function updateEmployeeAction(formData: FormData) {
     || roleRaw === "member"
     || roleRaw === "accounting"
     || roleRaw === "customer_happiness"
+    || roleRaw === "seminarmanagement"
   ) {
     patch.role = roleRaw;
   }

@@ -103,7 +103,12 @@ export interface Employee {
   email: string;
   name: string;
   hubspot_owner_id: string | null;
-  role: "admin" | "member" | "accounting" | "customer_happiness";
+  role:
+    | "admin"
+    | "member"
+    | "accounting"
+    | "customer_happiness"
+    | "seminarmanagement";
   is_setter: boolean;
   is_closer: boolean;
   setter_hours: SetterHours | null;

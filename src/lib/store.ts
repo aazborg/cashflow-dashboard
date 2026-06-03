@@ -410,7 +410,12 @@ interface EmployeeRow {
   email: string;
   name: string;
   hubspot_owner_id: string | null;
-  role: "admin" | "member" | "accounting" | "customer_happiness";
+  role:
+    | "admin"
+    | "member"
+    | "accounting"
+    | "customer_happiness"
+    | "seminarmanagement";
   is_setter: boolean | null;
   is_closer: boolean | null;
   setter_hours: string | null;

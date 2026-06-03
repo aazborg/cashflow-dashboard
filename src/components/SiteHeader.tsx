@@ -11,13 +11,15 @@ interface SiteHeaderProps {
   isSetter: boolean;
   isAccounting: boolean;
   isCustomerHappiness: boolean;
+  isSeminarmanagement: boolean;
   isAuthed: boolean;
   canUseRechnungsBot: boolean;
   canSeeCustomerHappiness: boolean;
+  canSeeSeminarmanagement: boolean;
   signOutAction: () => Promise<void>;
 }
 
-type Section = "sales" | "accounting" | "happiness";
+type Section = "sales" | "accounting" | "happiness" | "seminar";
 
 interface NavItem {
   href: string;
@@ -40,9 +42,11 @@ export function SiteHeader({
   isSetter,
   isAccounting,
   isCustomerHappiness,
+  isSeminarmanagement,
   isAuthed,
   canUseRechnungsBot,
   canSeeCustomerHappiness,
+  canSeeSeminarmanagement,
   signOutAction,
 }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
@@ -54,9 +58,11 @@ export function SiteHeader({
   //   Accounting: Accounting-Rolle oder Admin.
   //   Customer Happiness: customer_happiness-Rolle oder Admin.
   const showSales =
-    isAdmin || (!isAccounting && !isCustomerHappiness);
+    isAdmin ||
+    (!isAccounting && !isCustomerHappiness && !isSeminarmanagement);
   const showAccounting = isAdmin || isAccounting;
   const showHappiness = canSeeCustomerHappiness;
+  const showSeminar = canSeeSeminarmanagement;
 
   const sections: SectionDef[] = useMemo(
     () => [
@@ -108,8 +114,23 @@ export function SiteHeader({
           },
         ],
       },
+      {
+        key: "seminar",
+        label: "Seminarmanagement",
+        show: showSeminar,
+        items: [
+          {
+            href: "/seminarmanagement",
+            label: "Seminarvorbereitung",
+            show: showSeminar,
+          },
+        ],
+      },
     ],
-    [showSales, showAccounting, showHappiness, isAdmin, isSetter, canUseRechnungsBot],
+    [
+      showSales, showAccounting, showHappiness, showSeminar,
+      isAdmin, isSetter, canUseRechnungsBot,
+    ],
   );
 
   // Aktive Sektion herleiten:

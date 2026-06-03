@@ -3,6 +3,7 @@ import "./globals.css";
 import { getSessionContext } from "@/lib/supabase-server";
 import {
   canSeeCustomerHappiness,
+  canSeeSeminarmanagement,
   canUseRechnungsBot,
 } from "@/lib/permissions";
 import { signOut } from "@/lib/auth-actions";
@@ -26,9 +27,11 @@ export default async function RootLayout({
           isAdmin={!!ctx?.isAdmin}
           isAccounting={!!ctx?.isAccounting}
           isCustomerHappiness={!!ctx?.isCustomerHappiness}
+          isSeminarmanagement={!!ctx?.isSeminarmanagement}
           isSetter={!!ctx?.isSetter}
           canUseRechnungsBot={canUseRechnungsBot(ctx)}
           canSeeCustomerHappiness={canSeeCustomerHappiness(ctx)}
+          canSeeSeminarmanagement={canSeeSeminarmanagement(ctx)}
           signOutAction={signOut}
         />
         <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6">

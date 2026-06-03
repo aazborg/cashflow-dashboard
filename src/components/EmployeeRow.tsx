@@ -17,7 +17,11 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
   const [name, setName] = useState(employee.name);
   const [ownerId, setOwnerId] = useState(employee.hubspot_owner_id ?? "");
   const [role, setRole] = useState<
-    "admin" | "member" | "accounting" | "customer_happiness"
+    | "admin"
+    | "member"
+    | "accounting"
+    | "customer_happiness"
+    | "seminarmanagement"
   >(employee.role);
   const [isSetter, setIsSetter] = useState(employee.is_setter);
   const [isCloser, setIsCloser] = useState(employee.is_closer);
@@ -224,6 +228,9 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
                 <option value="customer_happiness">
                   Customer Happiness
                 </option>
+                <option value="seminarmanagement">
+                  Seminarmanagement
+                </option>
                 <option value="admin">Admin</option>
               </select>
               <label className="inline-flex items-center gap-1 text-xs">
@@ -260,6 +267,11 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
               {employee.role === "customer_happiness" ? (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-100 text-pink-700">
                   Customer Happiness
+                </span>
+              ) : null}
+              {employee.role === "seminarmanagement" ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                  Seminarmanagement
                 </span>
               ) : null}
               {employee.is_closer ? (

@@ -108,3 +108,15 @@ export function canSeeCustomerHappiness(
   if (!ctx) return false;
   return !!(ctx.isAdmin || ctx.isCustomerHappiness);
 }
+
+/** Seminarmanagement-Bereich (Vorbereitung, Bestellungen).
+ *  Admin + dedizierte seminarmanagement-Rolle. */
+export function canSeeSeminarmanagement(
+  ctx: Pick<
+    SessionContext,
+    "isAdmin" | "isSeminarmanagement"
+  > | null,
+): boolean {
+  if (!ctx) return false;
+  return !!(ctx.isAdmin || ctx.isSeminarmanagement);
+}
