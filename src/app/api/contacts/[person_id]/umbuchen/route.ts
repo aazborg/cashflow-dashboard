@@ -33,6 +33,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
     old_event_id?: number | string;
     new_event_id?: number | string;
     reason?: string;
+    kostenlos_erlassen?: boolean;
+    kunde_informiert?: boolean;
   } = {};
   try {
     body = await req.json();
@@ -66,6 +68,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
         new_event_id: newEid,
         reason,
         by: ctx.user.email,
+        kostenlos_erlassen: !!body.kostenlos_erlassen,
+        kunde_informiert: !!body.kunde_informiert,
       }),
       cache: "no-store",
     });

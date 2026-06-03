@@ -27,6 +27,15 @@ interface Snapshot {
   error?: string;
 }
 
+interface LsbStatus {
+  is_lsb_praxis: boolean;
+  prev_count: number;
+  free_remaining: number;
+  free_total: number;
+  is_gebuehrenpflichtig: boolean;
+  gebuehr_eur: number;
+}
+
 export default function SeminarRebookingModal({
   personId,
   personName,
@@ -56,6 +65,10 @@ export default function SeminarRebookingModal({
   const [snapLoading, setSnapLoading] = useState(false);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [lsbStatus, setLsbStatus] = useState<LsbStatus | null>(null);
+  const [lsbLoading, setLsbLoading] = useState(false);
+  const [kostenlos, setKostenlos] = useState(false);
+  const [kundeInformiert, setKundeInformiert] = useState(false);
 
   // Reset bei oeffnen
   useEffect(() => {
@@ -64,10 +77,35 @@ export default function SeminarRebookingModal({
       setSnapshot(null);
       setReason("");
       setError(null);
+      setLsbStatus(null);
+      setKostenlos(false);
+      setKundeInformiert(false);
       void loadAlternatives();
+      void loadLsbStatus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const loadLsbStatus = useCallback(async () => {
+    setLsbLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("old_event_name", oldEventName);
+      const res = await fetch(
+        `/cashflow/api/contacts/${personId}/umbuchung-status?${params}`,
+        { cache: "no-store" },
+      );
+      const json = (await res.json()) as LsbStatus & {
+        ok?: boolean;
+        error?: string;
+      };
+      if (res.ok && json.ok !== false) setLsbStatus(json);
+    } catch {
+      /* best-effort */
+    } finally {
+      setLsbLoading(false);
+    }
+  }, [personId, oldEventName]);
 
   const loadAlternatives = useCallback(async () => {
     setLoading(true);
@@ -157,6 +195,8 @@ export default function SeminarRebookingModal({
           old_event_id: oldEventId,
           new_event_id: selected.id,
           reason: reason.trim(),
+          kostenlos_erlassen: lsbStatus?.is_lsb_praxis && kostenlos,
+          kunde_informiert: kundeInformiert,
         }),
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
@@ -311,6 +351,21 @@ export default function SeminarRebookingModal({
             </div>
           )}
 
+          {/* LSB-Praxis-Status */}
+          {selected && lsbStatus?.is_lsb_praxis ? (
+            <LsbStatusPanel
+              status={lsbStatus}
+              kostenlos={kostenlos}
+              setKostenlos={setKostenlos}
+              kundeInformiert={kundeInformiert}
+              setKundeInformiert={setKundeInformiert}
+            />
+          ) : selected && lsbLoading ? (
+            <div className="text-xs text-[color:var(--muted)]">
+              Prüfe LSB-Umbuchungsstatus …
+            </div>
+          ) : null}
+
           {/* Grund */}
           {selected ? (
             <div>
@@ -352,10 +407,30 @@ export default function SeminarRebookingModal({
           <button
             type="button"
             onClick={submit}
-            disabled={!selected || submitting || reason.trim().length < 5}
+            disabled={
+              !selected ||
+              submitting ||
+              reason.trim().length < 5 ||
+              // LSB: wenn gebührenpflichtig und nicht erlassen,
+              // muss "Kunde informiert" angehakt sein
+              !!(
+                lsbStatus?.is_lsb_praxis &&
+                lsbStatus.is_gebuehrenpflichtig &&
+                !kostenlos &&
+                !kundeInformiert
+              )
+            }
             className={
               "px-4 py-1.5 rounded text-sm font-semibold " +
-              (!selected || submitting || reason.trim().length < 5
+              (!selected ||
+              submitting ||
+              reason.trim().length < 5 ||
+              !!(
+                lsbStatus?.is_lsb_praxis &&
+                lsbStatus.is_gebuehrenpflichtig &&
+                !kostenlos &&
+                !kundeInformiert
+              )
                 ? "bg-[color:var(--border)] text-[color:var(--muted)] cursor-not-allowed"
                 : "bg-[color:var(--brand-orange)] text-white hover:opacity-90")
             }
@@ -364,6 +439,94 @@ export default function SeminarRebookingModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function LsbStatusPanel({
+  status,
+  kostenlos,
+  setKostenlos,
+  kundeInformiert,
+  setKundeInformiert,
+}: {
+  status: LsbStatus;
+  kostenlos: boolean;
+  setKostenlos: (b: boolean) => void;
+  kundeInformiert: boolean;
+  setKundeInformiert: (b: boolean) => void;
+}) {
+  const effectivelyKostenpflichtig =
+    status.is_gebuehrenpflichtig && !kostenlos;
+  const palette = effectivelyKostenpflichtig
+    ? "border-red-300 bg-red-50/60"
+    : "border-emerald-300 bg-emerald-50/60";
+  return (
+    <div className={"rounded border p-3 " + palette}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide font-semibold text-[color:var(--muted)]">
+            LSB-Praxismodul · Umbuchungs-Sonderregel
+          </div>
+          <div className="text-sm font-semibold mt-0.5">
+            {status.prev_count} / {status.free_total} kostenfreie
+            Umbuchungen genutzt
+          </div>
+          <div className="text-xs text-[color:var(--muted)] mt-0.5">
+            {effectivelyKostenpflichtig
+              ? `Diese Umbuchung wäre kostenpflichtig (${status.gebuehr_eur.toFixed(0)}€).`
+              : status.free_remaining > 0
+              ? `Diese Umbuchung wäre kostenfrei (${status.free_remaining} verbleiben).`
+              : "Diese Umbuchung ist die letzte kostenfreie."}
+          </div>
+        </div>
+      </div>
+
+      {/* Bei Gebühr: Häkchen Kunde informiert */}
+      {status.is_gebuehrenpflichtig ? (
+        <div className="mt-3 flex flex-col gap-2 text-xs">
+          <label className="inline-flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={kostenlos}
+              onChange={(e) => setKostenlos(e.target.checked)}
+              className="accent-[color:var(--brand-orange)]"
+            />
+            <span>
+              Trotzdem <strong>kostenfrei</strong> durchführen (Override)
+            </span>
+          </label>
+          {!kostenlos ? (
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={kundeInformiert}
+                onChange={(e) => setKundeInformiert(e.target.checked)}
+                className="accent-[color:var(--brand-orange)]"
+              />
+              <span>
+                Kunde wurde über die Gebühr informiert *
+              </span>
+            </label>
+          ) : null}
+        </div>
+      ) : (
+        // Nicht gebührenpflichtig: trotzdem optional Override
+        // anbieten falls Mario später "kostenlos vermerken" will
+        <div className="mt-3 text-xs">
+          <label className="inline-flex items-center gap-2 cursor-pointer text-[color:var(--muted)]">
+            <input
+              type="checkbox"
+              checked={kostenlos}
+              onChange={(e) => setKostenlos(e.target.checked)}
+              className="accent-[color:var(--brand-orange)]"
+            />
+            <span>
+              Diese Umbuchung nicht in den Zähler aufnehmen (Kulanz)
+            </span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }
