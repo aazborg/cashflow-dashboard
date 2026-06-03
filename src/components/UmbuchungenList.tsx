@@ -12,8 +12,12 @@ interface UmbuchungEntry {
   person_email: string | null;
   old_event_id: number;
   old_event_name: string | null;
+  old_event_von: string | null;
+  old_event_bis: string | null;
   new_event_id: number;
   new_event_name: string | null;
+  new_event_von: string | null;
+  new_event_bis: string | null;
   is_lsb_praxis: boolean;
   gebuehrenpflichtig: boolean;
   gebuehr_erlassen: boolean;
@@ -203,19 +207,21 @@ export default function UmbuchungenList() {
                       ) : null}
                     </td>
                     <td className="py-2 pr-3 text-xs">
-                      <div className="truncate max-w-[180px]" title={e.old_event_name ?? ""}>
+                      <div className="truncate max-w-[200px]" title={e.old_event_name ?? ""}>
                         {e.old_event_name || "—"}
                       </div>
-                      <div className="text-[10px] text-[color:var(--muted)]">
-                        ID {e.old_event_id}
+                      <div className="text-[10px] text-[color:var(--muted)] tabular-nums">
+                        {fmtRange(e.old_event_von, e.old_event_bis)} · ID{" "}
+                        {e.old_event_id}
                       </div>
                     </td>
                     <td className="py-2 pr-3 text-xs">
-                      <div className="truncate max-w-[180px]" title={e.new_event_name ?? ""}>
+                      <div className="truncate max-w-[200px]" title={e.new_event_name ?? ""}>
                         {e.new_event_name || "—"}
                       </div>
-                      <div className="text-[10px] text-[color:var(--muted)]">
-                        ID {e.new_event_id}
+                      <div className="text-[10px] text-[color:var(--muted)] tabular-nums">
+                        {fmtRange(e.new_event_von, e.new_event_bis)} · ID{" "}
+                        {e.new_event_id}
                       </div>
                     </td>
                     <td className="py-2 pr-3">
@@ -396,6 +402,22 @@ function RevertModal({
       </div>
     </div>
   );
+}
+
+function fmtRange(von: string | null, bis: string | null): string {
+  const a = fmtDate(von);
+  const b = fmtDate(bis);
+  if (!a && !b) return "—";
+  if (a && b && a === b) return a;
+  if (a && b) return `${a} – ${b}`;
+  return a || b || "—";
+}
+
+function fmtDate(s: string | null): string {
+  if (!s) return "";
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  return String(s);
 }
 
 function fmtDateTime(iso: string | null): string {
