@@ -58,8 +58,13 @@ export default function ContactSeminars({
   const [stornoError, setStornoError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [showStorniert, setShowStorniert] = useState(true);
-  const [groupByReihe, setGroupByReihe] = useState(false);
+  const [groupByReihe, setGroupByReihe] = useState(true);
   const [rebookEvent, setRebookEvent] = useState<SeminarEvent | null>(null);
+  const [lsbStats, setLsbStats] = useState<{
+    prev_count: number;
+    free_total: number;
+    free_remaining: number;
+  } | null>(null);
   // Expand-State pro Zeile + lazy-geladene Schedules
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [schedulesByEvent, setSchedulesByEvent] = useState<
@@ -144,6 +149,34 @@ export default function ContactSeminars({
     void fetchEvents(includeTrainer);
   }, [personId, includeTrainer, fetchEvents]);
 
+  // LSB-Praxis-Umbuchungs-Zaehler laden (best-effort)
+  useEffect(() => {
+    setLsbStats(null);
+    void (async () => {
+      try {
+        const r = await fetch(
+          `/cashflow/api/contacts/${personId}/umbuchung-status`,
+          { cache: "no-store" },
+        );
+        const j = (await r.json()) as {
+          ok?: boolean;
+          prev_count?: number;
+          free_total?: number;
+          free_remaining?: number;
+        };
+        if (r.ok && j.ok !== false) {
+          setLsbStats({
+            prev_count: j.prev_count ?? 0,
+            free_total: j.free_total ?? 2,
+            free_remaining: j.free_remaining ?? 2,
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [personId]);
+
   // Lokale Filterung: Such-String (gegen Titel, ID, Rolle, Reihe) +
   // optional Storniert ausblenden. Bei groupByReihe Sortierung
   // nach Reihen-Name + Datum, damit visuell beieinander.
@@ -219,8 +252,24 @@ export default function ContactSeminars({
               </span>
             ) : null}
           </h3>
-          <div className="text-xs text-[color:var(--muted)] mt-0.5">
-            Live aus SimplyOrg
+          <div className="text-xs text-[color:var(--muted)] mt-0.5 flex items-center gap-2 flex-wrap">
+            <span>Live aus SimplyOrg</span>
+            {lsbStats ? (
+              <span
+                className={
+                  "inline-block text-[10px] px-1.5 py-0.5 rounded font-semibold " +
+                  (lsbStats.prev_count >= lsbStats.free_total
+                    ? "bg-red-100 text-red-700"
+                    : lsbStats.prev_count > 0
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-emerald-100 text-emerald-700")
+                }
+                title="Zaehler ueber alle LSB-Praxismodul-Umbuchungen dieser Person."
+              >
+                LSB-Praxis-Umbuchungen: {lsbStats.prev_count} /{" "}
+                {lsbStats.free_total}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs flex-wrap">
