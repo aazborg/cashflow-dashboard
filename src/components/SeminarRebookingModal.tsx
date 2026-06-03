@@ -315,15 +315,27 @@ export default function SeminarRebookingModal({
           {selected ? (
             <div>
               <label className="text-xs uppercase tracking-wide text-[color:var(--muted)] block mb-1">
-                Grund (Audit-Log)
+                Grund (Audit-Log) *
               </label>
               <input
                 type="text"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="z. B. Terminkollision / Kundenwunsch"
-                className="block w-full border border-[color:var(--border)] rounded-md px-3 py-2 text-sm outline-none focus:border-[color:var(--brand-blue)]"
+                autoFocus
+                className={
+                  "block w-full border rounded-md px-3 py-2 text-sm outline-none " +
+                  (reason.trim().length >= 5
+                    ? "border-[color:var(--border)] focus:border-[color:var(--brand-blue)]"
+                    : "border-amber-300 focus:border-amber-500 bg-amber-50/40")
+                }
               />
+              {reason.trim().length < 5 ? (
+                <div className="text-[11px] text-amber-700 mt-1">
+                  Pflichtfeld · mindestens 5 Zeichen (
+                  {reason.trim().length}/5)
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
