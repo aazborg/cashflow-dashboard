@@ -290,15 +290,18 @@ function ContactDetail({
   refreshing: boolean;
   onRefresh: () => void;
 }) {
-  const adresseLines = [
-    contact.strasse,
-    [contact.plz, contact.ort].filter(Boolean).join(" ") || null,
-    contact.land,
-  ].filter(Boolean);
+  // Defensiv: Land kann in alten Cache-Eintraegen als Dict-String
+  // ("{'CountryNameDE': 'Österreich', ...}") drinstehen, weil das
+  // SimplyOrg-API ein verschachteltes Country-Objekt zurueckliefert.
+  // Wir versuchen den deutschen Namen rauszuziehen.
+  const land = cleanLand(contact.land);
+  const hasAnyAddress = Boolean(
+    contact.strasse || contact.plz || contact.ort || land,
+  );
 
   const pendingDetail =
     contact.adresse_status === "pending" ||
-    (contact.adresse_status === "fetched" && adresseLines.length === 0);
+    (contact.adresse_status === "fetched" && !hasAnyAddress);
 
   return (
     <div className="flex flex-col gap-4">
@@ -325,70 +328,79 @@ function ContactDetail({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-        <DetailRow label="Vorname" value={contact.vorname || "—"} />
-        <DetailRow label="Nachname" value={contact.nachname || "—"} />
-        <DetailRow
-          label="E-Mail"
-          value={
-            contact.email ? (
-              <a
-                href={`mailto:${contact.email}`}
-                className="text-[color:var(--brand-blue)] hover:underline"
-              >
-                {contact.email}
-              </a>
-            ) : (
-              "—"
-            )
-          }
-        />
-        <DetailRow
-          label="Telefon"
-          value={
-            contact.telefon ? (
-              <a
-                href={`tel:${contact.telefon}`}
-                className="text-[color:var(--brand-blue)] hover:underline"
-              >
-                {contact.telefon}
-              </a>
-            ) : (
-              "—"
-            )
-          }
-        />
-        <DetailRow
-          label="Mobil"
-          value={
-            contact.mobil ? (
-              <a
-                href={`tel:${contact.mobil}`}
-                className="text-[color:var(--brand-blue)] hover:underline"
-              >
-                {contact.mobil}
-              </a>
-            ) : (
-              "—"
-            )
-          }
-        />
-        <DetailRow
-          label="Adresse"
-          value={
-            adresseLines.length
-              ? (
-                <span>
-                  {adresseLines.map((l, i) => (
-                    <span key={i} className="block">
-                      {l}
-                    </span>
-                  ))}
-                </span>
+      <div className="space-y-5 text-sm">
+        {/* Block 1: Stammdaten */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+          <DetailRow label="Vorname" value={contact.vorname || "—"} />
+          <DetailRow label="Nachname" value={contact.nachname || "—"} />
+        </div>
+
+        {/* Block 2: Kontakt */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 border-t border-[color:var(--border)] pt-4">
+          <DetailRow
+            label="E-Mail"
+            wide
+            value={
+              contact.email ? (
+                <a
+                  href={`mailto:${contact.email}`}
+                  className="text-[color:var(--brand-blue)] hover:underline break-all"
+                >
+                  {contact.email}
+                </a>
+              ) : (
+                "—"
               )
-              : "—"
-          }
-        />
+            }
+          />
+          <DetailRow
+            label="Telefon"
+            value={
+              contact.telefon ? (
+                <a
+                  href={`tel:${contact.telefon}`}
+                  className="text-[color:var(--brand-blue)] hover:underline"
+                >
+                  {contact.telefon}
+                </a>
+              ) : (
+                "—"
+              )
+            }
+          />
+          <DetailRow
+            label="Mobil"
+            value={
+              contact.mobil ? (
+                <a
+                  href={`tel:${contact.mobil}`}
+                  className="text-[color:var(--brand-blue)] hover:underline"
+                >
+                  {contact.mobil}
+                </a>
+              ) : (
+                "—"
+              )
+            }
+          />
+        </div>
+
+        {/* Block 3: Anschrift */}
+        <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_2fr] gap-x-6 gap-y-3 border-t border-[color:var(--border)] pt-4">
+          <DetailRow
+            label="Straße"
+            wide
+            value={contact.strasse || "—"}
+            className="sm:col-span-3"
+          />
+          <DetailRow label="PLZ" value={contact.plz || "—"} />
+          <DetailRow label="Ort" value={contact.ort || "—"} className="sm:col-span-2" />
+          <DetailRow
+            label="Land"
+            value={land || "—"}
+            className="sm:col-span-3"
+          />
+        </div>
       </div>
 
       <div className="border-t border-[color:var(--border)] pt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-[color:var(--muted)]">
@@ -443,12 +455,17 @@ function ContactDetail({
 function DetailRow({
   label,
   value,
+  className,
+  wide: _wide,
 }: {
   label: string;
   value: React.ReactNode;
+  className?: string;
+  /** Reserviert; aktuell rein semantisch fuer breitere Felder. */
+  wide?: boolean;
 }) {
   return (
-    <div className="flex flex-col">
+    <div className={"flex flex-col " + (className ?? "")}>
       <span className="text-[11px] uppercase tracking-wide text-[color:var(--muted)]">
         {label}
       </span>
@@ -457,6 +474,21 @@ function DetailRow({
       </span>
     </div>
   );
+}
+
+/** Bereinigt das `land`-Feld. Alte Cache-Eintraege koennen das
+ *  Land als python-dict-String ("{'CountryNameDE': 'Österreich', ...}")
+ *  drinstehen haben -- wir extrahieren die deutsche Bezeichnung.
+ *  Beim naechsten Refresh wird das Feld vom Bot sauber ueberschrieben. */
+function cleanLand(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  if (!s.startsWith("{")) return s;
+  const reCountryNameDE = /['"]CountryNameDE['"]\s*:\s*['"]([^'"]+)['"]/;
+  const reCountryName = /['"]CountryName['"]\s*:\s*['"]([^'"]+)['"]/;
+  const m = s.match(reCountryNameDE) ?? s.match(reCountryName);
+  return m ? m[1] : null;
 }
 
 function adresseStatusLabel(s: Contact["adresse_status"]): string {
