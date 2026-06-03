@@ -35,6 +35,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     reason?: string;
     kostenlos_erlassen?: boolean;
     kunde_informiert?: boolean;
+    allow_overbook?: boolean;
   } = {};
   try {
     body = await req.json();
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
         by: ctx.user.email,
         kostenlos_erlassen: !!body.kostenlos_erlassen,
         kunde_informiert: !!body.kunde_informiert,
+        allow_overbook: !!body.allow_overbook,
       }),
       cache: "no-store",
     });

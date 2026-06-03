@@ -76,6 +76,7 @@ export default function SeminarRebookingModal({
   const [lsbLoading, setLsbLoading] = useState(false);
   const [kostenlos, setKostenlos] = useState(false);
   const [kundeInformiert, setKundeInformiert] = useState(false);
+  const [allowOverbook, setAllowOverbook] = useState(false);
 
   // Reset bei oeffnen
   useEffect(() => {
@@ -87,6 +88,7 @@ export default function SeminarRebookingModal({
       setLsbStatus(null);
       setKostenlos(false);
       setKundeInformiert(false);
+      setAllowOverbook(false);
       void loadAlternatives();
       void loadLsbStatus();
     }
@@ -214,6 +216,7 @@ export default function SeminarRebookingModal({
   // Belegungs-Snapshot fuer ausgewaehltes Alternativ-Seminar
   useEffect(() => {
     setSnapshot(null);
+    setAllowOverbook(false);
     if (!selected || selected.typ !== "event") return;
     void (async () => {
       setSnapLoading(true);
@@ -249,6 +252,7 @@ export default function SeminarRebookingModal({
           reason: reason.trim(),
           kostenlos_erlassen: lsbStatus?.is_lsb_praxis && kostenlos,
           kunde_informiert: kundeInformiert,
+          allow_overbook: allowOverbook,
         }),
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
@@ -338,13 +342,39 @@ export default function SeminarRebookingModal({
                 </button>
               </div>
               {selected.typ === "event" ? (
-                <div className="mt-3">
+                <div className="mt-3 space-y-2">
                   {snapLoading ? (
                     <div className="text-xs text-[color:var(--muted)]">
                       Belegung wird geladen …
                     </div>
                   ) : snapshot?.ok ? (
-                    <BelegungsBadge snap={snapshot} />
+                    <>
+                      <BelegungsBadge snap={snapshot} />
+                      {snapshot.voll ? (
+                        <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs">
+                          <div className="font-semibold text-red-800 mb-1">
+                            ⚠ Seminar ist ausgebucht (
+                            {snapshot.aktive ?? "?"} /{" "}
+                            {snapshot.max_registration ?? "?"} angemeldet)
+                          </div>
+                          <label className="inline-flex items-start gap-2 cursor-pointer text-red-700">
+                            <input
+                              type="checkbox"
+                              checked={allowOverbook}
+                              onChange={(e) =>
+                                setAllowOverbook(e.target.checked)
+                              }
+                              className="accent-red-600 mt-0.5"
+                            />
+                            <span>
+                              Trotzdem buchen (Überbuchung in Kauf nehmen).
+                              Mir ist bewusst dass das Seminar
+                              überbucht wird.
+                            </span>
+                          </label>
+                        </div>
+                      ) : null}
+                    </>
                   ) : snapshot && !snapshot.ok ? (
                     <div className="text-xs text-amber-700">
                       Belegung nicht ladbar: {snapshot.error}
@@ -378,14 +408,8 @@ export default function SeminarRebookingModal({
                       <button
                         key={`${s.typ}-${s.id}`}
                         type="button"
-                        onClick={() => !isVoll && setSelected(s)}
-                        disabled={isVoll}
-                        className={
-                          "w-full text-left px-3 py-2.5 " +
-                          (isVoll
-                            ? "opacity-60 cursor-not-allowed"
-                            : "hover:bg-[color:var(--brand-yellow)]/20")
-                        }
+                        onClick={() => setSelected(s)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-[color:var(--brand-yellow)]/20"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="font-medium text-sm tabular-nums">
@@ -486,30 +510,29 @@ export default function SeminarRebookingModal({
           <button
             type="button"
             onClick={submit}
-            disabled={
-              !selected ||
-              submitting ||
-              reason.trim().length < 5 ||
-              // LSB: wenn gebührenpflichtig und nicht erlassen,
-              // muss "Kunde informiert" angehakt sein
-              !!(
+            disabled={(() => {
+              if (!selected || submitting) return true;
+              if (reason.trim().length < 5) return true;
+              if (
                 lsbStatus?.is_lsb_praxis &&
                 lsbStatus.is_gebuehrenpflichtig &&
                 !kostenlos &&
                 !kundeInformiert
               )
-            }
+                return true;
+              if (snapshot?.voll && !allowOverbook) return true;
+              return false;
+            })()}
             className={
               "px-4 py-1.5 rounded text-sm font-semibold " +
               (!selected ||
               submitting ||
               reason.trim().length < 5 ||
-              !!(
-                lsbStatus?.is_lsb_praxis &&
+              (lsbStatus?.is_lsb_praxis &&
                 lsbStatus.is_gebuehrenpflichtig &&
                 !kostenlos &&
-                !kundeInformiert
-              )
+                !kundeInformiert) ||
+              (snapshot?.voll && !allowOverbook)
                 ? "bg-[color:var(--border)] text-[color:var(--muted)] cursor-not-allowed"
                 : "bg-[color:var(--brand-orange)] text-white hover:opacity-90")
             }
