@@ -70,7 +70,9 @@ export default function ContactSearch() {
     try {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
-      params.set("limit", "100");
+      // Mit aktiver Suche: bis zu 500 Treffer (deckt > 99% der Faelle ab).
+      // Ohne Suche: nur 100 zuletzt aktualisierte als Default-Stoeber-Liste.
+      params.set("limit", q ? "500" : "100");
       const res = await fetch(`/cashflow/api/contacts/search?${params}`, {
         signal: ctrl.signal,
         cache: "no-store",
@@ -204,8 +206,10 @@ export default function ContactSearch() {
             {loading
               ? "Suche …"
               : query
-              ? `${total} Treffer für „${query}"`
-              : `${total} zuletzt aktualisiert`}
+              ? total >= 500
+                ? `${total}+ Treffer für „${query}" (max 500 angezeigt — bitte präziser tippen)`
+                : `${total} Treffer für „${query}"`
+              : `${total} zuletzt aktualisiert (gesamt ~2.500 — beim Tippen wird gesucht)`}
           </span>
         </div>
 

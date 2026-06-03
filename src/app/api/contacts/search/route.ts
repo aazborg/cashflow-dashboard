@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
   const limit = Math.min(
-    200,
+    1000,
     Math.max(
       1,
       Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50,
