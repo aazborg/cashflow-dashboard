@@ -14,6 +14,8 @@ interface Schedule {
   schedule_id: number;
   schedule_date: string;
   event_id: number;
+  start_time?: string | null;
+  end_time?: string | null;
   trainer_names?: string;
   location_name?: string;
   title?: string;
@@ -530,6 +532,12 @@ function SchedulesPanel({
           >
             <div className="text-xs font-medium tabular-nums">
               {fmtScheduleDate(s.schedule_date)}
+              {s.start_time ? (
+                <span className="ml-1 text-[color:var(--muted)] font-normal">
+                  · {s.start_time}
+                  {s.end_time ? `–${s.end_time}` : ""}
+                </span>
+              ) : null}
             </div>
             {s.title ? (
               <div className="text-[11px] text-[color:var(--muted)] mt-0.5 truncate">
