@@ -8,7 +8,7 @@
 CREATE TABLE IF NOT EXISTS public.accounting_bank_accounts (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     -- "erste_giro" | "erste_kk" | "amex" | "paypal" | "gocardless"
-    quelle          text NOT NULL,
+    quelle          text NOT NULL UNIQUE,
     bezeichnung     text NOT NULL,
     iban            text,           -- optional, kann auch null sein (KK)
     waehrung        text NOT NULL DEFAULT 'EUR',
@@ -134,4 +134,4 @@ VALUES
     ('amex',       'American Express Business',     'EUR'),
     ('paypal',     'PayPal Business',               'EUR'),
     ('gocardless', 'GoCardless Auszahlungen',       'EUR')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (quelle) DO NOTHING;
