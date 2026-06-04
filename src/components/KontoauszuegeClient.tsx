@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import MatchInvoiceModal from "./MatchInvoiceModal";
 
 const API = "/cashflow/api/buchhaltung";
 
@@ -43,6 +44,7 @@ export default function KontoauszuegeClient() {
   const [loading, setLoading] = useState(false);
   const [matching, setMatching] = useState(false);
   const [matchMsg, setMatchMsg] = useState<string | null>(null);
+  const [manualTrx, setManualTrx] = useState<Txn | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -235,6 +237,18 @@ export default function KontoauszuegeClient() {
         ))}
       </div>
 
+      {/* Manuell-Match Modal */}
+      {manualTrx && (
+        <MatchInvoiceModal
+          trx={manualTrx}
+          onClose={() => setManualTrx(null)}
+          onSuccess={() => {
+            setManualTrx(null);
+            void loadAll();
+          }}
+        />
+      )}
+
       {/* Transaktions-Tabelle */}
       <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
@@ -301,9 +315,21 @@ export default function KontoauszuegeClient() {
                         ignoriert
                       </span>
                     ) : (
-                      <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
-                        offen
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                          offen
+                        </span>
+                        {t.amount < 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setManualTrx(t)}
+                            className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--accent)] hover:bg-[color:var(--surface)]"
+                            title="Rechnung manuell zuordnen"
+                          >
+                            🔗 Matchen
+                          </button>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
