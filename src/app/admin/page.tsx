@@ -1,3 +1,4 @@
+import Link from "next/link";
 import DecideDeleteButtons from "@/components/DecideDeleteButtons";
 import EmployeeRow from "@/components/EmployeeRow";
 import HubspotSyncButton from "@/components/HubspotSyncButton";
@@ -42,6 +43,24 @@ export default async function AdminPage() {
           Lösch-Anfragen freigeben und Mitarbeiter einladen.
         </p>
       </div>
+
+      <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-[color:var(--border)] flex items-center justify-between gap-2">
+          <div>
+            <h2 className="font-semibold">Terminänderungen</h2>
+            <p className="text-xs text-[color:var(--muted)] mt-1">
+              Welches Seminar wurde wann von welchem auf welchen Termin
+              verschoben — Diffs aus den täglichen SimplyOrg-Snapshots.
+            </p>
+          </div>
+          <Link
+            href="/admin/terminaenderungen"
+            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm whitespace-nowrap"
+          >
+            Öffnen
+          </Link>
+        </div>
+      </section>
 
       <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-[color:var(--border)]">

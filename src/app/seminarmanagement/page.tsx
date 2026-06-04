@@ -1,13 +1,10 @@
 /**
- * Seminarmanagement > Seminarvorbereitung.
- *
- * Wochen-Ansicht der Wien-Praesenz-Seminare + konfigurierbare
- * Produkt-Verbrauchsschluessel fuer die Lieferung.
+ * Seminarmanagement: Tabs fuer Seminarvorbereitung + Kalender-Historie.
  */
 import { getSessionContext } from "@/lib/supabase-server";
 import { canSeeSeminarmanagement } from "@/lib/permissions";
 import { redirect } from "next/navigation";
-import SeminarvorbereitungClient from "@/components/SeminarvorbereitungClient";
+import SeminarmanagementTabs from "@/components/SeminarmanagementTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +20,10 @@ export default async function SeminarmanagementPage() {
             Seminarmanagement
           </h1>
           <p className="text-sm text-[color:var(--muted)] mt-1">
-            Vorbereitung & Lieferungen. Lieferwoche Sa–Fr.
+            Vorbereitung & Lieferungen + tägliche Kalender-Historie.
           </p>
         </div>
-        <SeminarvorbereitungClient />
+        <SeminarmanagementTabs />
       </div>
     </main>
   );
