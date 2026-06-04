@@ -177,7 +177,28 @@ export async function POST(req: NextRequest) {
       ? [body]
       : [];
 
+  // Blacklist einmal laden — wird fuer beide Pfade unten reused.
+  const { isBlacklisted, loadBlacklist } = await import(
+    "@/lib/hubspot-blacklist"
+  );
+  const blacklist = await loadBlacklist();
+
   for (const item of legacyItems) {
+    if (
+      isBlacklisted(blacklist, {
+        hubspot_deal_id: item.hubspot_deal_id,
+        email: item.email,
+        vorname: item.vorname,
+        nachname: item.nachname,
+      })
+    ) {
+      results.push({
+        skipped: true,
+        reason: "blacklisted",
+        hubspot_deal_id: item.hubspot_deal_id,
+      });
+      continue;
+    }
     const owner = await resolveOwner(
       employees,
       item.owner_id,
@@ -253,8 +274,18 @@ export async function POST(req: NextRequest) {
           betrag: Number(deal.properties.amount ?? 0),
           default_start_datum,
         });
+        if (result.blacklisted) {
+          results.push({
+            skipped: true,
+            reason: "blacklisted",
+            hubspot_deal_id: dealId,
+            vorname,
+            nachname,
+          });
+          continue;
+        }
         results.push({
-          id: result.deal.id,
+          id: result.deal?.id ?? null,
           hubspot_deal_id: dealId,
           created: result.created,
         });

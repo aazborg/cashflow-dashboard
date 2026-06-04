@@ -268,6 +268,7 @@ export interface SyncSummary {
   created: number;
   linked: number;
   skipped_existing: number;
+  skipped_blacklisted: number;
   unmatched_owners: number;
   errors: { hubspot_deal_id: string; message: string }[];
   duration_ms: number;
@@ -325,6 +326,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
   let created = 0;
   let linked = 0;
   let skipped_existing = 0;
+  let skipped_blacklisted = 0;
   let unmatched_owners = 0;
   const errors: SyncSummary["errors"] = [];
 
@@ -434,7 +436,8 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
           betrag: Number.isFinite(betrag) ? betrag : 0,
           default_start_datum,
         });
-        if (result.created) created++;
+        if (result.blacklisted) skipped_blacklisted++;
+        else if (result.created) created++;
         else if (result.linked) linked++;
         else skipped_existing++;
       } catch (err) {
@@ -455,6 +458,7 @@ export async function syncHubspotWonDeals(): Promise<SyncSummary> {
     created,
     linked,
     skipped_existing,
+    skipped_blacklisted,
     unmatched_owners,
     errors,
     duration_ms: Date.now() - started,

@@ -95,6 +95,7 @@ export function SiteHeader({
         items: [
           { href: "/daten", label: "Daten", show: showAccounting },
           { href: "/zahlungen", label: "Zahlungen", show: showAccounting },
+          { href: "/buchhaltung", label: "Buchhaltung", show: showAccounting },
           {
             href: "/notiz",
             label: "Angebots-Notiz",

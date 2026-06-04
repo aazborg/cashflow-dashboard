@@ -47,6 +47,25 @@ export default async function AdminPage() {
       <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
         <div className="px-4 py-3 border-b border-[color:var(--border)] flex items-center justify-between gap-2">
           <div>
+            <h2 className="font-semibold">HubSpot-Import-Sperrliste</h2>
+            <p className="text-xs text-[color:var(--muted)] mt-1">
+              Kontakte, die nicht mehr aus HubSpot importiert werden sollen
+              (z. B. Fehleinträge, Testdaten). Sperre setzt du direkt in der
+              Deal-Liste über „Nicht mehr importieren".
+            </p>
+          </div>
+          <Link
+            href="/admin/import-blacklist"
+            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm whitespace-nowrap"
+          >
+            Verwalten
+          </Link>
+        </div>
+      </section>
+
+      <section className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+        <div className="px-4 py-3 border-b border-[color:var(--border)] flex items-center justify-between gap-2">
+          <div>
             <h2 className="font-semibold">Terminänderungen</h2>
             <p className="text-xs text-[color:var(--muted)] mt-1">
               Welches Seminar wurde wann von welchem auf welchen Termin

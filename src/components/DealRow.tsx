@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect } from "react";
 import {
+  blockHubspotImportAction,
   requestDeleteAction,
   updateDealAction,
 } from "@/lib/actions";
@@ -193,6 +194,26 @@ export default function DealRow({
     const fd = new FormData();
     fd.set("id", deal.id);
     startTransition(() => requestDeleteAction(fd));
+  }
+
+  function blockImport() {
+    const who = `${deal.vorname} ${deal.nachname}`.trim() || "diesen Kontakt";
+    const matchInfo = deal.email
+      ? `\n\nGesperrt wird per E-Mail "${deal.email}" — alle künftigen Deals dieser Adresse werden blockiert.`
+      : `\n\nGesperrt wird per Name "${who}" (keine E-Mail vorhanden) — alle künftigen Deals mit diesem Namen werden blockiert.`;
+    if (
+      !confirm(
+        `${who} dauerhaft vom HubSpot-Import ausschließen?` +
+          matchInfo +
+          "\n\nDer aktuelle Eintrag wird ebenfalls gelöscht. Aufhebbar im Admin → Import-Sperrliste.",
+      )
+    )
+      return;
+    const reason = prompt("Grund (optional, für die Sperrliste):") ?? "";
+    const fd = new FormData();
+    fd.set("id", deal.id);
+    if (reason.trim()) fd.set("reason", reason.trim());
+    startTransition(() => blockHubspotImportAction(fd));
   }
 
   const rate =
@@ -654,6 +675,16 @@ export default function DealRow({
                 >
                   Löschen
                 </button>
+                {isAdmin && deal.hubspot_deal_id ? (
+                  <button
+                    onClick={blockImport}
+                    disabled={pending}
+                    title="Diesen Kontakt dauerhaft vom HubSpot-Import ausschließen"
+                    className="text-xs px-2 py-1 rounded text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    Nicht mehr importieren
+                  </button>
+                ) : null}
               </>
             )}
           </td>

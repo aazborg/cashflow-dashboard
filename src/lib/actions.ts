@@ -185,6 +185,80 @@ export async function requestDeleteAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
+/**
+ * Sperrt einen Kontakt fuer den HubSpot-Import. Drei Wirkungen:
+ *   - blockiert per hubspot_deal_id (haargenau dieser Deal)
+ *   - blockiert per email (alle Deals dieser Person)
+ *   - blockiert per vorname+nachname (Fallback ohne Email)
+ * Loescht ausserdem den existierenden Deal aus der deals-Tabelle,
+ * damit er sofort aus der Uebersicht verschwindet.
+ */
+export async function blockHubspotImportAction(formData: FormData) {
+  const ctx = await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const existing = await getDeal(id);
+  if (!existing) return;
+
+  const { supabaseAdmin } = await import("./supabase");
+  const sb = supabaseAdmin();
+
+  const reason =
+    String(formData.get("reason") ?? "").trim() || "manuell gesperrt";
+  const payload: Record<string, unknown> = {
+    reason,
+    blocked_by_email: ctx.user.email,
+  };
+  if (existing.hubspot_deal_id) {
+    payload.hubspot_deal_id = existing.hubspot_deal_id;
+  }
+  if (existing.email) {
+    payload.email = existing.email;
+  } else {
+    // Ohne Email: blockieren wir per Vorname+Nachname
+    if (existing.vorname) payload.vorname = existing.vorname;
+    if (existing.nachname) payload.nachname = existing.nachname;
+  }
+
+  const { error: insErr } = await sb
+    .from("hubspot_import_blacklist")
+    .upsert(payload, {
+      onConflict: existing.hubspot_deal_id
+        ? "hubspot_deal_id"
+        : existing.email
+          ? "(lower(email))"
+          : undefined,
+      ignoreDuplicates: true,
+    });
+  if (insErr) {
+    // ON CONFLICT auf partial unique index ist tricky in PostgREST --
+    // bei Duplikat sind wir trotzdem fertig (= schon geblockt).
+    if (!/duplicate|unique/i.test(insErr.message)) {
+      throw new Error("Blacklist-Eintrag fehlgeschlagen: " + insErr.message);
+    }
+  }
+
+  await deleteDealsByIds([id]);
+  revalidatePath("/daten");
+  revalidatePath("/admin");
+  revalidatePath("/");
+}
+
+/** Hebt eine Sperre wieder auf. */
+export async function unblockHubspotImportAction(formData: FormData) {
+  await requireAdmin();
+  const blacklistId = String(formData.get("blacklist_id") ?? "");
+  if (!blacklistId) return;
+  const { supabaseAdmin } = await import("./supabase");
+  const { error } = await supabaseAdmin()
+    .from("hubspot_import_blacklist")
+    .delete()
+    .eq("id", blacklistId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+  revalidatePath("/admin/import-blacklist");
+}
+
 export async function decideDeleteAction(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") ?? "");

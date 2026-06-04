@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase";
+import { isBlacklistedFresh } from "./hubspot-blacklist";
 import type {
   Deal,
   DeleteRequest,
@@ -346,7 +347,25 @@ export async function insertHubspotDealIfMissing(
     betrag: number;
     default_start_datum: string | null;
   },
-): Promise<{ deal: Deal; created: boolean; linked: boolean }> {
+): Promise<{
+  deal: Deal | null;
+  created: boolean;
+  linked: boolean;
+  blacklisted?: boolean;
+}> {
+  // 0) Blacklist-Check: gesperrte Kontakte werden nie importiert.
+  //    Match per dealId, email oder vorname+nachname (Fallback fuer
+  //    Kontakte ohne Email).
+  const blocked = await isBlacklistedFresh({
+    hubspot_deal_id,
+    email: data.email,
+    vorname: data.vorname,
+    nachname: data.nachname,
+  });
+  if (blocked) {
+    return { deal: null, created: false, linked: false, blacklisted: true };
+  }
+
   // 1) Direkter Match per hubspot_deal_id
   const byHubspotId = await getDealByHubspotId(hubspot_deal_id);
   if (byHubspotId) {
