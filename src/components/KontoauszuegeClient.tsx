@@ -1,0 +1,344 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+
+const API = "/cashflow/api/buchhaltung";
+
+type Txn = {
+  id: string;
+  booking_date: string;
+  value_date: string | null;
+  amount: number;
+  waehrung: string;
+  counterparty_name: string | null;
+  counterparty_iban: string | null;
+  purpose: string | null;
+  status: string;
+  accounting_bank_accounts?: { bezeichnung: string; quelle: string } | null;
+};
+
+type Overview = { bezahlt: number; offen: number; unbekannt: number };
+
+const ACCOUNTS = [
+  { slug: "erste_giro", label: "Erste Bank Girokonto" },
+  { slug: "erste_kk", label: "Erste Bank Kreditkarte" },
+  { slug: "amex", label: "American Express" },
+  { slug: "paypal", label: "PayPal Business" },
+  { slug: "gocardless", label: "GoCardless Payouts" },
+];
+
+function eur(v: number, w = "EUR") {
+  return new Intl.NumberFormat("de-AT", {
+    style: "currency",
+    currency: w || "EUR",
+  }).format(Number(v) || 0);
+}
+
+export default function KontoauszuegeClient() {
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [account, setAccount] = useState("erste_giro");
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [txns, setTxns] = useState<Txn[]>([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [matching, setMatching] = useState(false);
+  const [matchMsg, setMatchMsg] = useState<string | null>(null);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ovRes, txRes] = await Promise.all([
+        fetch(`${API}/match-overview`, { cache: "no-store" }),
+        fetch(
+          `${API}/transactions?limit=300${
+            statusFilter ? `&status=${statusFilter}` : ""
+          }`,
+          { cache: "no-store" },
+        ),
+      ]);
+      const ov = await ovRes.json();
+      const tx = await txRes.json();
+      if (ov.ok)
+        setOverview({
+          bezahlt: ov.bezahlt,
+          offen: ov.offen,
+          unbekannt: ov.unbekannt,
+        });
+      if (tx.ok) setTxns(tx.transactions ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
+
+  const uploadFile = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setUploadMsg(null);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("bank_account", account);
+        const res = await fetch(`${API}/kontoauszug/upload`, {
+          method: "POST",
+          body: fd,
+        });
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          setUploadMsg(`Fehler: ${j.error ?? res.status}`);
+        } else if (j.status === "duplicate") {
+          setUploadMsg(
+            `Auszug schon importiert (${j.transactions_already} Buchungen vorhanden).`,
+          );
+        } else {
+          setUploadMsg(
+            `OK — Format "${j.format}", ${j.transactions_total} Buchungen, ${j.transactions_new} neu importiert.`,
+          );
+          await loadAll();
+        }
+      } catch (e) {
+        setUploadMsg(`Fehler: ${String(e)}`);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [account, loadAll],
+  );
+
+  const triggerMatch = useCallback(async () => {
+    setMatching(true);
+    setMatchMsg(null);
+    try {
+      const res = await fetch(`${API}/match-run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit_trx: 500 }),
+      });
+      const j = await res.json();
+      if (!res.ok || !j.ok)
+        setMatchMsg(`Fehler: ${j.error ?? res.status}`);
+      else
+        setMatchMsg(
+          `OK — ${j.matched_strong} stark + ${j.matched_loose} locker gematched aus ${j.trxs_checked} Buchungen.`,
+        );
+      await loadAll();
+    } catch (e) {
+      setMatchMsg(`Fehler: ${String(e)}`);
+    } finally {
+      setMatching(false);
+    }
+  }, [loadAll]);
+
+  return (
+    <div className="space-y-4">
+      {/* Status-Karten */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <StatusCard
+          label="Bezahlt"
+          value={overview?.bezahlt ?? "—"}
+          tone="emerald"
+          hint="Rechnungen mit Match"
+        />
+        <StatusCard
+          label="Offen"
+          value={overview?.offen ?? "—"}
+          tone="amber"
+          hint="Rechnungen ohne Match"
+        />
+        <StatusCard
+          label="Unbekannte Buchungen"
+          value={overview?.unbekannt ?? "—"}
+          tone="sky"
+          hint="Bank-Buchungen ohne Rechnung"
+        />
+      </div>
+
+      {/* Upload */}
+      <div className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-3">
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Konto</span>
+            <select
+              value={account}
+              onChange={(e) => setAccount(e.target.value)}
+              className="px-2 py-1.5 rounded border border-[color:var(--border)] bg-white text-sm min-w-[220px]"
+            >
+              {ACCOUNTS.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 flex-1 min-w-[260px]">
+            <span className="text-xs text-[color:var(--muted)]">
+              Datei (CSV / JSON / XML / PDF)
+            </span>
+            <input
+              type="file"
+              accept=".csv,.json,.xml,.pdf,.txt"
+              disabled={uploading}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void uploadFile(f);
+                e.target.value = "";
+              }}
+              className="text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={triggerMatch}
+            disabled={matching}
+            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm disabled:opacity-50"
+          >
+            {matching ? "Match läuft…" : "Auto-Match starten"}
+          </button>
+        </div>
+        {uploadMsg && (
+          <div className="text-xs text-[color:var(--muted)]">{uploadMsg}</div>
+        )}
+        {matchMsg && (
+          <div className="text-xs text-[color:var(--muted)]">{matchMsg}</div>
+        )}
+        <div className="text-xs text-[color:var(--muted)]">
+          Erste Bank Business: CSV-Export aus George. Erste KK: PDF-Auszug.
+          AmEx: CSV oder PDF. PayPal: CSV-Export (alle Transaktionen).
+          GoCardless: JSON aus API-Export.
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="flex gap-2 flex-wrap">
+        {[
+          { k: "", l: "Alle" },
+          { k: "open", l: "Offen" },
+          { k: "matched", l: "Gematched" },
+          { k: "ignored", l: "Ignoriert" },
+        ].map((f) => (
+          <button
+            key={f.k}
+            type="button"
+            onClick={() => setStatusFilter(f.k)}
+            className={
+              "text-xs px-2 py-1 rounded border transition " +
+              (statusFilter === f.k
+                ? "border-[color:var(--foreground)] bg-[color:var(--foreground)] text-white"
+                : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
+            }
+          >
+            {f.l}
+          </button>
+        ))}
+      </div>
+
+      {/* Transaktions-Tabelle */}
+      <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[color:var(--surface)] text-left">
+              <tr>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">Datum</th>
+                <th className="px-3 py-2 font-medium">Konto</th>
+                <th className="px-3 py-2 font-medium">Gegenpartei</th>
+                <th className="px-3 py-2 font-medium">Verwendungszweck</th>
+                <th className="px-3 py-2 font-medium text-right">Betrag</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && txns.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                    Lade…
+                  </td>
+                </tr>
+              )}
+              {!loading && txns.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                    Noch keine Buchungen. Lade einen Auszug hoch.
+                  </td>
+                </tr>
+              )}
+              {txns.map((t) => (
+                <tr key={t.id} className="border-t border-[color:var(--border)] align-top">
+                  <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                    {t.booking_date}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-[color:var(--muted)] whitespace-nowrap">
+                    {t.accounting_bank_accounts?.bezeichnung ?? "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {t.counterparty_name ?? "—"}
+                    {t.counterparty_iban && (
+                      <div className="text-xs font-mono text-[color:var(--muted)]">
+                        {t.counterparty_iban}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    <div className="line-clamp-2">{t.purpose ?? "—"}</div>
+                  </td>
+                  <td
+                    className={
+                      "px-3 py-2 text-right whitespace-nowrap font-semibold " +
+                      (t.amount < 0 ? "text-red-700" : "text-emerald-700")
+                    }
+                  >
+                    {eur(t.amount, t.waehrung)}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {t.status === "matched" ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                        ✓ gematched
+                      </span>
+                    ) : t.status === "ignored" ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">
+                        ignoriert
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                        offen
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusCard({
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  label: string;
+  value: number | string;
+  tone: "emerald" | "amber" | "sky";
+  hint: string;
+}) {
+  const colors: Record<string, string> = {
+    emerald: "border-emerald-300 bg-emerald-50",
+    amber: "border-amber-300 bg-amber-50",
+    sky: "border-sky-300 bg-sky-50",
+  };
+  return (
+    <div className={"rounded-lg border p-5 " + colors[tone]}>
+      <div className="text-xs text-[color:var(--muted)]">{label}</div>
+      <div className="text-3xl font-semibold text-[color:var(--foreground)] mt-2">
+        {value}
+      </div>
+      <div className="text-xs text-[color:var(--muted)] mt-3">{hint}</div>
+    </div>
+  );
+}
