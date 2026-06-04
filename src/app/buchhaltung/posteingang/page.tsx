@@ -1,4 +1,5 @@
-import { ComingSoon, PageHeader } from "@/components/BuchhaltungUiBits";
+import { PageHeader } from "@/components/BuchhaltungUiBits";
+import PosteingangClient from "@/components/PosteingangClient";
 
 export const dynamic = "force-dynamic";
 
@@ -7,12 +8,9 @@ export default function PosteingangPage() {
     <div className="space-y-6">
       <PageHeader
         title="Posteingang"
-        subtitle="Eingehende Belege, noch nicht zugeordnet."
+        subtitle="Mails an rechnung@mynlp.at — gesichtet, gefiltert, sortiert."
       />
-      <ComingSoon
-        title="Belege im Posteingang"
-        what="Eingehende Rechnungen aus der Forward-Adresse landen hier zuerst. Du kannst sie sichten, Kategorie + Lieferant zuweisen und dann in die Rechnungen-Liste verschieben."
-      />
+      <PosteingangClient />
     </div>
   );
 }
