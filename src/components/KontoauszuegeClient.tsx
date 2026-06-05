@@ -20,6 +20,17 @@ type Txn = {
 
 type Overview = { bezahlt: number; offen: number; unbekannt: number };
 
+type Statement = {
+  id: string;
+  format: string;
+  original_filename: string | null;
+  zeitraum_von: string | null;
+  zeitraum_bis: string | null;
+  transaktionen_total: number;
+  created_at: string;
+  accounting_bank_accounts?: { bezeichnung: string; quelle: string } | null;
+};
+
 const ACCOUNTS = [
   { slug: "erste_giro", label: "Erste Bank Girokonto" },
   { slug: "erste_kk", label: "Erste Bank Kreditkarte" },
@@ -58,6 +69,9 @@ export default function KontoauszuegeClient() {
   const [quelleFilter, setQuelleFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  // Hochgeladene Auszuege
+  const [statements, setStatements] = useState<Statement[]>([]);
+  const [showStatements, setShowStatements] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -71,12 +85,14 @@ export default function KontoauszuegeClient() {
       if (directionFilter === "out") txParams.set("direction", "out");
       if (!showIgnored && !statusFilter)
         txParams.set("exclude_status", "ignored");
-      const [ovRes, txRes] = await Promise.all([
+      const [ovRes, txRes, stRes] = await Promise.all([
         fetch(`${API}/match-overview`, { cache: "no-store" }),
         fetch(`${API}/transactions?${txParams.toString()}`, { cache: "no-store" }),
+        fetch(`${API}/statements`, { cache: "no-store" }),
       ]);
       const ov = await ovRes.json();
       const tx = await txRes.json();
+      const st = await stRes.json();
       if (ov.ok)
         setOverview({
           bezahlt: ov.bezahlt,
@@ -84,10 +100,39 @@ export default function KontoauszuegeClient() {
           unbekannt: ov.unbekannt,
         });
       if (tx.ok) setTxns(tx.transactions ?? []);
+      if (st.ok) setStatements(st.statements ?? []);
     } finally {
       setLoading(false);
     }
   }, [statusFilter, quelleFilter, dateFrom, dateTo, directionFilter, showIgnored]);
+
+  const deleteStatement = useCallback(
+    async (s: Statement) => {
+      const name = s.original_filename ?? "Auszug";
+      if (
+        !confirm(
+          `"${name}" mit ${s.transaktionen_total} Buchungen löschen?\n\n` +
+            `Auch alle Matches dieser Buchungen werden aufgehoben — ` +
+            `verlinkte Rechnungen / Deals gehen zurück auf "offen".`,
+        )
+      )
+        return;
+      try {
+        const res = await fetch(`${API}/statement/${s.id}`, {
+          method: "DELETE",
+        });
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          alert(`Fehler: ${j.error ?? res.status}`);
+          return;
+        }
+        await loadAll();
+      } catch (e) {
+        alert(String(e));
+      }
+    },
+    [loadAll],
+  );
 
   const ignoreTrx = useCallback(
     async (t: Txn) => {
@@ -308,6 +353,76 @@ export default function KontoauszuegeClient() {
           tone="sky"
           hint="Bank-Buchungen ohne Rechnung"
         />
+      </div>
+
+      {/* Hochgeladene Auszuege (ausklappbar) */}
+      <div className="bg-white border border-[color:var(--border)] rounded-lg">
+        <button
+          type="button"
+          onClick={() => setShowStatements(!showStatements)}
+          className="w-full px-4 py-2 text-left text-sm flex items-center justify-between hover:bg-[color:var(--surface)] rounded-lg"
+        >
+          <span>
+            <strong>{statements.length}</strong> hochgeladene Auszüge —{" "}
+            <span className="text-[color:var(--muted)]">
+              {showStatements ? "ausblenden" : "anzeigen / löschen"}
+            </span>
+          </span>
+          <span className="text-[color:var(--muted)]">
+            {showStatements ? "▲" : "▼"}
+          </span>
+        </button>
+        {showStatements && (
+          <div className="border-t border-[color:var(--border)] overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[color:var(--surface)] text-left">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Hochgeladen</th>
+                  <th className="px-3 py-2 font-medium">Konto</th>
+                  <th className="px-3 py-2 font-medium">Datei</th>
+                  <th className="px-3 py-2 font-medium">Format</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Zeitraum</th>
+                  <th className="px-3 py-2 font-medium text-right">Buchungen</th>
+                  <th className="px-3 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {statements.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-4 text-center text-[color:var(--muted)]">
+                      Noch nichts hochgeladen.
+                    </td>
+                  </tr>
+                )}
+                {statements.map((s) => (
+                  <tr key={s.id} className="border-t border-[color:var(--border)]">
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">
+                      {s.created_at?.slice(0, 16).replace("T", " ")}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      {s.accounting_bank_accounts?.bezeichnung ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 text-xs">{s.original_filename ?? "—"}</td>
+                    <td className="px-3 py-2 text-xs font-mono">{s.format}</td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap">
+                      {s.zeitraum_von ?? "?"} – {s.zeitraum_bis ?? "?"}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-right">{s.transaktionen_total}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => void deleteStatement(s)}
+                        className="text-xs px-2 py-1 rounded text-red-700 hover:bg-red-50"
+                      >
+                        Löschen
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Upload */}
