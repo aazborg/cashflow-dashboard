@@ -45,6 +45,9 @@ export default function KontoauszuegeClient() {
   const [matching, setMatching] = useState(false);
   const [matchMsg, setMatchMsg] = useState<string | null>(null);
   const [manualTrx, setManualTrx] = useState<Txn | null>(null);
+  // Progress: 0..100 fuer Upload, dann -1 = "Bot parst"
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStage, setUploadStage] = useState<string>("");
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -77,35 +80,69 @@ export default function KontoauszuegeClient() {
   }, [loadAll]);
 
   const uploadFile = useCallback(
-    async (file: File) => {
-      setUploading(true);
-      setUploadMsg(null);
-      try {
+    (file: File) => {
+      return new Promise<void>((resolve) => {
+        setUploading(true);
+        setUploadMsg(null);
+        setUploadProgress(0);
+        setUploadStage("Datei wird hochgeladen…");
+
         const fd = new FormData();
         fd.append("file", file);
         fd.append("bank_account", account);
-        const res = await fetch(`${API}/kontoauszug/upload`, {
-          method: "POST",
-          body: fd,
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API}/kontoauszug/upload`);
+
+        xhr.upload.addEventListener("progress", (evt) => {
+          if (evt.lengthComputable) {
+            const pct = Math.round((evt.loaded / evt.total) * 100);
+            setUploadProgress(pct);
+            if (pct >= 100) setUploadStage("Bot parst…");
+          }
         });
-        const j = await res.json();
-        if (!res.ok || !j.ok) {
-          setUploadMsg(`Fehler: ${j.error ?? res.status}`);
-        } else if (j.status === "duplicate") {
-          setUploadMsg(
-            `Auszug schon importiert (${j.transactions_already} Buchungen vorhanden).`,
-          );
-        } else {
-          setUploadMsg(
-            `OK — Format "${j.format}", ${j.transactions_total} Buchungen, ${j.transactions_new} neu importiert.`,
-          );
-          await loadAll();
-        }
-      } catch (e) {
-        setUploadMsg(`Fehler: ${String(e)}`);
-      } finally {
-        setUploading(false);
-      }
+
+        xhr.addEventListener("loadstart", () => {
+          setUploadStage("Datei wird hochgeladen…");
+        });
+
+        xhr.addEventListener("load", async () => {
+          try {
+            const j = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && j.ok) {
+              if (j.status === "duplicate") {
+                setUploadMsg(
+                  `Auszug schon importiert (${j.transactions_already} Buchungen vorhanden).`,
+                );
+              } else {
+                setUploadMsg(
+                  `OK — Format "${j.format}", ${j.transactions_total} Buchungen, ${j.transactions_new} neu importiert.`,
+                );
+                await loadAll();
+              }
+            } else {
+              setUploadMsg(`Fehler: ${j.error ?? xhr.status}`);
+            }
+          } catch {
+            setUploadMsg(`Fehler: HTTP ${xhr.status}`);
+          } finally {
+            setUploading(false);
+            setUploadProgress(0);
+            setUploadStage("");
+            resolve();
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          setUploadMsg("Fehler beim Upload");
+          setUploading(false);
+          setUploadProgress(0);
+          setUploadStage("");
+          resolve();
+        });
+
+        xhr.send(fd);
+      });
     },
     [account, loadAll],
   );
@@ -200,7 +237,28 @@ export default function KontoauszuegeClient() {
             {matching ? "Match läuft…" : "Auto-Match starten"}
           </button>
         </div>
-        {uploadMsg && (
+        {uploading && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[color:var(--muted)]">{uploadStage}</span>
+              <span className="text-[color:var(--muted)] tabular-nums">
+                {uploadProgress < 100 ? `${uploadProgress}%` : "↻"}
+              </span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-[color:var(--surface)] overflow-hidden">
+              <div
+                className={
+                  "h-full bg-[color:var(--brand-orange)] transition-all duration-150 " +
+                  (uploadProgress >= 100 ? "animate-pulse" : "")
+                }
+                style={{
+                  width: uploadProgress >= 100 ? "100%" : `${uploadProgress}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {uploadMsg && !uploading && (
           <div className="text-xs text-[color:var(--muted)]">{uploadMsg}</div>
         )}
         {matchMsg && (
