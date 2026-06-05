@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import MatchInvoiceModal from "./MatchInvoiceModal";
+import MatchDealForTrxModal from "./MatchDealForTrxModal";
 
 const API = "/cashflow/api/buchhaltung";
 
@@ -49,6 +50,7 @@ export default function KontoauszuegeClient() {
   const [matching, setMatching] = useState(false);
   const [matchMsg, setMatchMsg] = useState<string | null>(null);
   const [manualTrx, setManualTrx] = useState<Txn | null>(null);
+  const [manualTrxIn, setManualTrxIn] = useState<Txn | null>(null);
   // Progress: 0..100 fuer Upload, dann -1 = "Bot parst"
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadStage, setUploadStage] = useState<string>("");
@@ -524,13 +526,24 @@ export default function KontoauszuegeClient() {
         </div>
       </div>
 
-      {/* Manuell-Match Modal */}
+      {/* Manuell-Match Modal — Ausgang -> Eingangsrechnung */}
       {manualTrx && (
         <MatchInvoiceModal
           trx={manualTrx}
           onClose={() => setManualTrx(null)}
           onSuccess={() => {
             setManualTrx(null);
+            void loadAll();
+          }}
+        />
+      )}
+      {/* Manuell-Match Modal — Eingang -> Deal */}
+      {manualTrxIn && (
+        <MatchDealForTrxModal
+          trx={manualTrxIn}
+          onClose={() => setManualTrxIn(null)}
+          onSuccess={() => {
+            setManualTrxIn(null);
             void loadAll();
           }}
         />
@@ -624,30 +637,34 @@ export default function KontoauszuegeClient() {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
                           offen
                         </span>
-                        {t.amount < 0 && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setManualTrx(t)}
-                              className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--brand-blue)] hover:bg-[color:var(--surface)]"
-                              title="Rechnung manuell zuordnen"
-                            >
-                              🔗 Matchen
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void ignoreTrx(t)}
-                              className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:bg-[color:var(--surface)]"
-                              title="Diese Buchung braucht keine Rechnung (z.B. Gehalt)"
-                            >
-                              kein Match
-                            </button>
-                          </>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            t.amount < 0
+                              ? setManualTrx(t)
+                              : setManualTrxIn(t)
+                          }
+                          className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--brand-blue)] hover:bg-[color:var(--surface)]"
+                          title={
+                            t.amount < 0
+                              ? "Eingangsrechnung manuell zuordnen"
+                              : "Ausgangs-Rechnung (Deal) manuell zuordnen"
+                          }
+                        >
+                          🔗 Matchen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void ignoreTrx(t)}
+                          className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:bg-[color:var(--surface)]"
+                          title="Diese Buchung braucht keine Rechnung (z.B. Gehalt)"
+                        >
+                          kein Match
+                        </button>
                       </div>
                     )}
                   </td>

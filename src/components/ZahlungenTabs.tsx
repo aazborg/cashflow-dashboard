@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import ZahlungenTable from "@/components/ZahlungenTable";
 import AllPaymentsTable from "@/components/AllPaymentsTable";
 import MandatesTable from "@/components/MandatesTable";
+import EinmalzahlungenTable from "@/components/EinmalzahlungenTable";
 import ManualMandateModal from "@/components/ManualMandateModal";
 import InkassoTable from "@/components/InkassoTable";
 import type { Deal, Employee } from "@/lib/types";
@@ -23,7 +24,7 @@ export type DealOverride = {
 };
 export type DealOverrides = Map<string, DealOverride>;
 
-type Tab = "kunden" | "zahlungen" | "fehlgeschlagen" | "storniert" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
+type Tab = "kunden" | "einmalzahlungen" | "zahlungen" | "fehlgeschlagen" | "storniert" | "rueckbelastungen" | "geloeschte_mandate" | "inkasso";
 
 interface Props {
   deals: Deal[];
@@ -76,6 +77,12 @@ export default function ZahlungenTabs({
           Kunden
         </TabBtn>
         <TabBtn
+          active={tab === "einmalzahlungen"}
+          onClick={() => setTab("einmalzahlungen")}
+        >
+          Einmalzahlungen
+        </TabBtn>
+        <TabBtn
           active={tab === "zahlungen"}
           onClick={() => setTab("zahlungen")}
         >
@@ -120,6 +127,8 @@ export default function ZahlungenTabs({
           canManageDunning={canManagePayments}
           onDealUpdate={onDealUpdate}
         />
+      ) : tab === "einmalzahlungen" ? (
+        <EinmalzahlungenTable deals={effectiveDeals} />
       ) : tab === "zahlungen" ? (
         <AllPaymentsTable
           key="all"
