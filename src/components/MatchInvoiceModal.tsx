@@ -4,7 +4,7 @@
  * Bank-Transaktion. User kann zusätzlich nach Lieferant/RG-Nr suchen.
  * Klick auf Treffer = sofortiger Match.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Txn = {
   id: string;
@@ -53,6 +53,56 @@ export default function MatchInvoiceModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Upload-State fuer "Rechnung jetzt hochladen + zuordnen"
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const uploadAndMatch = useCallback(
+    async (file: File) => {
+      if (!file.name.toLowerCase().endsWith(".pdf")) {
+        setUploadMsg("Bitte nur PDFs hochladen.");
+        return;
+      }
+      setUploading(true);
+      setUploadMsg("Lade PDF hoch + parse mit Claude…");
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("source", "match_modal");
+      fd.append("auto_match_trx_id", trx.id);
+      try {
+        const res = await fetch(
+          "/cashflow/api/buchhaltung/invoice/upload",
+          { method: "POST", body: fd },
+        );
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          setUploadMsg(`Fehler: ${j.error ?? res.status}`);
+          return;
+        }
+        if (j.auto_matched) {
+          setUploadMsg(
+            `✅ ${j.lieferant ?? "Rechnung"} hochgeladen + zugeordnet`,
+          );
+          onSuccess();
+          onClose();
+        } else if (j.status === "duplikat") {
+          setUploadMsg("↺ Rechnung existiert schon — nicht erneut angelegt");
+        } else if (j.status === "rejected") {
+          setUploadMsg("⛔ Verworfen (Claude erkennt keine echte Rechnung)");
+        } else {
+          setUploadMsg(
+            `Rechnung angelegt aber nicht gematched (${j.status})`,
+          );
+        }
+      } catch (e) {
+        setUploadMsg(`Fehler: ${String(e)}`);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [trx.id, onSuccess, onClose],
+  );
 
   // Lade alle offenen Rechnungen einmal beim Mount
   useEffect(() => {
@@ -173,6 +223,36 @@ export default function MatchInvoiceModal({
               ×
             </button>
           </div>
+        </div>
+
+        {/* Upload: passende PDF jetzt hochladen + sofort matchen */}
+        <div className="px-5 py-3 border-b border-[color:var(--border)] bg-amber-50/40">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-xs text-[color:var(--muted)]">
+              Rechnung fehlt? PDF hochladen — wird mit Claude geparst und sofort
+              dieser Buchung zugeordnet.
+            </div>
+            <label className="text-xs px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white font-medium cursor-pointer disabled:opacity-50 whitespace-nowrap">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadAndMatch(f);
+                  e.target.value = "";
+                }}
+                className="hidden"
+              />
+              {uploading ? "Lädt + parst…" : "📄 PDF hochladen + zuordnen"}
+            </label>
+          </div>
+          {uploadMsg && (
+            <div className="text-xs text-[color:var(--muted)] mt-2">
+              {uploadMsg}
+            </div>
+          )}
         </div>
 
         {/* Search */}
