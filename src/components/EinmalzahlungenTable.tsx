@@ -24,13 +24,14 @@ const STATUS_FILTERS: { k: string; l: string }[] = [
 ];
 
 function isEinmalzahlung(d: Deal): boolean {
-  // anzahl_raten == 1 ODER intervall in ("einmalig", "einmal", null & anzahl_raten<=1)
+  // Einmalzahlung = anzahl_raten <= 1 UND (intervall=Einmalzahlung
+  // ODER kein Intervall) ODER zahlungsmodell=einmal
   if (d.anzahl_raten && d.anzahl_raten > 1) return false;
-  if (d.intervall === "einmalig" || d.intervall === null) {
-    if (!d.anzahl_raten || d.anzahl_raten <= 1) return true;
-  }
   if (d.zahlungsmodell === "einmal") return true;
-  return (!d.anzahl_raten || d.anzahl_raten <= 1) && d.intervall === null;
+  if (d.intervall === "Einmalzahlung") return true;
+  if (d.intervall === null && (!d.anzahl_raten || d.anzahl_raten <= 1))
+    return true;
+  return false;
 }
 
 export default function EinmalzahlungenTable({ deals }: { deals: Deal[] }) {
