@@ -33,11 +33,12 @@ const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
   rejected: { label: "verworfen", tone: "bg-gray-100 text-gray-500" },
 };
 
+// Filter-Tabs. Default = "offen" damit die Liste sofort nutzbar ist —
+// rejected/duplikat sollen nicht im Standard-View den Blick versperren.
 const STATUS_FILTERS = [
-  { key: "", label: "Alle aktiven" },
   { key: "offen", label: "Offen" },
-  { key: "zugeordnet", label: "Zugeordnet" },
   { key: "bezahlt", label: "Bezahlt" },
+  { key: "zugeordnet", label: "Zugeordnet" },
   { key: "duplikat", label: "Duplikate" },
   { key: "rejected", label: "Verworfene" },
 ];
@@ -54,7 +55,7 @@ export default function RechnungenClient() {
   const [rows, setRows] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("offen");
   const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
@@ -121,113 +122,217 @@ export default function RechnungenClient() {
         </div>
       </div>
 
-      <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[color:var(--surface)] text-left">
+      {/* Verworfene / Duplikate: kompakte Diagnose-Ansicht */}
+      {(status === "rejected" || status === "duplikat") ? (
+        <RejectedList rows={rows} loading={loading} error={error} />
+      ) : (
+        <FullInvoiceTable rows={rows} loading={loading} error={error} />
+      )}
+    </div>
+  );
+}
+
+function FullInvoiceTable({
+  rows,
+  loading,
+  error,
+}: {
+  rows: Invoice[];
+  loading: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-[color:var(--surface)] text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium whitespace-nowrap">Datum</th>
+              <th className="px-3 py-2 font-medium">Lieferant</th>
+              <th className="px-3 py-2 font-medium">RG-Nr</th>
+              <th className="px-3 py-2 font-medium text-right">Netto</th>
+              <th className="px-3 py-2 font-medium text-right">USt</th>
+              <th className="px-3 py-2 font-medium text-right">Brutto</th>
+              <th className="px-3 py-2 font-medium whitespace-nowrap">Fällig</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">PDF</th>
+            </tr>
+          </thead>
+          <tbody>
+            {error && (
               <tr>
-                <th className="px-3 py-2 font-medium whitespace-nowrap">Datum</th>
-                <th className="px-3 py-2 font-medium">Lieferant</th>
-                <th className="px-3 py-2 font-medium">RG-Nr</th>
-                <th className="px-3 py-2 font-medium text-right">Netto</th>
-                <th className="px-3 py-2 font-medium text-right">USt</th>
-                <th className="px-3 py-2 font-medium text-right">Brutto</th>
-                <th className="px-3 py-2 font-medium whitespace-nowrap">Fällig</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">PDF</th>
+                <td colSpan={9} className="px-3 py-6 text-center text-red-600">
+                  {error}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {error && (
-                <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-red-600">
-                    {error}
+            )}
+            {!error && loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                  Lade…
+                </td>
+              </tr>
+            )}
+            {!error && !loading && rows.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                  Keine Rechnungen in dieser Sicht.
+                </td>
+              </tr>
+            )}
+            {rows.map((r) => {
+              const lab = STATUS_LABELS[r.status] ?? {
+                label: r.status,
+                tone: "bg-gray-100 text-gray-700",
+              };
+              const lowConf =
+                r.parser_confidence != null && r.parser_confidence < 0.7;
+              return (
+                <tr key={r.id} className="border-t border-[color:var(--border)] align-top">
+                  <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                    {r.rechnungsdatum ?? "—"}
                   </td>
-                </tr>
-              )}
-              {!error && loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-[color:var(--muted)]">
-                    Lade…
+                  <td className="px-3 py-2">
+                    <div>{r.lieferant_name ?? "—"}</div>
+                    {(r.parser_warnings?.length ?? 0) > 0 && (
+                      <div
+                        className="text-xs text-amber-700 mt-0.5 line-clamp-1"
+                        title={r.parser_warnings?.join("\n")}
+                      >
+                        ⚠️ {r.parser_warnings![0]}
+                      </div>
+                    )}
                   </td>
-                </tr>
-              )}
-              {!error && !loading && rows.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-[color:var(--muted)]">
-                    Keine Rechnungen — der Posteingang läuft alle 15 Min.
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {r.rechnung_nr ?? "—"}
                   </td>
-                </tr>
-              )}
-              {rows.map((r) => {
-                const lab = STATUS_LABELS[r.status] ?? {
-                  label: r.status,
-                  tone: "bg-gray-100 text-gray-700",
-                };
-                const lowConf =
-                  r.parser_confidence != null && r.parser_confidence < 0.7;
-                return (
-                  <tr key={r.id} className="border-t border-[color:var(--border)] align-top">
-                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
-                      {r.rechnungsdatum ?? "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div>{r.lieferant_name ?? "—"}</div>
-                      {(r.parser_warnings?.length ?? 0) > 0 && (
-                        <div
-                          className="text-xs text-amber-700 mt-0.5 line-clamp-1"
-                          title={r.parser_warnings?.join("\n")}
-                        >
-                          ⚠️ {r.parser_warnings![0]}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">
-                      {r.rechnung_nr ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap">
-                      {eur(r.netto, r.waehrung ?? "EUR")}
-                    </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap text-[color:var(--muted)]">
-                      {eur(r.ust_summe, r.waehrung ?? "EUR")}
-                    </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">
-                      {eur(r.brutto, r.waehrung ?? "EUR")}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
-                      {r.faelligkeit ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <span className={"text-xs px-2 py-0.5 rounded " + lab.tone}>
-                        {lab.label}
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    {eur(r.netto, r.waehrung ?? "EUR")}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap text-[color:var(--muted)]">
+                    {eur(r.ust_summe, r.waehrung ?? "EUR")}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">
+                    {eur(r.brutto, r.waehrung ?? "EUR")}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
+                    {r.faelligkeit ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span className={"text-xs px-2 py-0.5 rounded " + lab.tone}>
+                      {lab.label}
+                    </span>
+                    {lowConf && (
+                      <span className="ml-1 text-xs text-amber-700" title="Niedrige Parser-Konfidenz">
+                        ❓
                       </span>
-                      {lowConf && (
-                        <span className="ml-1 text-xs text-amber-700" title="Niedrige Parser-Konfidenz">
-                          ❓
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    {r.drive_file_url ? (
+                      <a
+                        href={r.drive_file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sky-700 underline text-xs"
+                      >
+                        öffnen
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RejectedList({
+  rows,
+  loading,
+  error,
+}: {
+  rows: Invoice[];
+  loading: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
+      {error && (
+        <div className="px-4 py-6 text-center text-red-600">{error}</div>
+      )}
+      {!error && loading && rows.length === 0 && (
+        <div className="px-4 py-6 text-center text-[color:var(--muted)]">
+          Lade…
+        </div>
+      )}
+      {!error && !loading && rows.length === 0 && (
+        <div className="px-4 py-6 text-center text-[color:var(--muted)]">
+          Keine Einträge in dieser Sicht.
+        </div>
+      )}
+      <ul className="divide-y divide-[color:var(--border)]">
+        {rows.map((r) => {
+          const conf = r.parser_confidence ?? 0;
+          const warn = r.parser_warnings ?? [];
+          return (
+            <li key={r.id} className="px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">
+                    {r.drive_filename ?? r.lieferant_name ?? "(Datei ohne Name)"}
+                  </div>
+                  <div className="text-xs text-[color:var(--muted)] mt-0.5">
+                    {r.lieferant_name && (
+                      <span>Erkannt als: {r.lieferant_name}</span>
+                    )}
+                    {r.rechnung_nr && (
+                      <span> · RG-Nr {r.rechnung_nr}</span>
+                    )}
+                    {r.brutto != null && (
+                      <span> · Betrag {eur(r.brutto, r.waehrung ?? "EUR")}</span>
+                    )}
+                    {r.rechnungsdatum && (
+                      <span> · Datum {r.rechnungsdatum}</span>
+                    )}
+                  </div>
+                  {warn.length > 0 && (
+                    <div className="mt-1 text-xs text-amber-800 bg-amber-50 px-2 py-1 rounded">
+                      ⚠️ {warn[0]}
+                      {warn.length > 1 && (
+                        <span className="text-[color:var(--muted)]">
+                          {" "}
+                          +{warn.length - 1} weitere
                         </span>
                       )}
-                    </td>
-                    <td className="px-3 py-2">
-                      {r.drive_file_url ? (
-                        <a
-                          href={r.drive_file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sky-700 underline text-xs"
-                        >
-                          öffnen
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="text-right whitespace-nowrap flex flex-col items-end gap-1">
+                  <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                    Konfidenz {(conf * 100).toFixed(0)}%
+                  </span>
+                  {r.drive_file_url && (
+                    <a
+                      href={r.drive_file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sky-700 underline text-xs"
+                    >
+                      PDF öffnen
+                    </a>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
