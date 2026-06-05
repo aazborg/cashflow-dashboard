@@ -1,4 +1,5 @@
-import { ComingSoon, PageHeader } from "@/components/BuchhaltungUiBits";
+import { PageHeader } from "@/components/BuchhaltungUiBits";
+import InvoiceUploadCard from "@/components/InvoiceUploadCard";
 
 export const dynamic = "force-dynamic";
 
@@ -7,12 +8,15 @@ export default function SchnellUploadPage() {
     <div className="space-y-6">
       <PageHeader
         title="Schnell-Upload"
-        subtitle="Rechnungen oder Kontoauszüge per Drag-&-Drop hochladen."
+        subtitle="Rechnung als PDF hochladen — Claude parst + Drive-Upload + Auto-Match."
       />
-      <ComingSoon
-        title="Upload-Bereich"
-        what="Hier kommt der zentrale Drop-Bereich rein — eine Datei rauf, automatisch erkennen (Rechnung oder Kontoauszug) und in den richtigen Posteingang einsortieren."
-      />
+      <InvoiceUploadCard source="schnell_upload" />
+      <div className="text-xs text-[color:var(--muted)]">
+        Hinweis: Erkannte Rechnung landet im Tab <strong>Rechnungen</strong>.
+        Wenn Claude unsicher ist (z.&nbsp;B. Zahlungsbestätigung), wird der
+        Eintrag als „verworfen" markiert — sichtbar im Tab Rechnungen unter
+        Filter „Verworfene".
+      </div>
     </div>
   );
 }

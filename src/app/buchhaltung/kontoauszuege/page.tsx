@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/BuchhaltungUiBits";
 import KontoauszuegeClient from "@/components/KontoauszuegeClient";
+import InvoiceUploadCard from "@/components/InvoiceUploadCard";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export default function KontoauszuegePage() {
         title="Kontoauszüge"
         subtitle="Bank-Auszüge importieren + Auto-Match mit Rechnungen."
       />
+      <InvoiceUploadCard source="kontoauszuege" compact />
       <KontoauszuegeClient />
     </div>
   );
