@@ -369,10 +369,15 @@ export default function KontoauszuegeClient() {
         {matchMsg && (
           <div className="text-xs text-[color:var(--muted)]">{matchMsg}</div>
         )}
-        <div className="text-xs text-[color:var(--muted)]">
-          Erste Bank Business: CSV-Export aus George. Erste KK: PDF-Auszug.
-          AmEx: CSV oder PDF. PayPal: CSV-Export (alle Transaktionen).
-          GoCardless: JSON aus API-Export.
+        <div className="text-xs text-[color:var(--muted)] space-y-1">
+          <div>
+            Erste Bank Business: <strong>CAMT.053 oder CSV</strong> aus George
+            (JSON liefert keinen Verwendungszweck).
+          </div>
+          <div>
+            Erste KK: PDF-Auszug. AmEx: CSV oder PDF. PayPal: CSV-Export
+            (alle Transaktionen). GoCardless: JSON aus API-Export.
+          </div>
         </div>
       </div>
 
@@ -534,7 +539,19 @@ export default function KontoauszuegeClient() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs">
-                    <div className="line-clamp-2">{t.purpose ?? "—"}</div>
+                    {t.purpose ? (
+                      <div className="line-clamp-2">{t.purpose}</div>
+                    ) : (
+                      <div className="text-[color:var(--muted)] italic">
+                        {t.counterparty_iban ? (
+                          <span className="font-mono">
+                            IBAN: {t.counterparty_iban.slice(0, 16)}…
+                          </span>
+                        ) : (
+                          "kein Verwendungszweck"
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td
                     className={
