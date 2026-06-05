@@ -240,18 +240,34 @@ export default function KontoauszuegeClient() {
     setMatching(true);
     setMatchMsg(null);
     try {
-      const res = await fetch(`${API}/match-run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit_trx: 500 }),
-      });
-      const j = await res.json();
-      if (!res.ok || !j.ok)
-        setMatchMsg(`Fehler: ${j.error ?? res.status}`);
-      else
-        setMatchMsg(
-          `OK — ${j.matched_strong} stark + ${j.matched_loose} locker gematched aus ${j.trxs_checked} Buchungen.`,
+      // Beides parallel: Eingangsrechnungen (Ausgaenge) +
+      // Ausgangsrechnungen (Eingaenge)
+      const [resInv, resDeals] = await Promise.all([
+        fetch(`${API}/match-run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit_trx: 500 }),
+        }),
+        fetch(`${API}/match-deals-run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit_trx: 500 }),
+        }),
+      ]);
+      const jInv = await resInv.json();
+      const jDeals = await resDeals.json();
+      const parts: string[] = [];
+      if (jInv.ok) {
+        parts.push(
+          `Eingangs-Rechnungen: ${jInv.matched_strong + jInv.matched_loose} gematched`,
         );
+      }
+      if (jDeals.ok) {
+        parts.push(
+          `Ausgangs-Rechnungen: ${jDeals.matched_strong + jDeals.matched_loose} gematched`,
+        );
+      }
+      setMatchMsg(parts.length > 0 ? parts.join(" · ") : "kein Match");
       await loadAll();
     } catch (e) {
       setMatchMsg(`Fehler: ${String(e)}`);

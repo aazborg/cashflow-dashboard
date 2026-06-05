@@ -60,6 +60,9 @@ interface DealRow {
   inkasso_stage?: "ergo" | "anwalt" | "gericht" | "gewonnen" | "verloren" | null;
   inkasso_stage_updated_at?: string | null;
   inkasso_stage_note?: string | null;
+  payment_status?: "open" | "paid" | "partial" | null;
+  paid_at?: string | null;
+  amount_paid?: number | string | null;
 }
 
 function rowToDeal(r: DealRow): Deal {
@@ -114,6 +117,9 @@ function rowToDeal(r: DealRow): Deal {
     inkasso_stage: r.inkasso_stage ?? null,
     inkasso_stage_updated_at: r.inkasso_stage_updated_at ?? null,
     inkasso_stage_note: r.inkasso_stage_note ?? null,
+    payment_status: r.payment_status ?? null,
+    paid_at: r.paid_at ?? null,
+    amount_paid: r.amount_paid == null ? null : Number(r.amount_paid),
   };
 }
 

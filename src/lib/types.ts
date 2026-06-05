@@ -90,6 +90,12 @@ export interface Deal {
   inkasso_stage?: "ergo" | "anwalt" | "gericht" | "gewonnen" | "verloren" | null;
   inkasso_stage_updated_at?: string | null;
   inkasso_stage_note?: string | null;
+  /** Manuelle Bezahl-Spur aus Kontoauszug-Matching (migration 0046).
+   *  Unabhaengig von gocardless_* (Lastschrift) -- erfasst auch
+   *  klassische Ueberweisungen. */
+  payment_status?: "open" | "paid" | "partial" | null;
+  paid_at?: string | null;
+  amount_paid?: number | null;
 }
 
 export type SetterHours = "20h" | "25h" | "30h" | "35h" | "40h";

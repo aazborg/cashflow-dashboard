@@ -10,6 +10,7 @@ import { INTERVALL_OPTIONS, type Deal } from "@/lib/types";
 import { formatEURPrecise } from "@/lib/cashflow";
 import RechnungsEditor from "./RechnungsEditor";
 import GoCardlessMandateModal from "./GoCardlessMandateModal";
+import DealMatchBankModal from "./DealMatchBankModal";
 
 interface Props {
   deal: Deal;
@@ -32,6 +33,7 @@ export default function DealRow({
 }: Props) {
   const [rechnungsModalOpen, setRechnungsModalOpen] = useState(false);
   const [mandateModalOpen, setMandateModalOpen] = useState(false);
+  const [bankMatchOpen, setBankMatchOpen] = useState(false);
   const [vertragSyncing, setVertragSyncing] = useState(false);
   // Lokaler Overlay nach manuellem "Vertrag-parsen"-Klick. Damit die
   // frischen Werte sofort im UI auftauchen, ohne Page-Reload.
@@ -266,6 +268,35 @@ export default function DealRow({
               title={`Rechnung #${rechnungInfo.rechnung_id} storniert — Gutschrift in SimplyOrg`}
             >
               ⛔ Storniert
+            </span>
+          ) : null}
+          {/* Bezahlt-Badge: aus Bank-Auszug-Match. Unabhaengig vom
+              gocardless_* Status (Lastschrift), erfasst auch klassische
+              Ueberweisungen. */}
+          {deal.payment_status === "paid" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-emerald-700 text-white"
+              title={
+                deal.paid_at
+                  ? `bezahlt am ${deal.paid_at.slice(0, 10)}`
+                  : "bezahlt"
+              }
+            >
+              💶 Bezahlt
+            </span>
+          ) : deal.payment_status === "partial" ? (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-500 text-white"
+              title={
+                deal.amount_paid != null
+                  ? `teilbezahlt: ${new Intl.NumberFormat("de-AT", {
+                      style: "currency",
+                      currency: "EUR",
+                    }).format(Number(deal.amount_paid))}`
+                  : "teilbezahlt"
+              }
+            >
+              ◐ Teilbezahlt
             </span>
           ) : null}
           {(() => {
@@ -668,6 +699,16 @@ export default function DealRow({
                     );
                   })()
                 ) : null}
+                {deal.payment_status !== "paid" && (
+                  <button
+                    onClick={() => setBankMatchOpen(true)}
+                    disabled={pending}
+                    title="Bank-Buchung manuell als Bezahlung zuordnen"
+                    className="text-xs px-2 py-1 rounded text-[color:var(--brand-blue)] hover:bg-[color:var(--brand-blue)]/10 disabled:opacity-50"
+                  >
+                    🔗 Bezahlt?
+                  </button>
+                )}
                 <button
                   onClick={requestDelete}
                   disabled={pending}
@@ -713,6 +754,17 @@ export default function DealRow({
           email={deal.email}
         />
       ) : null}
+      {bankMatchOpen && (
+        <DealMatchBankModal
+          deal={deal}
+          onClose={() => setBankMatchOpen(false)}
+          onSuccess={() => {
+            setBankMatchOpen(false);
+            // Hard reload damit der payment_status aktualisiert ist
+            window.location.reload();
+          }}
+        />
+      )}
     </tr>
   );
 }
