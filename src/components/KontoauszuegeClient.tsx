@@ -48,18 +48,22 @@ export default function KontoauszuegeClient() {
   // Progress: 0..100 fuer Upload, dann -1 = "Bot parst"
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadStage, setUploadStage] = useState<string>("");
+  // Filter
+  const [quelleFilter, setQuelleFilter] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      const txParams = new URLSearchParams({ limit: "500" });
+      if (statusFilter) txParams.set("status", statusFilter);
+      if (quelleFilter) txParams.set("quelle", quelleFilter);
+      if (dateFrom) txParams.set("from", dateFrom);
+      if (dateTo) txParams.set("to", dateTo);
       const [ovRes, txRes] = await Promise.all([
         fetch(`${API}/match-overview`, { cache: "no-store" }),
-        fetch(
-          `${API}/transactions?limit=300${
-            statusFilter ? `&status=${statusFilter}` : ""
-          }`,
-          { cache: "no-store" },
-        ),
+        fetch(`${API}/transactions?${txParams.toString()}`, { cache: "no-store" }),
       ]);
       const ov = await ovRes.json();
       const tx = await txRes.json();
@@ -73,7 +77,45 @@ export default function KontoauszuegeClient() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, quelleFilter, dateFrom, dateTo]);
+
+  // Monats-Schnellfilter: setzt from + to fuer Default-Monate
+  const setMonthFilter = useCallback(
+    (mode: "current" | "last" | "last3" | "year" | "all") => {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const iso = (d: Date) =>
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      if (mode === "all") {
+        setDateFrom("");
+        setDateTo("");
+        return;
+      }
+      if (mode === "current") {
+        setDateFrom(iso(new Date(y, m, 1)));
+        setDateTo(iso(new Date(y, m + 1, 0)));
+        return;
+      }
+      if (mode === "last") {
+        setDateFrom(iso(new Date(y, m - 1, 1)));
+        setDateTo(iso(new Date(y, m, 0)));
+        return;
+      }
+      if (mode === "last3") {
+        setDateFrom(iso(new Date(y, m - 2, 1)));
+        setDateTo(iso(new Date(y, m + 1, 0)));
+        return;
+      }
+      if (mode === "year") {
+        setDateFrom(iso(new Date(y, 0, 1)));
+        setDateTo(iso(new Date(y, 11, 31)));
+        return;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadAll();
@@ -272,27 +314,103 @@ export default function KontoauszuegeClient() {
       </div>
 
       {/* Filter */}
-      <div className="flex gap-2 flex-wrap">
-        {[
-          { k: "", l: "Alle" },
-          { k: "open", l: "Offen" },
-          { k: "matched", l: "Gematched" },
-          { k: "ignored", l: "Ignoriert" },
-        ].map((f) => (
-          <button
-            key={f.k}
-            type="button"
-            onClick={() => setStatusFilter(f.k)}
-            className={
-              "text-xs px-2 py-1 rounded border transition " +
-              (statusFilter === f.k
-                ? "border-[color:var(--brand-blue)] bg-[color:var(--brand-blue)] text-white"
-                : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
-            }
-          >
-            {f.l}
-          </button>
-        ))}
+      <div className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-3">
+        {/* Zeile 1: Konto + Zeitraum-Quickfilter */}
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Konto</span>
+            <select
+              value={quelleFilter}
+              onChange={(e) => setQuelleFilter(e.target.value)}
+              className="px-2 py-1.5 rounded border border-[color:var(--border)] bg-white text-sm min-w-[200px]"
+            >
+              <option value="">Alle Konten</option>
+              {ACCOUNTS.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Zeitraum</span>
+            <div className="flex gap-1 flex-wrap">
+              {(
+                [
+                  { k: "current", l: "Dieser Monat" },
+                  { k: "last", l: "Letzter Monat" },
+                  { k: "last3", l: "Letzte 3 Monate" },
+                  { k: "year", l: "Dieses Jahr" },
+                  { k: "all", l: "Alle" },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.k}
+                  type="button"
+                  onClick={() => setMonthFilter(m.k)}
+                  className="text-xs px-2 py-1 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]"
+                >
+                  {m.l}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {/* Zeile 2: feines Datum + Status */}
+        <div className="flex flex-wrap gap-3 items-end">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Von</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-2 py-1.5 rounded border border-[color:var(--border)] bg-white text-sm"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Bis</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-2 py-1.5 rounded border border-[color:var(--border)] bg-white text-sm"
+            />
+          </label>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Status</span>
+            <div className="flex gap-1 flex-wrap">
+              {[
+                { k: "", l: "Alle" },
+                { k: "open", l: "Offen" },
+                { k: "matched", l: "Gematched" },
+                { k: "ignored", l: "Ignoriert" },
+              ].map((f) => (
+                <button
+                  key={f.k}
+                  type="button"
+                  onClick={() => setStatusFilter(f.k)}
+                  className={
+                    "text-xs px-2 py-1 rounded border transition " +
+                    (statusFilter === f.k
+                      ? "border-[color:var(--brand-blue)] bg-[color:var(--brand-blue)] text-white"
+                      : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
+                  }
+                >
+                  {f.l}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="text-xs text-[color:var(--muted)]">
+          {loading
+            ? "Lade…"
+            : `${txns.length} Buchungen geladen${
+                dateFrom || dateTo
+                  ? ` · ${dateFrom || "Anfang"} bis ${dateTo || "heute"}`
+                  : ""
+              }`}
+        </div>
       </div>
 
       {/* Manuell-Match Modal */}
