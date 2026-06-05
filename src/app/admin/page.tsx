@@ -56,7 +56,7 @@ export default async function AdminPage() {
           </div>
           <Link
             href="/admin/import-blacklist"
-            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm whitespace-nowrap"
+            className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium whitespace-nowrap"
           >
             Verwalten
           </Link>
@@ -74,7 +74,7 @@ export default async function AdminPage() {
           </div>
           <Link
             href="/admin/terminaenderungen"
-            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm whitespace-nowrap"
+            className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium whitespace-nowrap"
           >
             Öffnen
           </Link>

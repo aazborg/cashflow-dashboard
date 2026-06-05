@@ -34,8 +34,8 @@ export default function BuchhaltungSidebar() {
               className={
                 "block px-4 py-2 rounded-md text-sm font-medium transition " +
                 (active
-                  ? "bg-[color:var(--foreground)] text-white"
-                  : "bg-[color:var(--foreground)] text-white hover:opacity-90")
+                  ? "bg-[color:var(--brand-orange)] text-white"
+                  : "bg-[color:var(--brand-orange)] text-white hover:opacity-90")
               }
             >
               <span className="inline-flex items-center gap-2">

@@ -100,7 +100,7 @@ export default function RechnungenClient() {
                 className={
                   "text-xs px-2 py-1 rounded border transition " +
                   (status === f.key
-                    ? "border-[color:var(--foreground)] bg-[color:var(--foreground)] text-white"
+                    ? "border-[color:var(--brand-blue)] bg-[color:var(--brand-blue)] text-white"
                     : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
                 }
               >

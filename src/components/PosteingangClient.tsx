@@ -123,7 +123,7 @@ export default function PosteingangClient() {
             type="button"
             onClick={triggerPoll}
             disabled={polling}
-            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm disabled:opacity-50"
+            className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium disabled:opacity-50"
           >
             {polling ? "Polling läuft…" : "Jetzt prüfen"}
           </button>
@@ -143,7 +143,7 @@ export default function PosteingangClient() {
                 className={
                   "text-xs px-2 py-1 rounded border transition " +
                   (active
-                    ? "border-[color:var(--foreground)] bg-[color:var(--foreground)] text-white"
+                    ? "border-[color:var(--brand-blue)] bg-[color:var(--brand-blue)] text-white"
                     : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
                 }
               >

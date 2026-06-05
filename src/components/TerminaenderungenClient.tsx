@@ -142,7 +142,7 @@ export default function TerminaenderungenClient() {
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm disabled:opacity-50"
+            className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium disabled:opacity-50"
           >
             {loading ? "Lade…" : "Aktualisieren"}
           </button>

@@ -195,7 +195,7 @@ export default function KontoauszuegeClient() {
             type="button"
             onClick={triggerMatch}
             disabled={matching}
-            className="px-3 py-1.5 rounded bg-[color:var(--foreground)] text-white text-sm disabled:opacity-50"
+            className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium disabled:opacity-50"
           >
             {matching ? "Match läuft…" : "Auto-Match starten"}
           </button>
@@ -228,7 +228,7 @@ export default function KontoauszuegeClient() {
             className={
               "text-xs px-2 py-1 rounded border transition " +
               (statusFilter === f.k
-                ? "border-[color:var(--foreground)] bg-[color:var(--foreground)] text-white"
+                ? "border-[color:var(--brand-blue)] bg-[color:var(--brand-blue)] text-white"
                 : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
             }
           >

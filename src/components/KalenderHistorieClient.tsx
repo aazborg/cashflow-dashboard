@@ -186,7 +186,7 @@ export default function KalenderHistorieClient() {
             type="button"
             onClick={triggerSnapshot}
             disabled={snapshotting}
-            className="px-3 py-1.5 text-sm rounded bg-[color:var(--foreground)] text-[color:var(--background)] disabled:opacity-50"
+            className="px-3 py-1.5 text-sm rounded bg-[color:var(--brand-orange)] text-white font-medium disabled:opacity-50"
           >
             {snapshotting ? "Snapshot läuft…" : "Snapshot jetzt"}
           </button>
