@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import MatchTransactionModal from "./MatchTransactionModal";
 
 const API = "/cashflow/api/buchhaltung";
 
@@ -57,6 +58,7 @@ export default function RechnungenClient() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("offen");
   const [q, setQ] = useState("");
+  const [matchInvoice, setMatchInvoice] = useState<Invoice | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,7 +133,23 @@ export default function RechnungenClient() {
           onReactivated={() => void load()}
         />
       ) : (
-        <FullInvoiceTable rows={rows} loading={loading} error={error} />
+        <FullInvoiceTable
+          rows={rows}
+          loading={loading}
+          error={error}
+          onStartMatch={(inv) => setMatchInvoice(inv)}
+        />
+      )}
+
+      {matchInvoice && (
+        <MatchTransactionModal
+          invoice={matchInvoice}
+          onClose={() => setMatchInvoice(null)}
+          onSuccess={() => {
+            setMatchInvoice(null);
+            void load();
+          }}
+        />
       )}
     </div>
   );
@@ -141,10 +159,12 @@ function FullInvoiceTable({
   rows,
   loading,
   error,
+  onStartMatch,
 }: {
   rows: Invoice[];
   loading: boolean;
   error: string | null;
+  onStartMatch: (inv: Invoice) => void;
 }) {
   return (
     <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
@@ -224,14 +244,26 @@ function FullInvoiceTable({
                     {r.faelligkeit ?? "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <span className={"text-xs px-2 py-0.5 rounded " + lab.tone}>
-                      {lab.label}
-                    </span>
-                    {lowConf && (
-                      <span className="ml-1 text-xs text-amber-700" title="Niedrige Parser-Konfidenz">
-                        ❓
+                    <div className="flex items-center gap-2">
+                      <span className={"text-xs px-2 py-0.5 rounded " + lab.tone}>
+                        {lab.label}
                       </span>
-                    )}
+                      {lowConf && (
+                        <span className="text-xs text-amber-700" title="Niedrige Parser-Konfidenz">
+                          ❓
+                        </span>
+                      )}
+                      {r.status === "offen" && (
+                        <button
+                          type="button"
+                          onClick={() => onStartMatch(r)}
+                          className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--brand-blue)] hover:bg-[color:var(--surface)]"
+                          title="Bank-Buchung zuordnen"
+                        >
+                          🔗
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
                     {r.drive_file_url ? (

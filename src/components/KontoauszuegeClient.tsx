@@ -79,6 +79,53 @@ export default function KontoauszuegeClient() {
     }
   }, [statusFilter, quelleFilter, dateFrom, dateTo]);
 
+  const ignoreTrx = useCallback(
+    async (t: Txn) => {
+      const name = t.counterparty_name || t.purpose?.slice(0, 30) || "Buchung";
+      const remember = confirm(
+        `"${name}" als 'kein Match nötig' markieren?\n\n` +
+          `[OK] = auch bei zukünftigen Uploads automatisch ignorieren ` +
+          `(z.B. Gehalt). Der Bot lernt.\n` +
+          `[Abbrechen] = nichts tun.`,
+      );
+      if (!remember) return;
+      try {
+        const res = await fetch(
+          `/cashflow/api/buchhaltung/transaction/${t.id}/ignore`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ remember: true }),
+          },
+        );
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          alert(`Fehler: ${j.error ?? res.status}`);
+          return;
+        }
+        await loadAll();
+      } catch (e) {
+        alert(String(e));
+      }
+    },
+    [loadAll],
+  );
+
+  const unignoreTrx = useCallback(
+    async (id: string) => {
+      try {
+        await fetch(
+          `/cashflow/api/buchhaltung/transaction/${id}/unignore`,
+          { method: "POST" },
+        );
+        await loadAll();
+      } catch (e) {
+        alert(String(e));
+      }
+    },
+    [loadAll],
+  );
+
   // Monats-Schnellfilter: setzt from + to fuer Default-Monate
   const setMonthFilter = useCallback(
     (mode: "current" | "last" | "last3" | "year" | "all") => {
@@ -487,23 +534,43 @@ export default function KontoauszuegeClient() {
                         ✓ gematched
                       </span>
                     ) : t.status === "ignored" ? (
-                      <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">
-                        ignoriert
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">
+                          kein Match nötig
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void unignoreTrx(t.id)}
+                          className="text-xs text-[color:var(--brand-blue)] underline"
+                          title="Doch matchen können"
+                        >
+                          zurück
+                        </button>
+                      </div>
                     ) : (
                       <div className="flex items-center gap-2">
                         <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
                           offen
                         </span>
                         {t.amount < 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setManualTrx(t)}
-                            className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--accent)] hover:bg-[color:var(--surface)]"
-                            title="Rechnung manuell zuordnen"
-                          >
-                            🔗 Matchen
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setManualTrx(t)}
+                              className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--brand-blue)] hover:bg-[color:var(--surface)]"
+                              title="Rechnung manuell zuordnen"
+                            >
+                              🔗 Matchen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void ignoreTrx(t)}
+                              className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:bg-[color:var(--surface)]"
+                              title="Diese Buchung braucht keine Rechnung (z.B. Gehalt)"
+                            >
+                              kein Match
+                            </button>
+                          </>
                         )}
                       </div>
                     )}
