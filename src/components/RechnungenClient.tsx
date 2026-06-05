@@ -124,7 +124,12 @@ export default function RechnungenClient() {
 
       {/* Verworfene / Duplikate: kompakte Diagnose-Ansicht */}
       {(status === "rejected" || status === "duplikat") ? (
-        <RejectedList rows={rows} loading={loading} error={error} />
+        <RejectedList
+          rows={rows}
+          loading={loading}
+          error={error}
+          onReactivated={() => void load()}
+        />
       ) : (
         <FullInvoiceTable rows={rows} loading={loading} error={error} />
       )}
@@ -256,15 +261,64 @@ function RejectedList({
   rows,
   loading,
   error,
+  onReactivated,
 }: {
   rows: Invoice[];
   loading: boolean;
   error: string | null;
+  onReactivated: () => void;
 }) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const reactivate = useCallback(
+    async (inv: Invoice) => {
+      const label =
+        inv.lieferant_name ??
+        inv.drive_filename ??
+        inv.rechnung_nr ??
+        "Rechnung";
+      if (
+        !confirm(
+          `"${label}" als echte Rechnung markieren? Sie wird in 'Offen' verschoben und kann normal gematched werden.`,
+        )
+      )
+        return;
+      setBusyId(inv.id);
+      setActionError(null);
+      try {
+        const res = await fetch(
+          `/cashflow/api/buchhaltung/invoice/${inv.id}/status`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "offen" }),
+          },
+        );
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          setActionError(j.error ?? `HTTP ${res.status}`);
+          return;
+        }
+        onReactivated();
+      } catch (e) {
+        setActionError(String(e));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [onReactivated],
+  );
+
   return (
     <div className="bg-white border border-[color:var(--border)] rounded-lg overflow-hidden">
       {error && (
         <div className="px-4 py-6 text-center text-red-600">{error}</div>
+      )}
+      {actionError && (
+        <div className="px-4 py-3 text-sm text-red-700 bg-red-50 border-b border-red-100">
+          {actionError}
+        </div>
       )}
       {!error && loading && rows.length === 0 && (
         <div className="px-4 py-6 text-center text-[color:var(--muted)]">
@@ -291,9 +345,7 @@ function RejectedList({
                     {r.lieferant_name && (
                       <span>Erkannt als: {r.lieferant_name}</span>
                     )}
-                    {r.rechnung_nr && (
-                      <span> · RG-Nr {r.rechnung_nr}</span>
-                    )}
+                    {r.rechnung_nr && <span> · RG-Nr {r.rechnung_nr}</span>}
                     {r.brutto != null && (
                       <span> · Betrag {eur(r.brutto, r.waehrung ?? "EUR")}</span>
                     )}
@@ -313,7 +365,7 @@ function RejectedList({
                     </div>
                   )}
                 </div>
-                <div className="text-right whitespace-nowrap flex flex-col items-end gap-1">
+                <div className="text-right whitespace-nowrap flex flex-col items-end gap-1.5">
                   <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
                     Konfidenz {(conf * 100).toFixed(0)}%
                   </span>
@@ -327,6 +379,14 @@ function RejectedList({
                       PDF öffnen
                     </a>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => void reactivate(r)}
+                    disabled={busyId !== null}
+                    className="text-xs px-2 py-1 rounded bg-[color:var(--brand-orange)] text-white font-medium disabled:opacity-50"
+                  >
+                    {busyId === r.id ? "…" : "Doch echte Rechnung"}
+                  </button>
                 </div>
               </div>
             </li>
