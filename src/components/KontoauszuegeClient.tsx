@@ -41,6 +41,10 @@ export default function KontoauszuegeClient() {
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
   const [statusFilter, setStatusFilter] = useState("");
+  // Default: ignored ausblenden (sind oft Gehalt / Privat etc.)
+  const [showIgnored, setShowIgnored] = useState(false);
+  // "" | "in" | "out"
+  const [directionFilter, setDirectionFilter] = useState<"" | "in" | "out">("");
   const [loading, setLoading] = useState(false);
   const [matching, setMatching] = useState(false);
   const [matchMsg, setMatchMsg] = useState<string | null>(null);
@@ -61,6 +65,10 @@ export default function KontoauszuegeClient() {
       if (quelleFilter) txParams.set("quelle", quelleFilter);
       if (dateFrom) txParams.set("from", dateFrom);
       if (dateTo) txParams.set("to", dateTo);
+      if (directionFilter === "in") txParams.set("direction", "in");
+      if (directionFilter === "out") txParams.set("direction", "out");
+      if (!showIgnored && !statusFilter)
+        txParams.set("exclude_status", "ignored");
       const [ovRes, txRes] = await Promise.all([
         fetch(`${API}/match-overview`, { cache: "no-store" }),
         fetch(`${API}/transactions?${txParams.toString()}`, { cache: "no-store" }),
@@ -77,7 +85,7 @@ export default function KontoauszuegeClient() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, quelleFilter, dateFrom, dateTo]);
+  }, [statusFilter, quelleFilter, dateFrom, dateTo, directionFilter, showIgnored]);
 
   const ignoreTrx = useCallback(
     async (t: Txn) => {
@@ -445,13 +453,39 @@ export default function KontoauszuegeClient() {
             />
           </label>
           <div className="flex flex-col gap-1">
+            <span className="text-xs text-[color:var(--muted)]">Richtung</span>
+            <div className="flex gap-1 flex-wrap">
+              {(
+                [
+                  { k: "", l: "Beide" },
+                  { k: "in", l: "Eingänge" },
+                  { k: "out", l: "Ausgänge" },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.k}
+                  type="button"
+                  onClick={() => setDirectionFilter(f.k)}
+                  className={
+                    "text-xs px-2 py-1 rounded border transition " +
+                    (directionFilter === f.k
+                      ? "border-[color:var(--brand-blue)] bg-[color:var(--brand-blue)] text-white"
+                      : "border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)]")
+                  }
+                >
+                  {f.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
             <span className="text-xs text-[color:var(--muted)]">Status</span>
             <div className="flex gap-1 flex-wrap">
               {[
                 { k: "", l: "Alle" },
                 { k: "open", l: "Offen" },
                 { k: "matched", l: "Gematched" },
-                { k: "ignored", l: "Ignoriert" },
+                { k: "ignored", l: "kein Match nötig" },
               ].map((f) => (
                 <button
                   key={f.k}
@@ -469,6 +503,15 @@ export default function KontoauszuegeClient() {
               ))}
             </div>
           </div>
+          <label className="flex items-center gap-2 text-xs text-[color:var(--muted)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showIgnored}
+              onChange={(e) => setShowIgnored(e.target.checked)}
+              className="rounded border-[color:var(--border)]"
+            />
+            <span>"kein Match nötig" mit anzeigen</span>
+          </label>
         </div>
         <div className="text-xs text-[color:var(--muted)]">
           {loading
