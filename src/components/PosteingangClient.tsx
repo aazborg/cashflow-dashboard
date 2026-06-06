@@ -48,6 +48,11 @@ export default function PosteingangClient() {
   const [statusFilter, setStatusFilter] = useState("");
   const [polling, setPolling] = useState(false);
   const [pollMsg, setPollMsg] = useState<string | null>(null);
+  // Re-Process pro Mail-ID: { kind: 'loading' | 'ok' | 'err', msg }
+  const [reprocess, setReprocess] = useState<Record<
+    string,
+    { kind: "loading" | "ok" | "err"; msg: string }
+  >>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,6 +131,70 @@ export default function PosteingangClient() {
     return c;
   }, [mails]);
 
+  // Manueller "Erneut verarbeiten"-Trigger fuer EINE Mail.
+  // Nuetzlich wenn der Bot eine echte Rechnung faelschlich als
+  // self_sent / no_pdf / rejected klassifiziert hat (z.B. iPhone-Scan
+  // mit Subject "Zahlungsbestaetigung").
+  const reprocessOne = useCallback(
+    async (mailId: string) => {
+      setReprocess((r) => ({
+        ...r,
+        [mailId]: { kind: "loading", msg: "Claude parst…" },
+      }));
+      try {
+        const res = await fetch(
+          `${API}/inbox/${mailId}/reprocess`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // force=true: ueberspringt self_sent/auto_reject-Filter
+            body: JSON.stringify({ force: true }),
+          },
+        );
+        const raw = await res.text();
+        let j:
+          | {
+              ok?: boolean;
+              error?: string;
+              result?: { status?: string; invoices?: number };
+            }
+          | null = null;
+        try {
+          j = JSON.parse(raw);
+        } catch {}
+        if (!j || !res.ok || !j.ok) {
+          const head = raw.replace(/\s+/g, " ").trim().slice(0, 120);
+          setReprocess((r) => ({
+            ...r,
+            [mailId]: {
+              kind: "err",
+              msg: j?.error ?? `HTTP ${res.status} ${head}`,
+            },
+          }));
+          return;
+        }
+        const result = j.result ?? {};
+        const st = result.status ?? "fertig";
+        const inv = result.invoices ?? 0;
+        setReprocess((r) => ({
+          ...r,
+          [mailId]: {
+            kind: "ok",
+            msg: `→ ${st}${inv ? ` (${inv} Rechnung${inv > 1 ? "en" : ""})` : ""}`,
+          },
+        }));
+        // Liste neu laden damit der Status sichtbar wird
+        await load();
+      } catch (e) {
+        setReprocess((r) => ({
+          ...r,
+          [mailId]: { kind: "err", msg: String(e) },
+        }));
+      }
+    },
+    [load],
+  );
+
   return (
     <div className="space-y-4">
       {/* Trigger + Filter */}
@@ -186,26 +255,27 @@ export default function PosteingangClient() {
                 <th className="px-3 py-2 font-medium">Betreff</th>
                 <th className="px-3 py-2 font-medium">📎</th>
                 <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody>
               {error && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-red-600">
+                  <td colSpan={6} className="px-3 py-6 text-center text-red-600">
                     {error}
                   </td>
                 </tr>
               )}
               {!error && loading && mails.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                  <td colSpan={6} className="px-3 py-6 text-center text-[color:var(--muted)]">
                     Lade…
                   </td>
                 </tr>
               )}
               {!error && !loading && mails.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                  <td colSpan={6} className="px-3 py-6 text-center text-[color:var(--muted)]">
                     Keine Mails (mit Filter „{statusFilter || "Alle"}").
                   </td>
                 </tr>
@@ -260,6 +330,46 @@ export default function PosteingangClient() {
                       <span className={"text-xs px-2 py-0.5 rounded " + lab.tone}>
                         {lab.label}
                       </span>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right">
+                      {(() => {
+                        const rp = reprocess[m.id];
+                        if (rp?.kind === "loading") {
+                          return (
+                            <span className="text-xs text-[color:var(--muted)]">
+                              {rp.msg}
+                            </span>
+                          );
+                        }
+                        const showButton =
+                          m.attachment_count > 0 ||
+                          m.status === "link_found" ||
+                          m.status === "text_only";
+                        return (
+                          <div className="flex flex-col items-end gap-1">
+                            {showButton && (
+                              <button
+                                type="button"
+                                onClick={() => void reprocessOne(m.id)}
+                                title="Mail neu durch Claude parsen — z.B. wenn der Bot eine echte Rechnung als Zahlungsbestätigung verworfen hat"
+                                className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface)]"
+                              >
+                                ↻ neu parsen
+                              </button>
+                            )}
+                            {rp?.kind === "ok" && (
+                              <span className="text-xs text-emerald-700">
+                                {rp.msg}
+                              </span>
+                            )}
+                            {rp?.kind === "err" && (
+                              <span className="text-xs text-red-700">
+                                {rp.msg.slice(0, 80)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

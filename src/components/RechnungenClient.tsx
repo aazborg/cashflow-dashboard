@@ -70,7 +70,18 @@ export default function RechnungenClient() {
       const res = await fetch(`${API}/invoices?${params.toString()}`, {
         cache: "no-store",
       });
-      const j = await res.json();
+      // Defensiv: Vercel kann bei Function-Timeout HTML statt JSON liefern.
+      // Vorher als Text lesen, dann JSON-Parse versuchen — sonst sehen
+      // wir nur "SyntaxError: Unexpected token 'A'" ohne Kontext.
+      const raw = await res.text();
+      let j: { ok?: boolean; invoices?: Invoice[]; error?: string } | null = null;
+      try { j = JSON.parse(raw); } catch {}
+      if (!j) {
+        const head = raw.replace(/\s+/g, " ").trim().slice(0, 120);
+        setError(`HTTP ${res.status} (keine JSON-Antwort) — ${head || "leer"}`);
+        setRows([]);
+        return;
+      }
       if (!res.ok || !j.ok) {
         setError(j.error ?? `HTTP ${res.status}`);
         setRows([]);

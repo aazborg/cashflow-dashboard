@@ -90,9 +90,18 @@ export default function KontoauszuegeClient() {
         fetch(`${API}/transactions?${txParams.toString()}`, { cache: "no-store" }),
         fetch(`${API}/statements`, { cache: "no-store" }),
       ]);
-      const ov = await ovRes.json();
-      const tx = await txRes.json();
-      const st = await stRes.json();
+      // Defensiv: Vercel kann bei Function-Timeout HTML statt JSON liefern.
+      const parseSafe = async (r: Response) => {
+        const raw = await r.text();
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return { ok: false, error: `HTTP ${r.status} (keine JSON-Antwort)` };
+        }
+      };
+      const ov = await parseSafe(ovRes);
+      const tx = await parseSafe(txRes);
+      const st = await parseSafe(stRes);
       if (ov.ok)
         setOverview({
           bezahlt: ov.bezahlt,
