@@ -56,7 +56,18 @@ export default function PosteingangClient() {
       const qs = new URLSearchParams({ limit: "200" });
       if (statusFilter) qs.set("status", statusFilter);
       const res = await fetch(`${API}/mails?${qs.toString()}`, { cache: "no-store" });
-      const j = await res.json();
+      // Defensiv: Vercel kann bei Function-Timeout / Crash HTML statt JSON
+      // liefern. Vorher als Text lesen, dann JSON-Parse versuchen — sonst
+      // sehen wir nur "SyntaxError: Unexpected token 'A'" ohne Kontext.
+      const raw = await res.text();
+      let j: { ok?: boolean; mails?: Mail[]; error?: string } | null = null;
+      try { j = JSON.parse(raw); } catch { /* siehe unten */ }
+      if (!j) {
+        const head = raw.replace(/\s+/g, " ").trim().slice(0, 120);
+        setError(`HTTP ${res.status} (keine JSON-Antwort) — ${head || "leer"}`);
+        setMails([]);
+        return;
+      }
       if (!res.ok || !j.ok) {
         setError(j.error ?? `HTTP ${res.status}`);
         setMails([]);
@@ -81,15 +92,24 @@ export default function PosteingangClient() {
       const res = await fetch(`${API}/poll`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit_mails: 50 }),
+        // Limit 200 (vorher 50) — self_sent-Flut konnte sonst echte
+        // Eingangsrechnungen aus dem 50-Mail-Window draengen.
+        body: JSON.stringify({ limit_mails: 200 }),
       });
-      const j = await res.json();
+      const raw = await res.text();
+      let j: { ok?: boolean; summary?: Record<string, unknown>; error?: string } | null = null;
+      try { j = JSON.parse(raw); } catch { /* HTML-Fehlerseite o.ae. */ }
+      if (!j) {
+        const head = raw.replace(/\s+/g, " ").trim().slice(0, 120);
+        setPollMsg(`Fehler: HTTP ${res.status} (keine JSON-Antwort) — ${head || "leer"}`);
+        return;
+      }
       if (!res.ok || !j.ok) {
         setPollMsg(`Fehler: ${j.error ?? res.status}`);
       } else {
-        const s = j.summary ?? {};
+        const s = (j.summary ?? {}) as Record<string, unknown>;
         setPollMsg(
-          `OK — ${s.mails_seen ?? "?"} Mails geprüft, ${s.invoices_parsed ?? 0} Rechnungen.`,
+          `OK — ${(s.mails_seen ?? "?") as number} Mails geprüft, ${(s.invoices_parsed ?? 0) as number} Rechnungen.`,
         );
         await load();
       }
