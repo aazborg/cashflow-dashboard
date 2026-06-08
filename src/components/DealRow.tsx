@@ -628,13 +628,21 @@ export default function DealRow({
                     //   - pending/submitted  -> amber (wartet auf Bank)
                     //   - active + ok        -> gruen (Mandat laeuft)
                     //   - failed/cancelled   -> rot
-                    const ms = deal.gocardless_mandate_status
-                      ?? rechnungInfo?.gocardless_mandate_status;
-                    const mandateId = deal.gocardless_mandate_id
-                      ?? rechnungInfo?.gocardless_mandate_id;
-                    const env = deal.gocardless_env
-                      ?? rechnungInfo?.gocardless_env;
-                    const failed = !!rechnungInfo?.gocardless_last_failure_at;
+                    // WICHTIG: Status ausschliesslich deal-basiert.
+                    // Vorher gab es einen Fallback auf rechnungInfo
+                    // (Lookup via Email aus notiz_vorlagen). Das ist
+                    // falsch wenn ein Kunde MEHRERE Deals hat: das
+                    // Mandat des einen Deals wurde dann auch beim
+                    // zweiten Deal als "aktiv" angezeigt -> man konnte
+                    // kein eigenes Mandat fuer den zweiten Deal anlegen.
+                    // Jetzt: nur deal.gocardless_* zaehlt. Wenn ein
+                    // Deal kein eigenes Mandat hat, erscheint der
+                    // "GC-Mandat anlegen"-Button (auch wenn der Kunde
+                    // schon ein Mandat fuer einen anderen Deal hat).
+                    const ms = deal.gocardless_mandate_status;
+                    const mandateId = deal.gocardless_mandate_id;
+                    const env = deal.gocardless_env;
+                    const failed = !!deal.gocardless_last_failure_at;
                     const isSandbox = env === "sandbox";
                     const sbx = isSandbox ? " (SBX)" : "";
                     const base = "text-xs px-2 py-1 rounded mr-1 ";
@@ -652,7 +660,7 @@ export default function DealRow({
                     } else if (ms === "active" && failed) {
                       cls = "bg-red-600 text-white hover:bg-red-700";
                       label = "GC ⚠ Fehler" + sbx;
-                      tooltip = `Mandat aktiv, ABER letzte Lastschrift fehlgeschlagen: ${rechnungInfo?.gocardless_last_failure_reason ?? "—"}`;
+                      tooltip = `Mandat aktiv, ABER letzte Lastschrift fehlgeschlagen: ${deal.gocardless_last_failure_reason ?? "—"}`;
                     } else if (ms === "pending_submission" || ms === "submitted"
                                 || ms === "pending_customer_approval") {
                       cls = "bg-amber-500 text-white hover:bg-amber-600";
