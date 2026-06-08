@@ -620,11 +620,7 @@ export default function DealRow({
                       : "Rechnung"}
                   </button>
                 ) : null}
-                {canCreateRechnung
-                  && (vertragOverlay?.zahlungsmodell === "raten"
-                      || deal.zahlungsmodell === "raten"
-                      || rechnungInfo?.zahlungsmodell === "raten")
-                  && deal.email ? (
+                {canCreateRechnung && deal.email ? (
                   (() => {
                     // 4 Button-Zustaende, alle 4 zeigen denselben
                     // Button (Mario will keinen extra Status-Badge):
@@ -648,7 +644,7 @@ export default function DealRow({
                     if (!ms) {
                       cls = "border border-purple-600 text-purple-600 hover:bg-purple-600/10";
                       label = "GC-Mandat anlegen";
-                      tooltip = "SEPA-Mandat + Ratenzahlung bei GoCardless anlegen (lädt Vertrag aus Drive)";
+                      tooltip = "SEPA-Mandat bei GoCardless anlegen — auch bei Einmalzahlung moeglich (Vertrag wird aus Drive geladen, kann aber leer bleiben)";
                     } else if (ms === "active" && !failed) {
                       cls = "bg-green-600 text-white hover:bg-green-700";
                       label = "GC ✓ aktiv" + sbx;
