@@ -10,6 +10,7 @@ const ITEMS: Item[] = [
   { href: "/buchhaltung/posteingang", label: "Posteingang" },
   { href: "/buchhaltung/rechnungen", label: "Rechnungen" },
   { href: "/buchhaltung/kontoauszuege", label: "Kontoauszüge" },
+  { href: "/buchhaltung/quellen", label: "Rechnungs-Quellen" },
 ];
 
 export default function BuchhaltungSidebar() {
