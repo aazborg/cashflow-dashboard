@@ -5,6 +5,23 @@ import MatchDealForTrxModal from "./MatchDealForTrxModal";
 
 const API = "/cashflow/api/buchhaltung";
 
+type MatchedInvoice = {
+  id: string;
+  drive_file_url: string | null;
+  drive_filename: string | null;
+  lieferant_name: string | null;
+  rechnung_nr: string | null;
+  rechnungsdatum: string | null;
+  brutto: number | null;
+};
+
+type InvoiceMatch = {
+  id: string;
+  match_type: string;
+  confidence: number | null;
+  invoice: MatchedInvoice | null;
+};
+
 type Txn = {
   id: string;
   booking_date: string;
@@ -16,6 +33,7 @@ type Txn = {
   purpose: string | null;
   status: string;
   accounting_bank_accounts?: { bezeichnung: string; quelle: string } | null;
+  accounting_invoice_matches?: InvoiceMatch[] | null;
 };
 
 type Overview = { bezahlt: number; offen: number; unbekannt: number };
@@ -743,9 +761,35 @@ export default function KontoauszuegeClient() {
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {t.status === "matched" ? (
-                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                        ✓ gematched
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                          ✓ gematched
+                        </span>
+                        {(t.accounting_invoice_matches ?? [])
+                          .filter((m) => m.invoice?.drive_file_url)
+                          .slice(0, 3)
+                          .map((m) => (
+                            <a
+                              key={m.id}
+                              href={m.invoice!.drive_file_url!}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] hover:bg-[color:var(--surface-hover)] text-[color:var(--brand-blue)] underline"
+                              title={[
+                                m.invoice?.lieferant_name,
+                                m.invoice?.rechnung_nr,
+                                m.invoice?.rechnungsdatum,
+                                m.invoice?.brutto != null
+                                  ? eur(m.invoice.brutto, t.waehrung)
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            >
+                              📄 Rechnung
+                            </a>
+                          ))}
+                      </div>
                     ) : t.status === "ignored" ? (
                       <div className="flex items-center gap-2">
                         <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">
