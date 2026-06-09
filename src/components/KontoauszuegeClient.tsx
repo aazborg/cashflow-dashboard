@@ -87,6 +87,10 @@ export default function KontoauszuegeClient() {
   const [quelleFilter, setQuelleFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  // 1-Feld-Suche: durchsucht counterparty + purpose + IBAN
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  // Debounced version: nur diesen ans Backend schicken
+  const [searchQueryDebounced, setSearchQueryDebounced] = useState<string>("");
   // Hochgeladene Auszuege
   const [statements, setStatements] = useState<Statement[]>([]);
   const [showStatements, setShowStatements] = useState(false);
@@ -103,6 +107,8 @@ export default function KontoauszuegeClient() {
       if (directionFilter === "out") txParams.set("direction", "out");
       if (!showIgnored && !statusFilter)
         txParams.set("exclude_status", "ignored");
+      if (searchQueryDebounced.trim())
+        txParams.set("q", searchQueryDebounced.trim());
       const [ovRes, txRes, stRes] = await Promise.all([
         fetch(`${API}/match-overview`, { cache: "no-store" }),
         fetch(`${API}/transactions?${txParams.toString()}`, { cache: "no-store" }),
@@ -131,7 +137,13 @@ export default function KontoauszuegeClient() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, quelleFilter, dateFrom, dateTo, directionFilter, showIgnored]);
+  }, [statusFilter, quelleFilter, dateFrom, dateTo, directionFilter, showIgnored, searchQueryDebounced]);
+
+  // Debounce: 350 ms nach letzter Tasteneingabe ans Backend
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQueryDebounced(searchQuery), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const deleteStatement = useCallback(
     async (s: Statement) => {
@@ -595,6 +607,28 @@ export default function KontoauszuegeClient() {
               onChange={(e) => setDateTo(e.target.value)}
               className="px-2 py-1.5 rounded border border-[color:var(--border)] bg-white text-sm"
             />
+          </label>
+          <label className="flex flex-col gap-1 flex-1 min-w-[14rem]">
+            <span className="text-xs text-[color:var(--muted)]">Suche</span>
+            <div className="relative">
+              <input
+                type="search"
+                placeholder="Name, Verwendungszweck, IBAN…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-2 py-1.5 pr-7 rounded border border-[color:var(--border)] bg-white text-sm"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[color:var(--muted)] hover:text-[color:var(--foreground)] text-sm"
+                  title="Suche löschen"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </label>
           <div className="flex flex-col gap-1">
             <span className="text-xs text-[color:var(--muted)]">Richtung</span>
