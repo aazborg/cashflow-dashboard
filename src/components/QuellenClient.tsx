@@ -545,12 +545,25 @@ def run(playwright: Playwright):
 
 // -----------------------------------------------------------------------------
 
+type CredentialKind = "username" | "password" | "totp_secret" | "storage_state" | "api_token" | "magic_link_email";
+
+const CRED_HINTS: Record<CredentialKind, { label: string; hint: string; placeholder?: string; multiline?: boolean }> = {
+  username: { label: "Email / Benutzername", hint: "Login-Email der Plattform", placeholder: "mario@firma.at" },
+  password: { label: "Passwort", hint: "Verschlüsselt gespeichert — nur Bot kann entschlüsseln" },
+  totp_secret: { label: "TOTP-Secret (2FA)", hint: "Base32-Secret aus dem Authenticator-Setup (QR-Code → 'Schlüssel manuell eingeben')", placeholder: "JBSWY3DPEHPK3PXP" },
+  storage_state: { label: "Storage-State JSON", hint: "Komplettes Playwright-State-File aus dem Login-Helper", multiline: true },
+  api_token: { label: "API-Token", hint: "Bearer-Token für REST-API-Connectors" },
+  magic_link_email: { label: "Magic-Link-Email", hint: "Optional, default: rechnung@mynlp.at — wo die Login-Mail ankommt", placeholder: "rechnung@mynlp.at" },
+};
+
 function CredentialsModal({ source, onClose, onSaved }: { source: Source; onClose: () => void; onSaved: () => void }) {
-  const [kind, setKind] = useState("api_token");
+  const [kind, setKind] = useState<CredentialKind>("username");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  const hint = CRED_HINTS[kind];
 
   async function save() {
     setBusy(true);
@@ -560,7 +573,7 @@ function CredentialsModal({ source, onClose, onSaved }: { source: Source; onClos
       const res = await fetch(`${API}/sources/${source.id}/credentials`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: kind.trim(), value }),
+        body: JSON.stringify({ kind, value }),
       });
       const j = await safeJson(res);
       if (!j.ok) {
@@ -580,21 +593,51 @@ function CredentialsModal({ source, onClose, onSaved }: { source: Source; onClos
   return (
     <Modal title={`Credentials: ${source.name}`} onClose={onClose}>
       <div className="text-xs text-[color:var(--muted)] mb-2">
-        Werte werden AES-GCM-verschlüsselt im Bot abgelegt. Der Klartext verlässt deinen Browser einmal — danach nie mehr lesbar.
+        Werte werden AES-GCM-verschlüsselt im Bot abgelegt. Klartext verlässt deinen Browser einmal — danach nie mehr lesbar.
         <br />
         Bereits gesetzt: <strong>{source.credential_kinds.join(", ") || "keine"}</strong>
       </div>
-      <Field label="Kind" hint="z.B. api_token, username, password, totp_secret">
-        <input value={kind} onChange={(e) => setKind(e.target.value)} className="w-full border border-[color:var(--border)] rounded px-2 py-1.5 font-mono" />
+      <Field label="Typ" hint="Auswahl für Auto-Login">
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as CredentialKind)}
+          className="w-full border border-[color:var(--border)] rounded px-2 py-1.5"
+        >
+          <option value="username">Email / Benutzername</option>
+          <option value="password">Passwort</option>
+          <option value="totp_secret">TOTP-Secret (2FA)</option>
+          <option value="storage_state">Storage-State (Login-Capture)</option>
+          <option value="api_token">API-Token</option>
+          <option value="magic_link_email">Magic-Link-Email</option>
+        </select>
       </Field>
-      <Field label="Wert">
-        <input type="password" value={value} onChange={(e) => setValue(e.target.value)} className="w-full border border-[color:var(--border)] rounded px-2 py-1.5 font-mono" autoComplete="new-password" />
+      <Field label={hint.label} hint={hint.hint}>
+        {hint.multiline ? (
+          <textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-full border border-[color:var(--border)] rounded px-2 py-1.5 font-mono text-xs"
+            rows={6}
+            placeholder={hint.placeholder}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        ) : (
+          <input
+            type={kind === "username" || kind === "magic_link_email" ? "text" : "password"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={hint.placeholder}
+            className="w-full border border-[color:var(--border)] rounded px-2 py-1.5 font-mono"
+            autoComplete="new-password"
+          />
+        )}
       </Field>
       {err && <div className="text-red-700 text-xs">{err}</div>}
       {msg && <div className="text-emerald-700 text-xs">{msg}</div>}
       <div className="flex items-center justify-end gap-2 pt-2">
         <button type="button" onClick={onClose} disabled={busy} className="px-3 py-1.5 rounded border border-[color:var(--border)] text-sm">Schließen</button>
-        <button type="button" onClick={save} disabled={busy || !kind.trim() || !value} className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium disabled:opacity-50">
+        <button type="button" onClick={save} disabled={busy || !value} className="px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white text-sm font-medium disabled:opacity-50">
           {busy ? "Speichert…" : "Speichern"}
         </button>
       </div>
