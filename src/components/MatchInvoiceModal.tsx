@@ -41,16 +41,21 @@ export default function MatchInvoiceModal({
   trx,
   onClose,
   onSuccess,
+  preloadedInvoices,
 }: {
   trx: Txn;
   onClose: () => void;
   onSuccess: () => void;
+  // Vom Parent EINMAL geladene offene Rechnungen. Wenn gesetzt, spart sich
+  // das Modal den (über Tunnel langsamen) Refetch bei jedem Öffnen.
+  preloadedInvoices?: Invoice[] | null;
 }) {
   const trxAbs = Math.abs(trx.amount);
   // Search default: der Betrag der Trx (häufigster Fall)
   const [search, setSearch] = useState(trxAbs.toFixed(2).replace(".", ","));
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Init direkt aus Prop (instant) -- Fallback-Fetch nur, wenn nichts da ist.
+  const [invoices, setInvoices] = useState<Invoice[]>(preloadedInvoices ?? []);
+  const [loading, setLoading] = useState(!preloadedInvoices);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   // Upload-State fuer "Rechnung jetzt hochladen + zuordnen"
@@ -104,10 +109,12 @@ export default function MatchInvoiceModal({
     [trx.id, onSuccess, onClose],
   );
 
-  // Lade alle offenen Rechnungen einmal beim Mount
+  // Offene Rechnungen: vom Parent vorgeladen (instant, via useState-Init)
+  // oder als Fallback selbst nachladen, wenn der Parent nichts mitgibt.
+  // Vermeidet den langsamen Tunnel-Roundtrip bei jedem Modal-Öffnen.
   useEffect(() => {
+    if (preloadedInvoices) return;
     let abort = false;
-    setLoading(true);
     setError(null);
     fetch("/cashflow/api/buchhaltung/invoices?status=offen&limit=1000", {
       cache: "no-store",
@@ -126,7 +133,7 @@ export default function MatchInvoiceModal({
     return () => {
       abort = true;
     };
-  }, []);
+  }, [preloadedInvoices]);
 
   // Client-Filter: nach Betrag (numerisch, Toleranz 0,01) ODER
   // Text-Match in lieferant_name / rechnung_nr

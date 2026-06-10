@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import MatchInvoiceModal from "./MatchInvoiceModal";
 import MatchDealForTrxModal from "./MatchDealForTrxModal";
 
@@ -38,6 +38,17 @@ type Txn = {
 
 type Overview = { bezahlt: number; offen: number; unbekannt: number };
 
+// Lite-Form offener Rechnungen fürs Match-Modal (an MatchInvoiceModal-Prop)
+type OpenInvoice = {
+  id: string;
+  lieferant_name: string | null;
+  rechnung_nr: string | null;
+  rechnungsdatum: string | null;
+  brutto: number | null;
+  netto: number | null;
+  waehrung: string | null;
+};
+
 type Statement = {
   id: string;
   format: string;
@@ -70,11 +81,12 @@ export default function KontoauszuegeClient() {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [txns, setTxns] = useState<Txn[]>([]);
-  const [statusFilter, setStatusFilter] = useState("");
+  // Default: offene Buchungen (das will Mario beim Arbeiten sehen)
+  const [statusFilter, setStatusFilter] = useState("open");
   // Default: ignored ausblenden (sind oft Gehalt / Privat etc.)
   const [showIgnored, setShowIgnored] = useState(false);
-  // "" | "in" | "out"
-  const [directionFilter, setDirectionFilter] = useState<"" | "in" | "out">("");
+  // "" | "in" | "out" -- Default: Ausgaenge (Rechnungen sind Ausgaenge)
+  const [directionFilter, setDirectionFilter] = useState<"" | "in" | "out">("out");
   const [loading, setLoading] = useState(false);
   const [matching, setMatching] = useState(false);
   const [matchMsg, setMatchMsg] = useState<string | null>(null);
@@ -87,32 +99,31 @@ export default function KontoauszuegeClient() {
   const [quelleFilter, setQuelleFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-  // 1-Feld-Suche: durchsucht counterparty + purpose + IBAN
+  // 1-Feld-Suche: durchsucht counterparty + purpose + IBAN (clientseitig, instant)
   const [searchQuery, setSearchQuery] = useState<string>("");
-  // Debounced version: nur diesen ans Backend schicken
-  const [searchQueryDebounced, setSearchQueryDebounced] = useState<string>("");
   // Hochgeladene Auszuege
   const [statements, setStatements] = useState<Statement[]>([]);
   const [showStatements, setShowStatements] = useState(false);
+  // Offene Rechnungen — EINMAL geladen, an MatchInvoiceModal durchgereicht,
+  // damit das Modal beim Öffnen nicht jedes Mal über den Tunnel nachlädt.
+  const [openInvoices, setOpenInvoices] = useState<OpenInvoice[]>([]);
 
+  // EINMAL alles laden -- KEINE Filter-Parameter, KEINE Filter-Deps.
+  // Sämtliche Filterung (Status, Richtung, Quelle, Datum, Suche) passiert
+  // clientseitig in `filteredTxns` (useMemo). So bleibt die Tabelle nach
+  // dem ersten Laden im Speicher und reagiert ohne Netz-Roundtrip.
+  // Refetch nur nach Mutationen (Upload / Match / Löschen / Ignorieren).
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const txParams = new URLSearchParams({ limit: "500" });
-      if (statusFilter) txParams.set("status", statusFilter);
-      if (quelleFilter) txParams.set("quelle", quelleFilter);
-      if (dateFrom) txParams.set("from", dateFrom);
-      if (dateTo) txParams.set("to", dateTo);
-      if (directionFilter === "in") txParams.set("direction", "in");
-      if (directionFilter === "out") txParams.set("direction", "out");
-      if (!showIgnored && !statusFilter)
-        txParams.set("exclude_status", "ignored");
-      if (searchQueryDebounced.trim())
-        txParams.set("q", searchQueryDebounced.trim());
-      const [ovRes, txRes, stRes] = await Promise.all([
+      // limit hoch genug fuer den kompletten Bestand; ignored inklusive,
+      // damit der "ignored anzeigen"-Toggle ohne Reload funktioniert.
+      const [ovRes, txRes, stRes, invRes] = await Promise.all([
         fetch(`${API}/match-overview`, { cache: "no-store" }),
-        fetch(`${API}/transactions?${txParams.toString()}`, { cache: "no-store" }),
+        fetch(`${API}/transactions?limit=5000`, { cache: "no-store" }),
         fetch(`${API}/statements`, { cache: "no-store" }),
+        // Offene Rechnungen für das Match-Modal vorladen (einmal).
+        fetch(`${API}/invoices?status=offen&limit=1000`, { cache: "no-store" }),
       ]);
       // Defensiv: Vercel kann bei Function-Timeout HTML statt JSON liefern.
       const parseSafe = async (r: Response) => {
@@ -126,6 +137,7 @@ export default function KontoauszuegeClient() {
       const ov = await parseSafe(ovRes);
       const tx = await parseSafe(txRes);
       const st = await parseSafe(stRes);
+      const inv = await parseSafe(invRes);
       if (ov.ok)
         setOverview({
           bezahlt: ov.bezahlt,
@@ -134,16 +146,56 @@ export default function KontoauszuegeClient() {
         });
       if (tx.ok) setTxns(tx.transactions ?? []);
       if (st.ok) setStatements(st.statements ?? []);
+      if (inv.ok) setOpenInvoices(inv.invoices ?? []);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, quelleFilter, dateFrom, dateTo, directionFilter, showIgnored, searchQueryDebounced]);
+  }, []);
 
-  // Debounce: 350 ms nach letzter Tasteneingabe ans Backend
-  useEffect(() => {
-    const t = setTimeout(() => setSearchQueryDebounced(searchQuery), 350);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
+  // Clientseitige Filterung -- läuft im Speicher, kein Netz-Roundtrip.
+  // Bildet die frühere Server-Filterlogik 1:1 nach:
+  //   status   -> status === eq.{wert}; bei "Alle" ignored ausblenden
+  //   direction-> in: amount>0, out: amount<0
+  //   quelle   -> Konto-Quelle
+  //   datum    -> booking_date zwischen from/to (ISO-Stringvergleich)
+  //   suche    -> counterparty_name | purpose | counterparty_iban (instant)
+  const filteredTxns = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    return txns.filter((t) => {
+      // Status / ignored
+      if (statusFilter) {
+        if (t.status !== statusFilter) return false;
+      } else if (!showIgnored && t.status === "ignored") {
+        return false;
+      }
+      // Richtung
+      if (directionFilter === "in" && !(t.amount > 0)) return false;
+      if (directionFilter === "out" && !(t.amount < 0)) return false;
+      // Quelle (Konto)
+      if (quelleFilter && t.accounting_bank_accounts?.quelle !== quelleFilter)
+        return false;
+      // Datum (booking_date ist ISO yyyy-mm-dd -> Stringvergleich genügt)
+      if (dateFrom && t.booking_date < dateFrom) return false;
+      if (dateTo && t.booking_date > dateTo) return false;
+      // Volltextsuche
+      if (needle) {
+        const hay = `${t.counterparty_name ?? ""} ${t.purpose ?? ""} ${
+          t.counterparty_iban ?? ""
+        }`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [
+    txns,
+    statusFilter,
+    showIgnored,
+    directionFilter,
+    quelleFilter,
+    dateFrom,
+    dateTo,
+    searchQuery,
+  ]);
 
   const deleteStatement = useCallback(
     async (s: Statement) => {
@@ -694,7 +746,7 @@ export default function KontoauszuegeClient() {
         <div className="text-xs text-[color:var(--muted)]">
           {loading
             ? "Lade…"
-            : `${txns.length} Buchungen geladen${
+            : `${filteredTxns.length} von ${txns.length} Buchungen${
                 dateFrom || dateTo
                   ? ` · ${dateFrom || "Anfang"} bis ${dateTo || "heute"}`
                   : ""
@@ -706,6 +758,7 @@ export default function KontoauszuegeClient() {
       {manualTrx && (
         <MatchInvoiceModal
           trx={manualTrx}
+          preloadedInvoices={openInvoices}
           onClose={() => setManualTrx(null)}
           onSuccess={() => {
             setManualTrx(null);
@@ -754,7 +807,14 @@ export default function KontoauszuegeClient() {
                   </td>
                 </tr>
               )}
-              {txns.map((t) => (
+              {!loading && txns.length > 0 && filteredTxns.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-[color:var(--muted)]">
+                    Keine Buchungen für diese Filter.
+                  </td>
+                </tr>
+              )}
+              {filteredTxns.map((t) => (
                 <tr key={t.id} className="border-t border-[color:var(--border)] align-top">
                   <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">
                     {t.booking_date}
