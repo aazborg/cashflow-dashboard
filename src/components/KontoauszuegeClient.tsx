@@ -60,6 +60,19 @@ type Statement = {
   accounting_bank_accounts?: { bezeichnung: string; quelle: string } | null;
 };
 
+// "Geparkte" Status: fallen aus der Offen-Liste, bleiben aber über den
+// jeweiligen Status-Filter auffindbar.
+const PARKED_STATUS = new Set(["ignored", "privat", "nicht_zuordenbar"]);
+// Anzeige-Label + Badge-Farbe pro geparktem Status.
+const PARKED_LABEL: Record<string, { label: string; cls: string }> = {
+  ignored: { label: "kein Match nötig", cls: "bg-gray-100 text-gray-500" },
+  privat: { label: "privat", cls: "bg-violet-100 text-violet-700" },
+  nicht_zuordenbar: {
+    label: "nicht zuordenbar",
+    cls: "bg-orange-100 text-orange-700",
+  },
+};
+
 const ACCOUNTS = [
   { slug: "erste_giro", label: "Erste Bank Girokonto" },
   { slug: "erste_kk", label: "Erste Bank Kreditkarte" },
@@ -162,10 +175,12 @@ export default function KontoauszuegeClient() {
   const filteredTxns = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     return txns.filter((t) => {
-      // Status / ignored
+      // Status: bei "Alle" (kein Filter) die geparkten Status
+      // (ignored / privat / nicht_zuordenbar) ausblenden, ausser der
+      // "geparkte anzeigen"-Toggle ist an.
       if (statusFilter) {
         if (t.status !== statusFilter) return false;
-      } else if (!showIgnored && t.status === "ignored") {
+      } else if (!showIgnored && PARKED_STATUS.has(t.status)) {
         return false;
       }
       // Richtung
@@ -242,6 +257,32 @@ export default function KontoauszuegeClient() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ remember: true }),
+          },
+        );
+        const j = await res.json();
+        if (!res.ok || !j.ok) {
+          alert(`Fehler: ${j.error ?? res.status}`);
+          return;
+        }
+        await loadAll();
+      } catch (e) {
+        alert(String(e));
+      }
+    },
+    [loadAll],
+  );
+
+  // Einzel-Markierung "privat" / "nicht_zuordenbar" (ohne Auto-Lernen).
+  // Fällt sofort aus "offen", bleibt über den Status-Filter auffindbar.
+  const markTrx = useCallback(
+    async (t: Txn, status: "privat" | "nicht_zuordenbar") => {
+      try {
+        const res = await fetch(
+          `/cashflow/api/buchhaltung/transaction/${t.id}/ignore`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status, remember: false }),
           },
         );
         const j = await res.json();
@@ -715,6 +756,8 @@ export default function KontoauszuegeClient() {
                 { k: "", l: "Alle" },
                 { k: "open", l: "Offen" },
                 { k: "matched", l: "Gematched" },
+                { k: "privat", l: "Privat" },
+                { k: "nicht_zuordenbar", l: "Nicht zuordb." },
                 { k: "ignored", l: "kein Match nötig" },
               ].map((f) => (
                 <button
@@ -740,7 +783,7 @@ export default function KontoauszuegeClient() {
               onChange={(e) => setShowIgnored(e.target.checked)}
               className="rounded border-[color:var(--border)]"
             />
-            <span>"kein Match nötig" mit anzeigen</span>
+            <span>Geparkte (privat / nicht zuordb. / kein Match) anzeigen</span>
           </label>
         </div>
         <div className="text-xs text-[color:var(--muted)]">
@@ -884,16 +927,22 @@ export default function KontoauszuegeClient() {
                             </a>
                           ))}
                       </div>
-                    ) : t.status === "ignored" ? (
+                    ) : PARKED_STATUS.has(t.status) ? (
                       <div className="flex items-center gap-2">
-                        <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">
-                          kein Match nötig
+                        <span
+                          className={
+                            "text-xs px-2 py-0.5 rounded " +
+                            (PARKED_LABEL[t.status]?.cls ??
+                              "bg-gray-100 text-gray-500")
+                          }
+                        >
+                          {PARKED_LABEL[t.status]?.label ?? t.status}
                         </span>
                         <button
                           type="button"
                           onClick={() => void unignoreTrx(t.id)}
                           className="text-xs text-[color:var(--brand-blue)] underline"
-                          title="Doch matchen können"
+                          title="Zurück auf offen"
                         >
                           zurück
                         </button>
@@ -921,9 +970,25 @@ export default function KontoauszuegeClient() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => void markTrx(t, "privat")}
+                          className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-violet-700 hover:bg-violet-50"
+                          title="Private Ausgabe – aus Offen entfernen, unter 'Privat' auffindbar"
+                        >
+                          privat
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void markTrx(t, "nicht_zuordenbar")}
+                          className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-orange-700 hover:bg-orange-50"
+                          title="Nicht zuordenbar – aus Offen entfernen, unter 'Nicht zuordb.' auffindbar"
+                        >
+                          nicht zuordb.
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void ignoreTrx(t)}
                           className="text-xs px-2 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:bg-[color:var(--surface)]"
-                          title="Diese Buchung braucht keine Rechnung (z.B. Gehalt)"
+                          title="Braucht keine Rechnung (z.B. Gehalt). Der Bot merkt sich das Muster."
                         >
                           kein Match
                         </button>
