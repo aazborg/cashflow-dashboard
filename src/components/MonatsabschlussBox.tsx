@@ -33,8 +33,12 @@ function prevMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export default function MonatsabschlussBox() {
-  const [open, setOpen] = useState(false);
+export default function MonatsabschlussBox({
+  defaultOpen = false,
+}: {
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   const [month, setMonth] = useState(prevMonth());
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(false);
