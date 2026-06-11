@@ -23,6 +23,14 @@ type Status = {
   ready: boolean;
   konten: Slot[];
   invoices: { matched: number; offen: number; total: number };
+  buchungen?: { offen_ausgang: number; offen_eingang: number };
+  ausgang?: { anzahl: number; luecken: number[] };
+  checks?: {
+    kontoauszuege: boolean;
+    buchungen_zugeordnet: boolean;
+    ausgangsrechnungen: boolean;
+  };
+  alles_ok?: boolean;
 };
 
 function prevMonth() {
@@ -31,6 +39,28 @@ function prevMonth() {
   d.setDate(1);
   d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function CheckRow({
+  ok,
+  label,
+  detail,
+}: {
+  ok: boolean | undefined;
+  label: string;
+  detail?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className={ok ? "text-emerald-600" : "text-amber-600"}>
+        {ok ? "✅" : "⬜"}
+      </span>
+      <span>{label}</span>
+      {!ok && detail && (
+        <span className="text-xs text-amber-700">— {detail}</span>
+      )}
+    </div>
+  );
 }
 
 export default function MonatsabschlussBox({
@@ -164,20 +194,39 @@ export default function MonatsabschlussBox({
 
           {status && (
             <>
-              {/* Rechnungs-Status */}
-              <div className="text-xs text-[color:var(--muted)]">
-                Eingangsrechnungen diesen Monat:{" "}
-                <span className="text-emerald-700 font-medium">
-                  {status.invoices.matched} gematcht
-                </span>
-                {status.invoices.offen > 0 && (
-                  <>
-                    {" · "}
-                    <span className="text-amber-700 font-medium">
-                      {status.invoices.offen} offen
-                    </span>
-                  </>
-                )}
+              {/* 3-Punkte-Vorab-Prüfung */}
+              <div className="space-y-1.5 rounded-md border border-[color:var(--border)] p-3">
+                <div className="text-xs font-semibold text-[color:var(--muted)] uppercase tracking-wide">
+                  Voraussetzungen
+                </div>
+                <CheckRow
+                  ok={status.checks?.kontoauszuege}
+                  label="Kontoauszüge vorhanden"
+                  detail="Erste, Erste KK & PayPal fehlen"
+                />
+                <CheckRow
+                  ok={status.checks?.buchungen_zugeordnet}
+                  label="Buchungen zugeordnet"
+                  detail={`${status.buchungen?.offen_ausgang ?? 0} offene Ausgänge noch nicht gematcht`}
+                />
+                <CheckRow
+                  ok={status.checks?.ausgangsrechnungen}
+                  label="Ausgangsrechnungen vollständig"
+                  detail={
+                    (status.ausgang?.anzahl ?? 0) === 0
+                      ? "keine hochgeladen"
+                      : (status.ausgang?.luecken?.length ?? 0) > 0
+                        ? `Nummern-Lücke: ${status.ausgang?.luecken.join(", ")}`
+                        : "unvollständig"
+                  }
+                />
+                <div className="text-xs text-[color:var(--muted)] pt-1">
+                  Eingangsrechnungen: {status.invoices.matched} gematcht
+                  {status.invoices.offen > 0 &&
+                    ` · ${status.invoices.offen} offen`}
+                  {(status.buchungen?.offen_eingang ?? 0) > 0 &&
+                    ` · ${status.buchungen?.offen_eingang} offene Eingänge (Kundenzahlungen)`}
+                </div>
               </div>
 
               {/* Konto-Checkliste */}
@@ -258,14 +307,14 @@ export default function MonatsabschlussBox({
               {/* Aktion */}
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div className="text-xs text-[color:var(--muted)]">
-                  {status.ready
-                    ? "Pflicht-Auszüge vollständig."
-                    : "Erste, Erste KK & PayPal müssen vorhanden sein."}
+                  {status.alles_ok
+                    ? "Alle Voraussetzungen erfüllt."
+                    : "Erst alle Voraussetzungen oben erfüllen."}
                 </div>
                 <button
                   type="button"
                   onClick={() => void run()}
-                  disabled={!status.ready || running}
+                  disabled={!status.alles_ok || running}
                   className="text-sm px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white font-medium disabled:opacity-50"
                   title="Gematchte Rechnungen in Konto-Unterordner verschieben"
                 >
