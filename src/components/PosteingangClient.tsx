@@ -3,6 +3,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const API = "/cashflow/api/buchhaltung";
 
+type InboxInvoice = {
+  id: string;
+  lieferant_name: string | null;
+  brutto: number | null;
+  waehrung: string | null;
+  rechnung_nr: string | null;
+  rechnungsdatum: string | null;
+  status: string;
+  drive_file_url: string | null;
+};
+
 type Mail = {
   id: string;
   gmail_message_id: string;
@@ -16,6 +27,22 @@ type Mail = {
   last_error: string | null;
   rechnung_link_url: string | null;
   processed_at: string | null;
+  invoices?: InboxInvoice[] | null;
+};
+
+function eur(v: number | null | undefined, w = "EUR") {
+  if (v == null) return "—";
+  return new Intl.NumberFormat("de-AT", {
+    style: "currency",
+    currency: w || "EUR",
+  }).format(Number(v));
+}
+
+const INV_STATUS_TONE: Record<string, string> = {
+  bezahlt: "bg-emerald-100 text-emerald-800",
+  offen: "bg-amber-100 text-amber-800",
+  duplikat: "bg-gray-100 text-gray-500",
+  rejected: "bg-red-100 text-red-700",
 };
 
 const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
@@ -303,6 +330,50 @@ export default function PosteingangClient() {
                       {m.snippet && (
                         <div className="text-xs text-[color:var(--muted)] mt-0.5 line-clamp-1">
                           {m.snippet}
+                        </div>
+                      )}
+                      {m.invoices && m.invoices.length > 0 && (
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          {m.invoices.map((inv) => {
+                            const tone =
+                              INV_STATUS_TONE[inv.status] ??
+                              "bg-gray-100 text-gray-600";
+                            const inner = (
+                              <>
+                                <span className="font-medium">
+                                  {inv.drive_file_url ? "📄 " : ""}
+                                  {inv.lieferant_name ?? "Rechnung"}
+                                </span>{" "}
+                                <span className="tabular-nums">
+                                  {eur(inv.brutto, inv.waehrung ?? "EUR")}
+                                </span>
+                                <span
+                                  className={
+                                    "ml-1.5 px-1.5 py-0.5 rounded text-[11px] " +
+                                    tone
+                                  }
+                                >
+                                  {inv.status}
+                                </span>
+                              </>
+                            );
+                            return inv.drive_file_url ? (
+                              <a
+                                key={inv.id}
+                                href={inv.drive_file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Rechnung als PDF öffnen"
+                                className="text-xs text-sky-800 hover:underline w-fit"
+                              >
+                                {inner}
+                              </a>
+                            ) : (
+                              <span key={inv.id} className="text-xs w-fit">
+                                {inner}
+                              </span>
+                            );
+                          })}
                         </div>
                       )}
                       {m.rechnung_link_url && (
