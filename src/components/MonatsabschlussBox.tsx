@@ -36,8 +36,11 @@ type AusgangRow = {
   drive_file_url: string | null;
 };
 
-function currentMonth() {
+function prevMonth() {
+  // Beim Monatsabschluss schliesst man i.d.R. den VERGANGENEN Monat.
   const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
@@ -51,7 +54,7 @@ function eur(v: number | null | undefined, w = "EUR") {
 
 export default function MonatsabschlussBox() {
   const [open, setOpen] = useState(false);
-  const [month, setMonth] = useState(currentMonth());
+  const [month, setMonth] = useState(prevMonth());
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
