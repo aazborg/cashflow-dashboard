@@ -25,32 +25,12 @@ type Status = {
   invoices: { matched: number; offen: number; total: number };
 };
 
-type AusgangRow = {
-  id: string;
-  kunde_name: string | null;
-  rechnung_nr: string | null;
-  rechnung_nr_num: number | null;
-  rechnungsdatum: string | null;
-  brutto: number | null;
-  waehrung: string | null;
-  typ: string;
-  drive_file_url: string | null;
-};
-
 function prevMonth() {
   // Beim Monatsabschluss schliesst man i.d.R. den VERGANGENEN Monat.
   const d = new Date();
   d.setDate(1);
   d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function eur(v: number | null | undefined, w = "EUR") {
-  if (v == null) return "—";
-  return new Intl.NumberFormat("de-AT", {
-    style: "currency",
-    currency: w || "EUR",
-  }).format(Number(v));
 }
 
 export default function MonatsabschlussBox() {
@@ -62,10 +42,6 @@ export default function MonatsabschlussBox() {
   const [running, setRunning] = useState(false);
   const [runMsg, setRunMsg] = useState<string | null>(null);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  // Ausgangsrechnungen
-  const [ausgang, setAusgang] = useState<AusgangRow[]>([]);
-  const [luecken, setLuecken] = useState<number[]>([]);
-  const [ausgUploading, setAusgUploading] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,58 +51,12 @@ export default function MonatsabschlussBox() {
       });
       const j = await r.json();
       setStatus(j?.ok ? j : null);
-      const ar = await fetch(`${API}/ausgangsrechnungen?month=${month}`, {
-        cache: "no-store",
-      }).then((x) => x.json());
-      if (ar?.ok) {
-        setAusgang(ar.rechnungen ?? []);
-        setLuecken(ar.luecken ?? []);
-      }
     } catch {
       setStatus(null);
     } finally {
       setLoading(false);
     }
   }, [month]);
-
-  // WICHTIG: sequenziell (await je Datei). Paralleles Hochladen erzeugte
-  // sonst über die Race-Condition mehrere gleichnamige Drive-Ordner.
-  const uploadAusgang = useCallback(
-    async (typ: "rechnung" | "storno", files: File[]) => {
-      setAusgUploading(typ);
-      let dup = 0;
-      try {
-        for (let i = 0; i < files.length; i++) {
-          setAusgUploading(
-            files.length > 1 ? `${typ} ${i + 1}/${files.length}` : typ,
-          );
-          const fd = new FormData();
-          fd.append("file", files[i]);
-          fd.append("typ", typ);
-          try {
-            const r = await fetch(`${API}/ausgangsrechnung/upload`, {
-              method: "POST",
-              body: fd,
-            });
-            const j = await r.json();
-            if (!j.ok) {
-              alert(`Fehler bei ${files[i].name}: ${j.error ?? r.status}`);
-            } else if (j.status === "duplikat") {
-              dup++;
-            }
-          } catch (e) {
-            alert(`Fehler bei ${files[i].name}: ${String(e)}`);
-          }
-        }
-        if (dup > 0)
-          alert(`${dup} Datei(en) waren schon vorhanden (übersprungen).`);
-        await load();
-      } finally {
-        setAusgUploading(null);
-      }
-    },
-    [load],
-  );
 
   useEffect(() => {
     if (open) void load();
@@ -232,7 +162,7 @@ export default function MonatsabschlussBox() {
             <>
               {/* Rechnungs-Status */}
               <div className="text-xs text-[color:var(--muted)]">
-                Rechnungen diesen Monat:{" "}
+                Eingangsrechnungen diesen Monat:{" "}
                 <span className="text-emerald-700 font-medium">
                   {status.invoices.matched} gematcht
                 </span>
@@ -319,104 +249,6 @@ export default function MonatsabschlussBox() {
                     )}
                   </div>
                 ))}
-              </div>
-
-              {/* Ausgangsrechnungen */}
-              <div className="border-t border-[color:var(--border)] pt-2 space-y-2">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-sm font-medium">
-                    Ausgangsrechnungen
-                    <span className="ml-2 text-xs font-normal text-[color:var(--muted)]">
-                      {ausgang.filter((a) => a.typ !== "storno").length} Rg
-                      {ausgang.some((a) => a.typ === "storno") &&
-                        ` · ${ausgang.filter((a) => a.typ === "storno").length} Storno`}
-                    </span>
-                  </span>
-                  <div className="flex gap-1.5">
-                    <label className="text-xs px-2 py-1 rounded border border-[color:var(--border)] cursor-pointer hover:bg-[color:var(--surface)] whitespace-nowrap">
-                      <input
-                        type="file"
-                        accept="application/pdf,.pdf"
-                        multiple
-                        className="hidden"
-                        disabled={ausgUploading === "rechnung"}
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files ?? []);
-                          if (files.length)
-                            void uploadAusgang("rechnung", files);
-                          e.target.value = "";
-                        }}
-                      />
-                      {ausgUploading === "rechnung" ? "lädt…" : "+ Rechnungen"}
-                    </label>
-                    <label className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-800 cursor-pointer hover:bg-amber-50 whitespace-nowrap">
-                      <input
-                        type="file"
-                        accept="application/pdf,.pdf"
-                        multiple
-                        className="hidden"
-                        disabled={ausgUploading === "storno"}
-                        onChange={(e) => {
-                          const files = Array.from(e.target.files ?? []);
-                          if (files.length) void uploadAusgang("storno", files);
-                          e.target.value = "";
-                        }}
-                      />
-                      {ausgUploading === "storno" ? "lädt…" : "+ Storno"}
-                    </label>
-                  </div>
-                </div>
-
-                {luecken.length > 0 && (
-                  <div className="text-xs text-amber-800 bg-amber-50 rounded p-2">
-                    ⚠️ Lücke in der Nummerierung — fehlende Nummer(n):{" "}
-                    <span className="font-mono">{luecken.join(", ")}</span>.
-                    Fehlt da eine Rechnung?
-                  </div>
-                )}
-
-                {ausgang.length > 0 && (
-                  <div className="max-h-44 overflow-y-auto space-y-0.5">
-                    {[...ausgang]
-                      .sort(
-                        (a, b) =>
-                          (a.rechnung_nr_num ?? 0) - (b.rechnung_nr_num ?? 0),
-                      )
-                      .map((a) => (
-                      <div
-                        key={a.id}
-                        className="flex items-center justify-between gap-2 text-xs py-0.5"
-                      >
-                        <span className="truncate">
-                          <span className="font-mono text-[color:var(--muted)]">
-                            {a.rechnung_nr ?? "—"}
-                          </span>{" "}
-                          {a.kunde_name ?? "—"}
-                          {a.typ === "storno" && (
-                            <span className="ml-1 text-[10px] px-1 rounded bg-amber-100 text-amber-800">
-                              Storno
-                            </span>
-                          )}
-                        </span>
-                        <span className="flex items-center gap-2 whitespace-nowrap">
-                          <span className="tabular-nums">
-                            {eur(a.brutto, a.waehrung ?? "EUR")}
-                          </span>
-                          {a.drive_file_url && (
-                            <a
-                              href={a.drive_file_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sky-700 hover:underline"
-                            >
-                              📄
-                            </a>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {/* Aktion */}
