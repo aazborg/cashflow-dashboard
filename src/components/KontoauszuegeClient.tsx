@@ -128,38 +128,51 @@ export default function KontoauszuegeClient() {
   // Refetch nur nach Mutationen (Upload / Match / Löschen / Ignorieren).
   const loadAll = useCallback(async () => {
     setLoading(true);
+    // Defensiv: Vercel kann bei Function-Timeout HTML statt JSON liefern.
+    const parseSafe = async (r: Response) => {
+      const raw = await r.text();
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { ok: false, error: `HTTP ${r.status} (keine JSON-Antwort)` };
+      }
+    };
     try {
-      // limit hoch genug fuer den kompletten Bestand; ignored inklusive,
-      // damit der "ignored anzeigen"-Toggle ohne Reload funktioniert.
-      const [ovRes, txRes, stRes, invRes] = await Promise.all([
-        fetch(`${API}/match-overview`, { cache: "no-store" }),
-        fetch(`${API}/transactions?limit=5000`, { cache: "no-store" }),
-        fetch(`${API}/statements`, { cache: "no-store" }),
-        // Offene Rechnungen für das Match-Modal vorladen (einmal).
-        fetch(`${API}/invoices?status=offen&limit=1000`, { cache: "no-store" }),
-      ]);
-      // Defensiv: Vercel kann bei Function-Timeout HTML statt JSON liefern.
-      const parseSafe = async (r: Response) => {
-        const raw = await r.text();
+      // Bis zu 3 Versuche: das flakige Netz / ein Bot-Neustart kann den
+      // Erstladen scheitern lassen -- ohne Retry bliebe die Tabelle dann
+      // dauerhaft auf "0 von 0 Buchungen" stehen.
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          return JSON.parse(raw);
+          const [ovRes, txRes, stRes, invRes] = await Promise.all([
+            fetch(`${API}/match-overview`, { cache: "no-store" }),
+            fetch(`${API}/transactions?limit=5000`, { cache: "no-store" }),
+            fetch(`${API}/statements`, { cache: "no-store" }),
+            fetch(`${API}/invoices?status=offen&limit=1000`, {
+              cache: "no-store",
+            }),
+          ]);
+          const ov = await parseSafe(ovRes);
+          const tx = await parseSafe(txRes);
+          const st = await parseSafe(stRes);
+          const inv = await parseSafe(invRes);
+          if (ov.ok)
+            setOverview({
+              bezahlt: ov.bezahlt,
+              offen: ov.offen,
+              unbekannt: ov.unbekannt,
+            });
+          if (st.ok) setStatements(st.statements ?? []);
+          if (inv.ok) setOpenInvoices(inv.invoices ?? []);
+          if (tx.ok) {
+            setTxns(tx.transactions ?? []);
+            return; // Buchungen geladen -> fertig
+          }
         } catch {
-          return { ok: false, error: `HTTP ${r.status} (keine JSON-Antwort)` };
+          /* Netz-Fehler -> Retry */
         }
-      };
-      const ov = await parseSafe(ovRes);
-      const tx = await parseSafe(txRes);
-      const st = await parseSafe(stRes);
-      const inv = await parseSafe(invRes);
-      if (ov.ok)
-        setOverview({
-          bezahlt: ov.bezahlt,
-          offen: ov.offen,
-          unbekannt: ov.unbekannt,
-        });
-      if (tx.ok) setTxns(tx.transactions ?? []);
-      if (st.ok) setStatements(st.statements ?? []);
-      if (inv.ok) setOpenInvoices(inv.invoices ?? []);
+        if (attempt < 3)
+          await new Promise((r) => setTimeout(r, 1500));
+      }
     } finally {
       setLoading(false);
     }

@@ -29,6 +29,7 @@ type AusgangRow = {
   id: string;
   kunde_name: string | null;
   rechnung_nr: string | null;
+  rechnung_nr_num: number | null;
   rechnungsdatum: string | null;
   brutto: number | null;
   waehrung: string | null;
@@ -376,7 +377,12 @@ export default function MonatsabschlussBox() {
 
                 {ausgang.length > 0 && (
                   <div className="max-h-44 overflow-y-auto space-y-0.5">
-                    {ausgang.map((a) => (
+                    {[...ausgang]
+                      .sort(
+                        (a, b) =>
+                          (a.rechnung_nr_num ?? 0) - (b.rechnung_nr_num ?? 0),
+                      )
+                      .map((a) => (
                       <div
                         key={a.id}
                         className="flex items-center justify-between gap-2 text-xs py-0.5"
