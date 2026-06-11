@@ -122,11 +122,18 @@ export default function MonatsabschlussBox({
 
   const run = useCallback(async () => {
     const off = status?.invoices.offen ?? 0;
+    // Achtung: verschiebt/benennt Drive-Dateien UND sendet eine Mail an
+    // den Steuerberater -> immer bestätigen lassen.
     if (
-      off > 0 &&
       !confirm(
-        `Achtung: ${off} Rechnung(en) sind noch OFFEN (nicht gematcht/abgehakt). ` +
-          `Diese bleiben im Hauptordner. Trotzdem Monatsabschluss starten?`,
+        `Monatsabschluss ${month} jetzt durchführen?\n\n` +
+          `• Gematchte Rechnungen werden in Drive nach Konto sortiert ` +
+          `und umbenannt (Lieferant_Rechnungsnummer)\n` +
+          `• Eine Mail mit Excel-Liste (Rechnung ↔ Zahlung) geht an den ` +
+          `Steuerberater (s.reifboeck@ataudit.at, j.pucher@ataudit.at)` +
+          (off > 0
+            ? `\n\n⚠️ ${off} Rechnung(en) noch offen — bleiben im Hauptordner.`
+            : ""),
       )
     )
       return;
@@ -146,10 +153,16 @@ export default function MonatsabschlussBox({
       const parts = Object.entries(j.moved ?? {}).map(
         ([k, v]) => `${k}: ${v}`,
       );
+      const mail = j.mail_sent_to
+        ? ` · 📧 Mail an Steuerberater gesendet`
+        : j.mail_error
+          ? ` · ⚠️ Mail-Fehler: ${j.mail_error}`
+          : "";
       setRunMsg(
-        `✅ ${j.moved_total ?? 0} Rechnungen in Konto-Ordner verschoben` +
+        `✅ ${j.moved_total ?? 0} Rechnungen sortiert + umbenannt` +
           (parts.length ? ` (${parts.join(", ")})` : "") +
-          (j.skipped ? ` · ${j.skipped} ohne Konto/PDF übersprungen` : ""),
+          (j.skipped ? ` · ${j.skipped} übersprungen` : "") +
+          mail,
       );
       await load();
     } catch (e) {
