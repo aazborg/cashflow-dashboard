@@ -88,24 +88,38 @@ export default function MonatsabschlussBox() {
     }
   }, [month]);
 
+  // WICHTIG: sequenziell (await je Datei). Paralleles Hochladen erzeugte
+  // sonst über die Race-Condition mehrere gleichnamige Drive-Ordner.
   const uploadAusgang = useCallback(
-    async (typ: "rechnung" | "storno", file: File) => {
+    async (typ: "rechnung" | "storno", files: File[]) => {
       setAusgUploading(typ);
+      let dup = 0;
       try {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("typ", typ);
-        const r = await fetch(`${API}/ausgangsrechnung/upload`, {
-          method: "POST",
-          body: fd,
-        });
-        const j = await r.json();
-        if (!j.ok) alert(`Fehler: ${j.error ?? r.status}`);
-        else if (j.status === "duplikat")
-          alert(`Schon vorhanden (Re-Nr ${j.rechnung_nr ?? "?"}).`);
+        for (let i = 0; i < files.length; i++) {
+          setAusgUploading(
+            files.length > 1 ? `${typ} ${i + 1}/${files.length}` : typ,
+          );
+          const fd = new FormData();
+          fd.append("file", files[i]);
+          fd.append("typ", typ);
+          try {
+            const r = await fetch(`${API}/ausgangsrechnung/upload`, {
+              method: "POST",
+              body: fd,
+            });
+            const j = await r.json();
+            if (!j.ok) {
+              alert(`Fehler bei ${files[i].name}: ${j.error ?? r.status}`);
+            } else if (j.status === "duplikat") {
+              dup++;
+            }
+          } catch (e) {
+            alert(`Fehler bei ${files[i].name}: ${String(e)}`);
+          }
+        }
+        if (dup > 0)
+          alert(`${dup} Datei(en) waren schon vorhanden (übersprungen).`);
         await load();
-      } catch (e) {
-        alert(String(e));
       } finally {
         setAusgUploading(null);
       }
@@ -327,7 +341,8 @@ export default function MonatsabschlussBox() {
                         disabled={ausgUploading === "rechnung"}
                         onChange={(e) => {
                           const files = Array.from(e.target.files ?? []);
-                          files.forEach((f) => void uploadAusgang("rechnung", f));
+                          if (files.length)
+                            void uploadAusgang("rechnung", files);
                           e.target.value = "";
                         }}
                       />
@@ -342,7 +357,7 @@ export default function MonatsabschlussBox() {
                         disabled={ausgUploading === "storno"}
                         onChange={(e) => {
                           const files = Array.from(e.target.files ?? []);
-                          files.forEach((f) => void uploadAusgang("storno", f));
+                          if (files.length) void uploadAusgang("storno", files);
                           e.target.value = "";
                         }}
                       />
