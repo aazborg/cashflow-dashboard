@@ -98,8 +98,10 @@ export default function KontoauszuegeClient() {
   const [statusFilter, setStatusFilter] = useState("open");
   // Default: ignored ausblenden (sind oft Gehalt / Privat etc.)
   const [showIgnored, setShowIgnored] = useState(false);
-  // "" | "in" | "out" -- Default: Ausgaenge (Rechnungen sind Ausgaenge)
-  const [directionFilter, setDirectionFilter] = useState<"" | "in" | "out">("out");
+  // "" | "in" | "out" -- Default: Beide. (Früher "out", aber sobald alle
+  // Ausgänge gematcht sind, wäre "Offen+Ausgänge" leer und sähe kaputt
+  // aus; mit "Beide" sieht man auch offene Eingänge/Kundenzahlungen.)
+  const [directionFilter, setDirectionFilter] = useState<"" | "in" | "out">("");
   const [loading, setLoading] = useState(false);
   const [matching, setMatching] = useState(false);
   const [matchMsg, setMatchMsg] = useState<string | null>(null);
