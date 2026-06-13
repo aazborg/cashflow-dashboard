@@ -17,9 +17,9 @@ type Row = {
   rechnungsdatum: string | null;
   drive_url: string | null;
   zahlungsart: string;
-  manual_status: "bezahlt" | "wird_abgebucht" | null;
+  manual_status: "bezahlt" | "wird_abgebucht" | "muss_zahlen" | null;
 };
-type MarkStatus = "bezahlt" | "wird_abgebucht" | "offen";
+type MarkStatus = "bezahlt" | "wird_abgebucht" | "muss_zahlen" | "offen";
 type Data = {
   ok: boolean;
   today: string;
@@ -182,21 +182,34 @@ function PayTable({
                       wird abgebucht
                     </button>
                   </span>
-                ) : r.manual_status ? (
+                ) : r.manual_status === "bezahlt" ||
+                  r.manual_status === "wird_abgebucht" ? (
+                  <span className="inline-flex gap-1 items-center">
+                    <span className="text-[10px] text-[color:var(--muted)]">
+                      {r.manual_status === "bezahlt"
+                        ? "manuell: bezahlt"
+                        : "manuell: wird abgebucht"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={markingId === r.id}
+                      onClick={() => onMark(r.id, "offen")}
+                      className="text-[11px] px-1.5 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:bg-[color:var(--surface)] disabled:opacity-50"
+                      title="Markierung zurücknehmen"
+                    >
+                      ↩ zurück
+                    </button>
+                  </span>
+                ) : (
                   <button
                     type="button"
                     disabled={markingId === r.id}
-                    onClick={() => onMark(r.id, "offen")}
-                    className="text-[11px] px-1.5 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:bg-[color:var(--surface)] disabled:opacity-50"
-                    title="Markierung zurücknehmen"
+                    onClick={() => onMark(r.id, "muss_zahlen")}
+                    className="text-[11px] px-1.5 py-0.5 rounded border border-amber-300 text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                    title="Muss ich doch überweisen — in die Liste „Zu bezahlen“ holen"
                   >
-                    ↩ zurück (
-                    {r.manual_status === "bezahlt" ? "bezahlt" : "wird abgebucht"})
+                    → zu bezahlen
                   </button>
-                ) : (
-                  <span className="text-[11px] text-[color:var(--muted)]">
-                    auto
-                  </span>
                 )}
               </td>
             </tr>
