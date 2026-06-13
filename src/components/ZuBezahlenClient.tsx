@@ -17,7 +17,9 @@ type Row = {
   rechnungsdatum: string | null;
   drive_url: string | null;
   zahlungsart: string;
+  manual_status: "bezahlt" | "wird_abgebucht" | null;
 };
+type MarkStatus = "bezahlt" | "wird_abgebucht" | "offen";
 type Data = {
   ok: boolean;
   today: string;
@@ -72,7 +74,17 @@ function CopyBtn({ text }: { text: string }) {
   );
 }
 
-function PayTable({ rows }: { rows: Row[] }) {
+function PayTable({
+  rows,
+  mode,
+  onMark,
+  markingId,
+}: {
+  rows: Row[];
+  mode: "offen" | "auto";
+  onMark: (id: string, status: MarkStatus) => void;
+  markingId: string | null;
+}) {
   if (rows.length === 0)
     return (
       <div className="text-sm text-[color:var(--muted)] py-3">
@@ -91,6 +103,7 @@ function PayTable({ rows }: { rows: Row[] }) {
             <th className="py-2 pr-3">IBAN</th>
             <th className="py-2 pr-3">Verwendungszweck</th>
             <th className="py-2 pr-3">PDF</th>
+            <th className="py-2 pr-3">Aktion</th>
           </tr>
         </thead>
         <tbody>
@@ -147,6 +160,45 @@ function PayTable({ rows }: { rows: Row[] }) {
                   "—"
                 )}
               </td>
+              <td className="py-2 pr-3 whitespace-nowrap">
+                {mode === "offen" ? (
+                  <span className="inline-flex gap-1">
+                    <button
+                      type="button"
+                      disabled={markingId === r.id}
+                      onClick={() => onMark(r.id, "bezahlt")}
+                      className="text-[11px] px-1.5 py-0.5 rounded border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      title="Als bereits bezahlt markieren — fällt aus der Liste"
+                    >
+                      ✓ bezahlt
+                    </button>
+                    <button
+                      type="button"
+                      disabled={markingId === r.id}
+                      onClick={() => onMark(r.id, "wird_abgebucht")}
+                      className="text-[11px] px-1.5 py-0.5 rounded border border-sky-300 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                      title="Wird automatisch abgebucht — fällt aus der Liste"
+                    >
+                      wird abgebucht
+                    </button>
+                  </span>
+                ) : r.manual_status ? (
+                  <button
+                    type="button"
+                    disabled={markingId === r.id}
+                    onClick={() => onMark(r.id, "offen")}
+                    className="text-[11px] px-1.5 py-0.5 rounded border border-[color:var(--border)] text-[color:var(--muted)] hover:bg-[color:var(--surface)] disabled:opacity-50"
+                    title="Markierung zurücknehmen"
+                  >
+                    ↩ zurück (
+                    {r.manual_status === "bezahlt" ? "bezahlt" : "wird abgebucht"})
+                  </button>
+                ) : (
+                  <span className="text-[11px] text-[color:var(--muted)]">
+                    auto
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -160,11 +212,17 @@ function Section({
   hint,
   rows,
   defaultOpen,
+  mode,
+  onMark,
+  markingId,
 }: {
   title: string;
   hint: string;
   rows: Row[];
   defaultOpen: boolean;
+  mode: "offen" | "auto";
+  onMark: (id: string, status: MarkStatus) => void;
+  markingId: string | null;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -184,7 +242,12 @@ function Section({
       </button>
       {open && (
         <div className="px-4 pb-4 border-t border-[color:var(--border)]">
-          <PayTable rows={rows} />
+          <PayTable
+            rows={rows}
+            mode={mode}
+            onMark={onMark}
+            markingId={markingId}
+          />
         </div>
       )}
     </div>
@@ -195,6 +258,7 @@ export default function ZuBezahlenClient() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [markingId, setMarkingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,6 +274,30 @@ export default function ZuBezahlenClient() {
       setLoading(false);
     }
   }, []);
+
+  const mark = useCallback(
+    async (id: string, status: MarkStatus) => {
+      setMarkingId(id);
+      try {
+        const r = await fetch(`${API}/invoice/${id}/zahlstatus`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        });
+        const j = await r.json();
+        if (!j.ok) {
+          alert(`Fehler: ${j.error ?? r.status}`);
+          return;
+        }
+        await load();
+      } catch (e) {
+        alert(String(e));
+      } finally {
+        setMarkingId(null);
+      }
+    },
+    [load],
+  );
 
   useEffect(() => {
     void load();
@@ -289,7 +377,12 @@ export default function ZuBezahlenClient() {
               </span>
             </div>
             <div className="px-4 pb-4 pt-2">
-              <PayTable rows={data.zu_bezahlen} />
+              <PayTable
+                rows={data.zu_bezahlen}
+                mode="offen"
+                onMark={mark}
+                markingId={markingId}
+              />
             </div>
           </div>
 
@@ -299,6 +392,9 @@ export default function ZuBezahlenClient() {
               hint="kein eindeutiges Zahlart-Signal"
               rows={data.unklar}
               defaultOpen={false}
+              mode="offen"
+              onMark={mark}
+              markingId={markingId}
             />
           )}
 
@@ -307,6 +403,9 @@ export default function ZuBezahlenClient() {
             hint="keine Aktion nötig"
             rows={data.automatisch}
             defaultOpen={false}
+            mode="auto"
+            onMark={mark}
+            markingId={markingId}
           />
         </div>
       )}
