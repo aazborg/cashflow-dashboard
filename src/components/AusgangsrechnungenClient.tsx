@@ -23,7 +23,11 @@ function eur(v: number | null | undefined, w = "EUR") {
   }).format(Number(v));
 }
 
-export default function AusgangsrechnungenClient() {
+export default function AusgangsrechnungenClient({
+  view = "rechnung",
+}: {
+  view?: "rechnung" | "storno";
+}) {
   const [month, setMonth] = useState(""); // "" = alle
   const [rows, setRows] = useState<Row[]>([]);
   const [luecken, setLuecken] = useState<number[]>([]);
@@ -89,9 +93,30 @@ export default function AusgangsrechnungenClient() {
     [load],
   );
 
+  const rechnungenRows = useMemo(
+    () => rows.filter((r) => r.typ !== "storno"),
+    [rows],
+  );
+  const stornoRows = useMemo(
+    () => rows.filter((r) => r.typ === "storno"),
+    [rows],
+  );
+  // Echter Umsatz = Rechnungen − Stornos (Storno-Betrag als Abzug, Vorzeichen
+  // egal). Storno-Summe immer als positiver Abzugsbetrag fuehren.
+  const summeRechnung = useMemo(
+    () => rechnungenRows.reduce((s, r) => s + (r.brutto ?? 0), 0),
+    [rechnungenRows],
+  );
+  const summeStorno = useMemo(
+    () => stornoRows.reduce((s, r) => s + Math.abs(r.brutto ?? 0), 0),
+    [stornoRows],
+  );
+  const echterUmsatz = summeRechnung - summeStorno;
+
   const filtered = useMemo(() => {
+    const base = view === "storno" ? stornoRows : rechnungenRows;
     const n = q.trim().toLowerCase();
-    const sorted = [...rows].sort(
+    const sorted = [...base].sort(
       (a, b) => (a.rechnung_nr_num ?? 0) - (b.rechnung_nr_num ?? 0),
     );
     if (!n) return sorted;
@@ -100,66 +125,85 @@ export default function AusgangsrechnungenClient() {
         (r.kunde_name ?? "").toLowerCase().includes(n) ||
         (r.rechnung_nr ?? "").toLowerCase().includes(n),
     );
-  }, [rows, q]);
-
-  const summe = useMemo(
-    () =>
-      filtered
-        .filter((r) => r.typ !== "storno")
-        .reduce((s, r) => s + (r.brutto ?? 0), 0),
-    [filtered],
-  );
-  const stornoCount = filtered.filter((r) => r.typ === "storno").length;
+  }, [rechnungenRows, stornoRows, view, q]);
 
   return (
     <div className="space-y-4">
       {/* Aktionen */}
       <div className="bg-white border border-[color:var(--border)] rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-sm">
-            <span className="font-semibold">
-              {filtered.filter((r) => r.typ !== "storno").length} Rechnung
-              {stornoCount > 0 && ` · ${stornoCount} Storno`}
-            </span>
-            <span className="ml-2 text-[color:var(--muted)]">
-              Summe {eur(summe)} · {gesamt} gesamt im System
-            </span>
-          </div>
+          {view === "storno" ? (
+            <div className="text-sm">
+              <span className="font-semibold">
+                {stornoRows.length} Stornorechnung
+                {stornoRows.length === 1 ? "" : "en"}
+              </span>
+              <span className="ml-2 text-[color:var(--muted)]">
+                Summe {eur(summeStorno)} · wird vom Umsatz abgezogen
+              </span>
+            </div>
+          ) : (
+            <div className="text-sm">
+              <div>
+                <span className="font-semibold">
+                  {rechnungenRows.length} Rechnung
+                  {rechnungenRows.length === 1 ? "" : "en"}
+                </span>
+                <span className="ml-2 font-semibold">
+                  Umsatz {eur(echterUmsatz)}
+                </span>
+                <span className="ml-2 text-[color:var(--muted)]">
+                  {gesamt} gesamt im System
+                </span>
+              </div>
+              {summeStorno > 0 && (
+                <div className="text-xs text-[color:var(--muted)] mt-0.5">
+                  Brutto {eur(summeRechnung)} − Storno {eur(summeStorno)} ={" "}
+                  <span className="font-medium text-[color:var(--foreground)]">
+                    {eur(echterUmsatz)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex gap-2">
-            <label className="text-xs px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white font-medium cursor-pointer disabled:opacity-50 whitespace-nowrap">
-              <input
-                type="file"
-                accept="application/pdf,.pdf"
-                multiple
-                className="hidden"
-                disabled={uploading === "rechnung"}
-                onChange={(e) => {
-                  const files = Array.from(e.target.files ?? []);
-                  if (files.length) void upload("rechnung", files);
-                  e.target.value = "";
-                }}
-              />
-              {uploading?.startsWith("rechnung")
-                ? `lädt… ${uploading.replace("rechnung", "")}`
-                : "+ Rechnungen hochladen"}
-            </label>
-            <label className="text-xs px-3 py-1.5 rounded border border-amber-300 text-amber-800 font-medium cursor-pointer hover:bg-amber-50 whitespace-nowrap">
-              <input
-                type="file"
-                accept="application/pdf,.pdf"
-                multiple
-                className="hidden"
-                disabled={uploading === "storno"}
-                onChange={(e) => {
-                  const files = Array.from(e.target.files ?? []);
-                  if (files.length) void upload("storno", files);
-                  e.target.value = "";
-                }}
-              />
-              {uploading?.startsWith("storno")
-                ? `lädt… ${uploading.replace("storno", "")}`
-                : "+ Storno"}
-            </label>
+            {view === "rechnung" ? (
+              <label className="text-xs px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white font-medium cursor-pointer disabled:opacity-50 whitespace-nowrap">
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  multiple
+                  className="hidden"
+                  disabled={uploading === "rechnung"}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length) void upload("rechnung", files);
+                    e.target.value = "";
+                  }}
+                />
+                {uploading?.startsWith("rechnung")
+                  ? `lädt… ${uploading.replace("rechnung", "")}`
+                  : "+ Rechnungen hochladen"}
+              </label>
+            ) : (
+              <label className="text-xs px-3 py-1.5 rounded border border-amber-300 text-amber-800 font-medium cursor-pointer hover:bg-amber-50 whitespace-nowrap">
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  multiple
+                  className="hidden"
+                  disabled={uploading === "storno"}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length) void upload("storno", files);
+                    e.target.value = "";
+                  }}
+                />
+                {uploading?.startsWith("storno")
+                  ? `lädt… ${uploading.replace("storno", "")}`
+                  : "+ Storno hochladen"}
+              </label>
+            )}
           </div>
         </div>
 
@@ -193,7 +237,7 @@ export default function AusgangsrechnungenClient() {
           )}
         </div>
 
-        {luecken.length > 0 && (
+        {view === "rechnung" && luecken.length > 0 && (
           <div className="text-xs text-amber-800 bg-amber-50 rounded p-2">
             ⚠️ Lücke in der Nummerierung — fehlende Nummer(n):{" "}
             <span className="font-mono">{luecken.join(", ")}</span>. Sind alle
@@ -219,7 +263,9 @@ export default function AusgangsrechnungenClient() {
               {!loading && filtered.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-[color:var(--muted)]">
-                    Keine Ausgangsrechnungen. Lade welche hoch.
+                    {view === "storno"
+                      ? "Keine Stornorechnungen."
+                      : "Keine Ausgangsrechnungen. Lade welche hoch."}
                   </td>
                 </tr>
               )}

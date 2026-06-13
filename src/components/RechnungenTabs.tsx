@@ -5,7 +5,7 @@ import AusgangsrechnungenClient from "./AusgangsrechnungenClient";
 import InvoiceUploadCard from "./InvoiceUploadCard";
 
 export default function RechnungenTabs() {
-  const [tab, setTab] = useState<"eingang" | "ausgang">("eingang");
+  const [tab, setTab] = useState<"eingang" | "ausgang" | "storno">("eingang");
   const tabCls = (active: boolean) =>
     "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition " +
     (active
@@ -29,16 +29,23 @@ export default function RechnungenTabs() {
         >
           Ausgangsrechnungen
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("storno")}
+          className={tabCls(tab === "storno")}
+        >
+          Stornorechnungen
+        </button>
       </div>
 
-      {tab === "eingang" ? (
+      {tab === "eingang" && (
         <div className="space-y-4">
           <InvoiceUploadCard source="rechnungen" />
           <RechnungenClient />
         </div>
-      ) : (
-        <AusgangsrechnungenClient />
       )}
+      {tab === "ausgang" && <AusgangsrechnungenClient view="rechnung" />}
+      {tab === "storno" && <AusgangsrechnungenClient view="storno" />}
     </div>
   );
 }
