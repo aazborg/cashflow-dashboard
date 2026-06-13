@@ -31,7 +31,26 @@ type Status = {
     ausgangsrechnungen: boolean;
   };
   alles_ok?: boolean;
+  abgeschlossen?: {
+    closed_at: string;
+    moved_total: number;
+    positionen: number;
+    mail_sent_to: string[] | null;
+  } | null;
 };
+
+function fmtDateTime(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString("de-AT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function prevMonth() {
   // Beim Monatsabschluss schliesst man i.d.R. den VERGANGENEN Monat.
@@ -181,10 +200,16 @@ export default function MonatsabschlussBox({
       >
         <span className="font-semibold text-sm">
           📦 Monatsabschluss
-          {status && (
-            <span className="ml-2 text-xs font-normal text-[color:var(--muted)]">
-              {status.invoices.matched}/{status.invoices.total} gematcht
+          {status?.abgeschlossen ? (
+            <span className="ml-2 text-xs font-semibold text-emerald-700">
+              ✅ abgeschlossen
             </span>
+          ) : (
+            status && (
+              <span className="ml-2 text-xs font-normal text-[color:var(--muted)]">
+                {status.invoices.matched}/{status.invoices.total} gematcht
+              </span>
+            )
           )}
         </span>
         <span className="text-[color:var(--muted)]">{open ? "▲" : "▼"}</span>
@@ -204,6 +229,24 @@ export default function MonatsabschlussBox({
               <span className="text-xs text-[color:var(--muted)]">lädt…</span>
             )}
           </div>
+
+          {status?.abgeschlossen && (
+            <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                <span className="text-base">✅</span>
+                Monatsabschluss abgeschlossen
+              </div>
+              <div className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                am {fmtDateTime(status.abgeschlossen.closed_at)} Uhr ·{" "}
+                {status.abgeschlossen.moved_total} Rechnungen nach Konto
+                sortiert &amp; umbenannt
+                {status.abgeschlossen.mail_sent_to &&
+                status.abgeschlossen.mail_sent_to.length > 0
+                  ? " · 📧 Mail an Steuerberater versendet"
+                  : ""}
+              </div>
+            </div>
+          )}
 
           {status && (
             <>
@@ -320,18 +363,24 @@ export default function MonatsabschlussBox({
               {/* Aktion */}
               <div className="flex items-center justify-between gap-3 pt-1">
                 <div className="text-xs text-[color:var(--muted)]">
-                  {status.alles_ok
-                    ? "Alle Voraussetzungen erfüllt."
-                    : "Erst alle Voraussetzungen oben erfüllen."}
+                  {status.abgeschlossen
+                    ? "Bereits abgeschlossen — erneutes Durchführen aktualisiert Sortierung & Mail."
+                    : status.alles_ok
+                      ? "Alle Voraussetzungen erfüllt."
+                      : "Erst alle Voraussetzungen oben erfüllen."}
                 </div>
                 <button
                   type="button"
                   onClick={() => void run()}
-                  disabled={!status.alles_ok || running}
+                  disabled={(!status.alles_ok && !status.abgeschlossen) || running}
                   className="text-sm px-3 py-1.5 rounded bg-[color:var(--brand-orange)] text-white font-medium disabled:opacity-50"
                   title="Gematchte Rechnungen in Konto-Unterordner verschieben"
                 >
-                  {running ? "läuft…" : "Monatsabschluss starten"}
+                  {running
+                    ? "läuft…"
+                    : status.abgeschlossen
+                      ? "Erneut durchführen"
+                      : "Monatsabschluss starten"}
                 </button>
               </div>
               {runMsg && (
