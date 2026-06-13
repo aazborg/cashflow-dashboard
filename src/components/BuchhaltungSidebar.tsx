@@ -7,6 +7,7 @@ type Item = { href: string; label: string; primary?: boolean };
 const ITEMS: Item[] = [
   { href: "/buchhaltung/schnell-upload", label: "Schnell-Upload", primary: true },
   { href: "/buchhaltung", label: "Übersicht" },
+  { href: "/buchhaltung/zu-bezahlen", label: "💸 Zu bezahlen" },
   { href: "/buchhaltung/posteingang", label: "Posteingang" },
   { href: "/buchhaltung/rechnungen", label: "Rechnungen" },
   { href: "/buchhaltung/kontoauszuege", label: "Kontoauszüge" },
